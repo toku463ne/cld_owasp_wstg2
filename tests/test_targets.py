@@ -124,3 +124,27 @@ def test_verdicts(db, cfg):
     assert tm.verdicts(db, f, "WSTG-INFO-02") == {"WSTG-INFO-02": {2: "pass"}}
     with pytest.raises(tm.TargetError):
         tm.set_verdict(db, f, "WSTG-INFO-02", 1, "maybe", "test")
+
+
+def test_bare_host_arguments_are_checked(db, cfg):
+    f = tm.create(db, cfg, "www.example.com", "fqdn")
+    s = make_scope(db, f)
+    with pytest.raises(tm.ScopeError, match="other.example.org"):
+        tm.check_command(f, s, ["nmap", "www.example.com", "other.example.org"], passive=False,
+                         today=date(2026, 6, 1))
+
+
+def test_every_catalog_command_passes_a_standard_scope(db, cfg, tmp_path):
+    """The real catalog's active commands only contact the target on 80/443."""
+    from wstg import catalog as catmod
+    cat = catmod.load()
+    tm.create(db, cfg, "example.com", "domain")
+    f = tm.create(db, cfg, "www.example.com", "fqdn", parent="example.com")
+    s = make_scope(db, f)
+    values = dict(tm.placeholder_values(cfg, f, s), out=str(tmp_path))
+    for e in cat.evidence.values():
+        if e.kind != "auto" or e.target_type != "fqdn":
+            continue
+        argv = [catmod.render(a, values) for a in e.argv]
+        assert not any(catmod.PLACEHOLDER_RE.search(a) for a in argv), e.id
+        tm.check_command(f, s, argv, passive=e.passive, today=date(2026, 6, 1))

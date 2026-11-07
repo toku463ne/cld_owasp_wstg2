@@ -61,6 +61,7 @@ Last updated: 2026-11-07
 - Web (`src/wstg/web_targets.py`): `/t/<target>/...` pages, target selector with `+` (admin), WSTG index (tests for the target type, status, WSTG page link, OWASP link), settings and scope page, automatic evidence tab (definitions only), WSTG page (overview, pass/fail, notes, steps with verdict select and reset, commands with placeholders and `{ev:ID}` filled in, copy buttons, evidence list with sharing, AI prompt copy). Merged tests redirect to the test they were merged into.
 - Clipboard copy falls back to `execCommand` because `navigator.clipboard` needs HTTPS and the tool runs on plain HTTP for now.
 - Evidence folders: `<evidence root>/<target>/` created with the target; `{ev:ID}` points to `<evidence root>/<owner>/<ID>/latest` (owner = the target, or its parent domain for domain evidence). The `latest` link is created by M4/M5.
+- Scope check also treats bare host-like arguments as contacted hosts (fail closed); a test runs every catalog command through a standard scope.
 - Open: step verdicts are keyed by step position; reordering steps in a scenario later would move verdicts (add stable step keys if that becomes a problem). Deleting or renaming targets is not offered.
 
 ### M1 so far
@@ -80,6 +81,9 @@ Last updated: 2026-11-07
 - Config, data, service, and nginx names use the `wstg2` prefix so mine.wstg can run on the same host.
 
 ### Open items carried forward
+- Check on Kali: browser clipboard paste into the capture box, the worker with real tools against a lab target (tool options such as katana `-ct`), backup.
+- M1: CONF-01 to 11 and the remaining categories (IDNT, ATHN, ATHZ, SESS, INPV, ERRH, BUSL, CLNT, APIT).
+- M9: headless-browser HAR recording (needs a decision on adding Playwright and a browser), HAR analysis (cookies, headers, parameters) to replace manual Burp checks.
 - Backup frequency is the owner's decision; `--backup-timer` installs a daily one only when asked. Evidence is copied with rsync (versions never change).
 - Login rate limiting is not implemented yet (consider in M8, or rely on nginx `limit_req`).
 - Session cookie is not `Secure` while the tool runs on plain HTTP (8083). Turn it on when moving to TLS on 443.

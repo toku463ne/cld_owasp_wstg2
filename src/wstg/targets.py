@@ -245,6 +245,7 @@ def scope_problems(scope: Scope, today: date | None = None) -> list[str]:
 
 _URL_RE = re.compile(r"\b(https?)://([A-Za-z0-9.-]+)(?::(\d+))?")
 _HOSTPORT_RE = re.compile(r"^([A-Za-z0-9.-]+\.[A-Za-z]{2,}):(\d+)$")
+_BARE_HOST_RE = re.compile(r"^(?:[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?\.)+[A-Za-z]{2,63}\.?$")
 
 
 def contacted(argv: list[str], target: Target) -> list[tuple[str, int | None]]:
@@ -256,8 +257,11 @@ def contacted(argv: list[str], target: Target) -> list[tuple[str, int | None]]:
         m = _HOSTPORT_RE.match(a)
         if m:
             out.append((m.group(1).lower(), int(m.group(2))))
-        elif a.lower() == target.name:
-            out.append((a.lower(), None))
+        elif _BARE_HOST_RE.match(a):
+            # A bare argument that looks like a host name is treated as a host the
+            # command contacts (fail closed: a file name like "out.json" is refused
+            # unless it is in the scope; write such files as {out}/name instead).
+            out.append((a.lower().rstrip("."), None))
     return out
 
 
