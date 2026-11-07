@@ -32,7 +32,8 @@
   {% if stale %}<div class="warnbox">No heartbeat from the worker recently. It may have stopped; restart it (<code>systemctl --user restart wstg2-worker</code>) and collect again.</div>{% endif %}
   {% if can_write and active %}
   <form method="post" class="inline" action="{{ url_for('auto_cancel', name=target.name, job_id=job.id) }}">
-    <input type="hidden" name="csrf" value="{{ csrf }}"><button>Cancel</button></form>
+    <input type="hidden" name="csrf" value="{{ csrf }}"><button class="danger" data-confirm="Stop the whole job? The running command is killed and the remaining items are not run.">Stop job</button></form>
+  <span class="muted small">Too much load on the target? <b>Stop</b> on the running row kills that command only and goes on with the next item; <b>Stop job</b> stops everything. Stopped evidence is not complete; the next Collect runs it again.</span>
   {% endif %}
   <table>
     <tr><th>#</th><th>Evidence</th><th>Status</th><th>Message</th><th>Finished</th></tr>
@@ -40,7 +41,9 @@
     <tr><td>{{ it.seq }}</td>
       <td><a href="{{ url_for('evidence_page', name=target.name, eid=it.evidence_id) }}">{{ it.evidence_id }}</a></td>
       <td><span class="status s-{{ {'complete': 'pass', 'skipped': 'none', 'pending': 'none', 'running': 'started'}.get(it.status, 'fail') }}">{{ it.status }}</span></td>
-      <td>{{ it.message }}{% if it.exit_code is not none %} <span class="muted">(exit {{ it.exit_code }})</span>{% endif %}</td>
+      <td>{% if it.status == 'running' %}{% if job.stop_seq == it.seq %}<span class="muted">stopping…</span>{% elif can_write and job.status == 'running' %}<form method="post" class="inline" action="{{ url_for('auto_stop_item', name=target.name, job_id=job.id, seq=it.seq) }}">
+        <input type="hidden" name="csrf" value="{{ csrf }}"><button class="danger" data-confirm="Stop {{ it.evidence_id }}? The job goes on with the next item.">Stop</button></form>{% endif %}{% endif %}
+        {{ it.message }}{% if it.exit_code is not none %} <span class="muted">(exit {{ it.exit_code }})</span>{% endif %}</td>
       <td class="nowrap">{{ it.finished_at or '' }}</td></tr>
     {% endfor %}
   </table>

@@ -2,6 +2,7 @@
 
 import os
 import sys
+import time
 
 import pytest
 
@@ -266,3 +267,27 @@ def test_pause_setting_is_validated(tmp_path):
     for bad in ("-1", "61", "x"):
         with pytest.raises(config.ConfigError):
             config.load({**base, "WSTG_PAUSE": bad}, check_repo=False)
+
+
+def test_stop_item_kills_only_that_command_and_goes_on(cfg, db, site):
+    import threading
+    r, store = make(cfg, db, ev("slow", [PY, "-c", "import time; print('started', flush=True); time.sleep(60)"], timeout=120),
+                    ev("next", [PY, "-c", "print('ok')"]))
+    job = rmod.enqueue(db, r.cat, site, "light", "test")
+    assert r.claim() == job
+    assert not rmod.stop_item(db, job, 1, "test")          # nothing running yet
+    th = threading.Thread(target=r.run_job, args=(job,))
+    th.start()
+    deadline = time.monotonic() + 20
+    while not rmod.stop_item(db, job, 1, "test"):
+        assert time.monotonic() < deadline
+        time.sleep(0.2)
+    th.join(30)
+    assert not th.is_alive()
+    items = {i["evidence_id"]: i for i in rmod.job_items(db, job)}
+    assert items["slow"]["status"] == "cancelled" and "stopped by a tester" in items["slow"]["message"]
+    assert items["next"]["status"] == "complete"
+    assert rmod.last_job(db, site)["status"] == "done"
+    # the stopped evidence is kept as a failed version, never complete
+    assert store.load(site.name, "slow") is None
+    assert rmod.last_attempt(db, site, "slow")["status"] == "cancelled"

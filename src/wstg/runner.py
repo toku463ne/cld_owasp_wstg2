@@ -56,7 +56,7 @@ class RunError(Exception):
 
 @dataclass
 class Outcome:
-    status: str             # complete | failed | refused | skipped | cancelled
+    status: str             # complete | failed | refused | skipped | cancelled | stopped
     message: str = ""
     version: int | None = None
     exit_code: int | None = None
@@ -170,6 +170,20 @@ def cancel(db: dbmod.Database, job_id: int, actor: str) -> None:
         db.audit(conn, actor, "job.cancel", job=job_id)
 
 
+def stop_item(db: dbmod.Database, job_id: int, seq: int, actor: str) -> bool:
+    """Ask the worker to stop the running item `seq` only; the job goes on with
+    the next item. The stopped item is recorded as cancelled (never complete), so
+    the next Collect runs it again. Returns False when the item is not running."""
+    with db.tx() as conn:
+        cur = conn.execute(
+            "UPDATE jobs SET stop_seq = ? WHERE id = ? AND status = 'running'"
+            " AND EXISTS (SELECT 1 FROM job_items WHERE job_id = ? AND seq = ? AND status = 'running')",
+            (seq, job_id, job_id, seq))
+        if cur.rowcount:
+            db.audit(conn, actor, "job.stop_item", job=job_id, seq=seq)
+        return bool(cur.rowcount)
+
+
 # --------------------------------------------------------------------------
 # Running
 
@@ -191,14 +205,19 @@ class Runner:
                 env[k] = self.cfg.http_proxy
         return env
 
-    def _heartbeat(self, job_id: int) -> str:
-        """Update the heartbeat; return the job status (to notice cancelling)."""
+    def _heartbeat(self, job_id: int, seq: int | None = None) -> str:
+        """Update the heartbeat; return the job status (to notice cancelling), or
+        "stop" when the tester asked to stop item `seq`."""
         with self.db.tx() as conn:
             conn.execute("UPDATE jobs SET heartbeat_at = ? WHERE id = ?", (dbmod.utcnow(), job_id))
-            return conn.execute("SELECT status FROM jobs WHERE id = ?", (job_id,)).fetchone()[0]
+            status, stop_seq = conn.execute("SELECT status, stop_seq FROM jobs WHERE id = ?",
+                                            (job_id,)).fetchone()
+            if status == "running" and seq is not None and stop_seq == seq:
+                return "stop"
+            return status
 
     def collect(self, target: tmod.Target, ev: catmod.Evidence, *, job_id: int | None = None,
-                actor: str = "worker") -> Outcome:
+                seq: int | None = None, actor: str = "worker") -> Outcome:
         """Run one evidence command and store the result (complete or failed).
 
         Evidence marked `direct` runs on the jump host (WSTG_DIRECT_SSH) when one
@@ -246,7 +265,7 @@ class Runner:
 
         started = dbmod.utcnow()
         t0 = time.monotonic()
-        exit_code, message, cancelled = None, "", False
+        exit_code, message, cancelled, stopped = None, "", False, False
         with open(tmp / "stdout.txt", "wb") as out, open(tmp / "stderr.txt", "wb") as err:
             try:
                 proc = subprocess.Popen(popen_argv, cwd=tmp, stdin=subprocess.DEVNULL, stdout=out,
@@ -265,9 +284,12 @@ class Runner:
                     pass
                 elapsed = time.monotonic() - t0
                 if job_id and elapsed >= next_beat:
-                    next_beat = elapsed + 5
-                    if self._heartbeat(job_id) == "cancelling":
+                    next_beat = elapsed + 2
+                    state = self._heartbeat(job_id, seq)
+                    if state == "cancelling":
                         cancelled, message = True, "cancelled while running"
+                    elif state == "stop":
+                        stopped, message = True, "stopped by a tester; the job went on with the next item"
                 if elapsed > ev.timeout:
                     message = f"timed out after {ev.timeout} s"
                 if cancelled or message or (tmp / "stdout.txt").stat().st_size > MAX_STDOUT_BYTES:
@@ -311,7 +333,7 @@ class Runner:
                 message = f"missing output: {', '.join(missing)}"
             elif ev.incomplete_if:
                 message = _stopped_early(ev, tmp)
-        if message and ev.direct and not via and self.cfg.http_proxy:
+        if message and not (cancelled or stopped) and ev.direct and not via and self.cfg.http_proxy:
             message += (f" ({argv[0]} cannot use WSTG_HTTP_PROXY; it needs a direct connection to the target,"
                         " or set WSTG_DIRECT_SSH to run it on a jump host)")
         status = "failed" if message else "complete"
@@ -328,6 +350,8 @@ class Runner:
                         "message": message, "files": {"command.txt": {}}})
         if cancelled:
             return Outcome("cancelled", message, v.version, exit_code)
+        if stopped:
+            return Outcome("stopped", message, v.version, exit_code)
         return Outcome(status, message, v.version, exit_code)
 
     def run_job(self, job_id: int) -> str:
@@ -350,10 +374,11 @@ class Runner:
                 else:
                     self._set_item(job_id, item["seq"], "running", started=True)
                     try:
-                        out = self.collect(target, ev, job_id=job_id)
+                        out = self.collect(target, ev, job_id=job_id, seq=item["seq"])
                     except Exception as e:  # never leave an item running
                         out = Outcome("failed", f"error: {e}")
-            self._set_item(job_id, item["seq"], out.status, message=out.message, version=out.version,
+            self._set_item(job_id, item["seq"], "cancelled" if out.status == "stopped" else out.status,
+                           message=out.message, version=out.version,
                            exit_code=out.exit_code, finished=True)
             if out.status == "cancelled":
                 final = "cancelled"

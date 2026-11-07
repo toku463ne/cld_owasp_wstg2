@@ -186,7 +186,19 @@ def register(app: Flask, cfg: Config, db: dbmod.Database, cat: catmod.Catalog, s
         if not db.one("SELECT 1 FROM jobs WHERE id = ? AND target_id = ?", (job_id, t.id)):
             abort(404)
         rmod.cancel(db, job_id, g.user["username"])
-        flash(f"Job {job_id}: cancel requested.")
+        flash(f"Job {job_id}: stop requested. The running command is killed within a few seconds.")
+        return redirect(url_for("auto_tab", name=t.name))
+
+    @app.post("/t/<name>/auto/jobs/<int:job_id>/items/<int:seq>/stop")
+    @admin_required
+    def auto_stop_item(name: str, job_id: int, seq: int):
+        t = load_target(name)
+        if not db.one("SELECT 1 FROM jobs WHERE id = ? AND target_id = ?", (job_id, t.id)):
+            abort(404)
+        if rmod.stop_item(db, job_id, seq, g.user["username"]):
+            flash(f"Job {job_id}: stopping item {seq}; the job goes on with the next item.")
+        else:
+            flash(f"Job {job_id}: item {seq} is not running.")
         return redirect(url_for("auto_tab", name=t.name))
 
     # ---- WSTG page --------------------------------------------------------

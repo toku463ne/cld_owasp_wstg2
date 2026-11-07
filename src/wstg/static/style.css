@@ -33,6 +33,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 input, select, textarea { background: var(--surface); border: 1px solid var(--line); border-radius: 4px; padding: 4px 6px; }
 button { background: var(--surface); border: 1px solid var(--line); border-radius: 4px; padding: 4px 10px; cursor: pointer; }
 button:disabled { opacity: .5; cursor: not-allowed; }
+button.danger { color: var(--bad); border-color: var(--bad); }
 form.stack p { margin: 8px 0; }
 form.stack label { display: block; }
 .login { max-width: 360px; margin: 48px auto; background: var(--surface); border: 1px solid var(--line);

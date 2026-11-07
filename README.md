@@ -119,6 +119,11 @@ After changing `WSTG_WEB_PORT` or `WSTG_ALLOWED_NETWORKS`, run the setup script 
 to re-render the nginx site. After changing `WSTG_HTTP_PROXY`, `WSTG_DIRECT_SSH`, or `WSTG_PAUSE`, restart
 the worker: `systemctl --user restart wstg2-worker`.
 
+When a collection puts too much load on the target, use **Stop** on the running row of the
+Automatic evidence tab: it kills that command only (also on the jump host) and the job goes on
+with the next item. **Stop job** stops the whole job. Stopped evidence is not complete; the next
+Collect runs it again (set `WSTG_PAUSE` first, or collect in light mode).
+
 ### Jump host for tools that cannot use the proxy
 
 whois, traceroute, nmap, and sslscan need direct connections (raw TCP, UDP, ICMP). Behind

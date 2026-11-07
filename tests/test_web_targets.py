@@ -101,8 +101,22 @@ def test_auto_collect_queue_and_cancel(admin_client, guest_client, db, cfg):
     page = admin_client.get("/t/www.example.com/auto").get_data(as_text=True)
     assert f"Job {job['id']}" in page and "Waiting for the worker" in page and 'http-equiv="refresh"' in page
     assert "nikto" not in [i["evidence_id"] for i in rmod.job_items(db, job["id"])]
+    # a running item shows a Stop button; stopping it sets stop_seq for the worker
+    with db.tx() as conn:
+        conn.execute("UPDATE jobs SET status = 'running' WHERE id = ?", (job["id"],))
+        conn.execute("UPDATE job_items SET status = 'running' WHERE job_id = ? AND seq = 1", (job["id"],))
+    page = admin_client.get("/t/www.example.com/auto").get_data(as_text=True)
+    stop_url = f"/t/www.example.com/auto/jobs/{job['id']}/items/1/stop"
+    assert stop_url in page and "Stop job" in page
+    assert stop_url not in guest_client.get("/t/www.example.com/auto").get_data(as_text=True)
+    assert post(guest_client, stop_url).status_code == 403
+    post(admin_client, f"/t/www.example.com/auto/jobs/{job['id']}/items/2/stop")   # not running: no-op
+    assert rmod.last_job(db, t)["stop_seq"] is None
+    post(admin_client, stop_url)
+    assert rmod.last_job(db, t)["stop_seq"] == 1
+    assert "stopping…" in admin_client.get("/t/www.example.com/auto").get_data(as_text=True)
     post(admin_client, f"/t/www.example.com/auto/jobs/{job['id']}/cancel")
-    assert rmod.last_job(db, tm.get(db, "www.example.com"))["status"] == "cancelled"
+    assert rmod.last_job(db, tm.get(db, "www.example.com"))["status"] == "cancelling"
 
 
 def test_evidence_page_shows_proxy_args_and_last_failure(admin_client, db, cfg):
