@@ -296,6 +296,17 @@ def register(app: Flask, cfg: Config, db: dbmod.Database, cat: catmod.Catalog, s
             flash(f"{r['file']}: {r['status']}" + (f" ({r['message']})" if r["message"] else ""))
         return redirect(url_for("wstg_index", name=t.name) + "#ai-bulk")
 
+    @app.post("/t/<name>/wstg/<test_id>/reset")
+    @admin_required
+    def wstg_reset(name: str, test_id: str):
+        t = load_target(name)
+        if test_id not in cat.scenarios:
+            abort(404)
+        out = ai_review.reset_test(db, t, test_id, g.user["username"])
+        flash(f"{test_id} reset: {out['verdicts']} step verdict(s) and {out['ai_reviews']} AI review(s) removed."
+              " Evidence and findings are kept.")
+        return redirect(url_for("wstg_page", name=t.name, test_id=test_id))
+
     @app.post("/t/<name>/wstg/<test_id>/steps/<int:n>")
     @admin_required
     def wstg_step_verdict(name: str, test_id: str, n: int):

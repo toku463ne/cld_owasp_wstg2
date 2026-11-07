@@ -123,3 +123,25 @@ def test_cli_ai_prompts_and_import(cfg, db, env, monkeypatch, capsys):
     assert cli.main(["ai-import", "www.example.com", "--findings"]) == 0
     assert "imported" in capsys.readouterr().out
     assert len(fmod.list_for(db, t, "WSTG-INFO-02")) == 2
+
+
+def test_reset_test_keeps_evidence_and_findings(admin_client, guest_client, cfg, db, env):
+    t, cat, store = env
+    store.add_text(t, "har-browse", "flows", "", "admin")
+    tm.set_verdict(db, t, "WSTG-INFO-02", 2, "pass", "admin")
+    tm.set_verdict(db, t, "WSTG-INFO-03", 1, "fail", "admin")             # other test: untouched
+    sc = cat.scenarios["WSTG-INFO-02"]
+    rv = ar.parse(json.dumps(review()), test_id=sc.id, target_name=t.name, step_count=len(sc.steps))
+    ar.apply(db, store, cat, t, rv, "a", "admin", create_findings=True)
+    assert ar.latest(db, t, "WSTG-INFO-02")
+    page = admin_client.get("/t/www.example.com/wstg/WSTG-INFO-02").get_data(as_text=True)
+    assert "Reset test" in page
+    assert "Reset test" not in guest_client.get("/t/www.example.com/wstg/WSTG-INFO-02").get_data(as_text=True)
+    url = "/t/www.example.com/wstg/WSTG-INFO-02/reset"
+    assert guest_client.post(url, data={"csrf": csrf_of(guest_client)}).status_code == 403
+    assert admin_client.post(url, data={"csrf": csrf_of(admin_client)}).status_code == 302
+    assert tm.verdicts(db, t, "WSTG-INFO-02").get("WSTG-INFO-02", {}) == {}
+    assert tm.verdicts(db, t, "WSTG-INFO-03")["WSTG-INFO-03"] == {1: "fail"}
+    assert ar.latest(db, t, "WSTG-INFO-02") is None
+    assert len(fmod.list_for(db, t, "WSTG-INFO-02")) == 2
+    assert store.load(t.name, "har-browse") is not None

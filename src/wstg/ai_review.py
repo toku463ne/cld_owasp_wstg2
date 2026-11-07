@@ -296,3 +296,16 @@ def setters(db: dbmod.Database, target: tmod.Target, test_id: str) -> dict[int, 
     """{step: updated_by} of the current verdicts."""
     return {r["step"]: r["updated_by"] for r in db.query(
         "SELECT step, updated_by FROM step_verdicts WHERE target_id = ? AND test_id = ?", (target.id, test_id))}
+
+
+def reset_test(db: dbmod.Database, target: tmod.Target, test_id: str, actor: str) -> dict:
+    """Reset one WSTG test on a target: every step verdict and every imported AI
+    review go. Evidence, findings, and saved prompt/answer files are kept."""
+    with db.tx() as conn:
+        n_verdicts = conn.execute("DELETE FROM step_verdicts WHERE target_id = ? AND test_id = ?",
+                                  (target.id, test_id)).rowcount
+        n_reviews = conn.execute("DELETE FROM ai_reviews WHERE target_id = ? AND test_id = ?",
+                                 (target.id, test_id)).rowcount
+        db.audit(conn, actor, "test.reset", target=target.name, test=test_id,
+                 verdicts=n_verdicts, ai_reviews=n_reviews)
+    return {"verdicts": n_verdicts, "ai_reviews": n_reviews}

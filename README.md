@@ -91,6 +91,8 @@ curl -s --noproxy '*' --max-time 5 -o /dev/null -w '%{http_code}\n' http://127.0
    Collecting again skips what is already collected.
 4. **WSTG index**: open a test, follow the steps, set each step's verdict, add screenshots and
    files on the evidence pages, and copy the AI prompt when you want a second opinion.
+   *Reset test* clears every step verdict and the imported AI reviews of that test; evidence and
+   findings are kept.
    Analysis commands that only read collected evidence run by themselves; their output is shown
    under the step. Steps marked *Judged by the AI review* (known CVEs, inventories, drafts) are
    answered by the AI prompt.
