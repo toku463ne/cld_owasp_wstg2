@@ -94,3 +94,4 @@ tr.current td { background: var(--th); }
 .cvss-metrics label { display: flex; flex-direction: column; font-size: 13px; }
 form.finding textarea { max-width: 900px; }
 @media (max-width: 700px) { .cvss-metrics { grid-template-columns: 1fr 1fr; } }
+form.stack label > textarea, form.stack label > input[size] { display: block; margin-top: 2px; }

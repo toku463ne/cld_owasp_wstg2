@@ -15,10 +15,10 @@
 <p class="muted">No scenario has been written for this test yet. Follow the <a href="{{ test.owasp_url }}" target="_blank" rel="noopener noreferrer">OWASP page</a>.</p>
 {% else %}
 <section class="overview">
-  <h3>Overview</h3><p>{{ scenario.overview }}</p>
+  <h3>Overview</h3><p>{{ scenario.overview | ticks }}</p>
   <div class="criteria">
-    <div><h4 class="ok">Pass</h4><p>{{ scenario.pass_criteria }}</p></div>
-    <div><h4 class="bad">Fail</h4><p>{{ scenario.fail_criteria }}</p></div>
+    <div><h4 class="ok">Pass</h4><p>{{ scenario.pass_criteria | ticks }}</p></div>
+    <div><h4 class="bad">Fail</h4><p>{{ scenario.fail_criteria | ticks }}</p></div>
   </div>
   {% if scenario.notes %}<h4>Notes</h4><ul>{% for n in scenario.notes %}<li>{{ n | ticks }}</li>{% endfor %}</ul>{% endif %}
 </section>

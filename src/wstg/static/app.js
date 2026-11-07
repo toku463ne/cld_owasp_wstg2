@@ -59,6 +59,9 @@ document.addEventListener("DOMContentLoaded", function () {
     }
     function show() {
       if (!input.value) { out.textContent = ""; return; }
+      var set = 0;
+      selects.forEach(function (x) { if (x.value) set++; });
+      if (set < selects.length) { out.innerHTML = '<span class="muted">choose all 8 metrics</span>'; return; }
       fetch(box.dataset.api + "?vector=" + encodeURIComponent(input.value), {credentials: "same-origin"})
         .then(function (r) { return r.json(); })
         .then(function (j) {
