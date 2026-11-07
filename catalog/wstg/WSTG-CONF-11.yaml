@@ -1,0 +1,62 @@
+id: WSTG-CONF-11
+overview: >-
+  Find the cloud storage (Amazon S3, Azure Blob, Google Cloud Storage, and similar) the
+  application uses, and check that it cannot be listed, read beyond what is meant to be
+  public, or written anonymously.
+pass: >-
+  Every bucket or container the application uses refuses anonymous listing and writing,
+  and serves anonymously only files that are meant to be public.
+fail: >-
+  A bucket or container can be listed anonymously, serves private files to anyone, or
+  accepts anonymous uploads.
+notes:
+  - The storage hosts belong to the cloud provider, not the target. Before sending any request, confirm with the owner that the bucket is theirs and in scope.
+  - Writing is the most harmful check; try it only with the owner's agreement, with a harmless file name, and remove the file afterwards.
+  - "Anonymous listing: S3 answers <ListBucketResult>, Azure answers <EnumerationResults> to ?restype=container&comp=list, Google Cloud Storage answers <ListBucketResult> or JSON items."
+finding_kinds: [cloud-storage-public, sensitive-data-in-url]
+steps:
+  - summary: Find storage URLs in the top page and its scripts
+    auto_run: true
+    evidence: [http-root-https, site-assets]
+    command: >-
+      grep -rhoiE 'https?://([a-z0-9._-]+\.)?(s3[a-z0-9.-]*\.amazonaws\.com|blob\.core\.windows\.net|storage\.googleapis\.com|storage\.cloud\.google\.com|digitaloceanspaces\.com|r2\.cloudflarestorage\.com|r2\.dev|objectstorage\.[a-z0-9-]+\.oraclecloud\.com|oss-[a-z0-9-]+\.aliyuncs\.com)[A-Za-z0-9._~:/?#@!$&*+,;=%-]*'
+      {ev:http-root-https}/body.html {ev:site-assets}/site | sed -E 's#\?.*##' | sort -u | head -200
+  - summary: Find storage URLs in the crawled pages
+    auto_run: true
+    evidence: [katana-crawl]
+    command: >-
+      grep -rhoiE 'https?://([a-z0-9._-]+\.)?(s3[a-z0-9.-]*\.amazonaws\.com|blob\.core\.windows\.net|storage\.googleapis\.com|storage\.cloud\.google\.com|digitaloceanspaces\.com|r2\.cloudflarestorage\.com|r2\.dev|objectstorage\.[a-z0-9-]+\.oraclecloud\.com|oss-[a-z0-9-]+\.aliyuncs\.com)[A-Za-z0-9._~:/?#@!$&*+,;=%-]*'
+      {ev:katana-crawl}/katana.txt {ev:katana-crawl}/responses | sed -E 's#\?.*##' | sort -u | head -200
+  - summary: Find storage URLs in the browser HAR (logged-in screens)
+    auto_run: true
+    evidence: [har-browse]
+    command: >-
+      grep -hoiE 'https?://([a-z0-9._-]+\.)?(s3[a-z0-9.-]*\.amazonaws\.com|blob\.core\.windows\.net|storage\.googleapis\.com|storage\.cloud\.google\.com|digitaloceanspaces\.com|r2\.cloudflarestorage\.com|r2\.dev|objectstorage\.[a-z0-9-]+\.oraclecloud\.com|oss-[a-z0-9-]+\.aliyuncs\.com)[A-Za-z0-9._~:/%-]*'
+      {ev:har-browse}/items/*.har | sort -u | head -200
+  - summary: Check each bucket or container for anonymous listing and reading
+    command: >-
+      while read -r u; do b=$(echo "$u" | sed -E 's#^(https?://[^/]+)(/[^/]+)?.*#\1#'); echo "===== $b";
+      curl -s -m 10 "$b/" | head -c 400; echo;
+      curl -s -m 10 "$b/?restype=container&comp=list" | head -c 400; echo; done < storage-urls.txt | tee storage-anon.txt
+    operation: >-
+      Put the storage URLs of steps 1 to 3 that the owner confirmed as theirs in
+      storage-urls.txt, one per line (for path-style URLs such as
+      https://s3.amazonaws.com/BUCKET/... keep the bucket in the host part:
+      https://BUCKET.s3.amazonaws.com/). Run the command and attach storage-anon.txt to the
+      finding. For signed URLs (X-Amz-Signature, sig=), also check how long they stay valid.
+    load_note: Requests go to the cloud provider, not the target; confirm the buckets are in scope.
+  - summary: Check anonymous writing (only with agreement)
+    operation: >-
+      With the owner's agreement, try to upload a harmless file
+      (`curl -s -X PUT --data-binary 'wstg write test' https://BUCKET.s3.amazonaws.com/wstg-write-test.txt`;
+      for Azure add `-H 'x-ms-blob-type: BlockBlob'`), read it back, and remove it
+      (`curl -s -X DELETE` on the same URL). Record the codes.
+  - summary: Judge the storage found
+    evidence: [http-root-https, site-assets, katana-crawl]
+    ai_task: >-
+      From steps 1 and 2 (and steps 4 and 5 when the tester attached their output), list
+      each bucket or container (provider, name, how it is used, whether anonymous listing,
+      reading, or writing works). Flag URLs that carry long-lived signatures or keys.
+      Verdict: fail when a bucket can be listed or written anonymously or serves private
+      files; pass when no storage is used or each refuses anonymous listing and writing;
+      "-" when steps 4 and 5 were not done.

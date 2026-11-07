@@ -1,0 +1,61 @@
+id: WSTG-CONF-04
+overview: >-
+  Find old, backup, and unreferenced files left in the web root: editor and backup copies,
+  archives, database dumps, repository metadata (.git, .svn), and pages nothing links to.
+pass: >-
+  No backup copy, archive, dump, or repository metadata is served, and the unlinked paths
+  found by the brute force are intended to be public.
+fail: >-
+  A backup copy, archive, dump, or repository metadata is downloadable, or an unlinked old
+  or test page is reachable.
+notes:
+  - A readable .git/HEAD or .git/config usually means the whole repository (source and its history, often with credentials) can be rebuilt. Rate it high; do not download the repository unless the owner agrees.
+  - Compare 200 answers with the default 404 response before treating them as found; ffuf's -ac already drops answers that look like the default response.
+  - "Archived URLs (Wayback Machine) show files that existed in the past; check whether they are still served."
+finding_kinds: [sensitive-file-exposed, hidden-function, directory-listing]
+steps:
+  - summary: Request common backup, archive, dump, and repository file names
+    auto_run: true
+    evidence: [backup-files, http-404]
+    command: >-
+      echo "default 404: $(head -1 {ev:http-404}/stdout.txt | tr -d '\r'), $(wc -c < {ev:http-404}/body.html) bytes";
+      grep -vE '^(404|000) ' {ev:backup-files}/stdout.txt || echo "every name answered 404"
+  - summary: Check for repository metadata (.git, .svn, .hg) and archives with real content
+    auto_run: true
+    evidence: [backup-files]
+    command: >-
+      cd {ev:backup-files}/files && grep -lE '^ref: refs/|\[core\]|repositoryformatversion|^SQLite format|svn:|\[paths\]' * ;
+      echo "-- zip archives:"; grep -l '^PK' backup.zip site.zip www.zip fqdn.zip 2>/dev/null || echo "none"
+  - summary: Brute force common file and folder names (unlinked pages, admin areas, old versions)
+    auto_run: true
+    evidence: [content-ffuf]
+    command: jq -r '.results[] | [.status, .length, .url] | @tsv' {ev:content-ffuf}/ffuf-content.json
+  - summary: Brute force backup copies of common names (.bak, .old, .orig, .zip, .tar.gz, ~)
+    auto_run: true
+    evidence: [backup-ffuf]
+    command: >-
+      jq -r '.results[] | [.status, .length, .url] | @tsv' {ev:backup-ffuf}/ffuf-backup.json
+      | grep -E '\.(bak|old|orig|zip|tar\.gz)$|~$' || echo "no backup copy found"
+  - summary: Find backup and old files the web archive knows for this host
+    auto_run: true
+    evidence: [wayback-urls]
+    command: >-
+      grep -iE '^https?://{fqdn}[:/]' {ev:wayback-urls}/wayback.txt
+      | grep -iE '\.(bak|old|orig|save|swp|tmp|zip|tar|gz|tgz|7z|rar|sql|db|sqlite|mdb|inc|log|conf|cfg|config|ini|env|yml|yaml|xml|json|txt)(\?|$)|~$'
+      | sed -E 's#\?.*##' | sort -u | head -200
+  - summary: Check whether the archived files are still served
+    evidence: [wayback-urls]
+    command: >-
+      grep -iE '^https?://{fqdn}[:/]' {ev:wayback-urls}/wayback.txt
+      | grep -iE '\.(bak|old|orig|save|swp|tmp|zip|tar|gz|tgz|7z|rar|sql|db|sqlite|mdb|inc|log|conf|cfg|config|ini|env)(\?|$)|~$'
+      | sed -E 's#\?.*##; s#^https?://[^/]+##' | sort -u | head -100
+      | while read -r p; do echo "$(curl -sk -m 10 -o /dev/null -w '%{http_code} %{size_download} %{content_type}' "{base_url}$p") $p"; done | tee archived-files.txt
+    load_note: Up to 100 requests.
+  - summary: Judge what was found
+    evidence: [backup-files, content-ffuf, backup-ffuf, http-404]
+    ai_task: >-
+      From steps 1 to 5, list each path that serves a backup copy, archive, dump,
+      repository metadata, or an old, test, or unlinked page that should not be public
+      (path, code, size, why it matters). Leave out normal public pages and paths that
+      need a login (401, or a redirect to the login page). Verdict: fail when such a file
+      or page is served; pass when none is; "-" when the evidence is missing.

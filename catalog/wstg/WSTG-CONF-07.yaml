@@ -1,0 +1,37 @@
+id: WSTG-CONF-07
+overview: >-
+  Check that the site sends HTTP Strict Transport Security on HTTPS, with a long enough
+  max-age, so browsers never fall back to plain HTTP.
+pass: >-
+  The HTTPS response has Strict-Transport-Security with max-age of at least 31536000
+  (one year), includeSubDomains where every subdomain supports HTTPS, and plain HTTP
+  redirects to HTTPS.
+fail: >-
+  The header is missing, max-age is short (under about six months) or 0, or the site still
+  serves content on plain HTTP without redirecting.
+notes:
+  - Browsers ignore HSTS sent over plain HTTP; only the HTTPS response counts.
+  - preload is optional; recommend it when the domain qualifies (https://hstspreload.org).
+  - The first visit over plain HTTP is not protected until the domain is preloaded.
+finding_kinds: [hsts-missing, no-https-redirect]
+steps:
+  - summary: Read Strict-Transport-Security in the HTTPS response
+    auto_run: true
+    evidence: [http-root-https]
+    command: grep -i '^strict-transport-security:' {ev:http-root-https}/stdout.txt || echo "no Strict-Transport-Security header"
+  - summary: Check max-age, includeSubDomains, and preload
+    auto_run: true
+    evidence: [http-root-https]
+    command: >-
+      grep -i '^strict-transport-security:' {ev:http-root-https}/stdout.txt | tr -d '\r'
+      | perl -ne 'my ($a) = /max-age\s*=\s*"?(\d+)/i; printf "max-age=%s (%s days)%s%s\n", $a // "none", defined $a ? int($a / 86400) : "-",
+      (/includesubdomains/i ? " includeSubDomains" : ""), (/preload/i ? " preload" : "")'
+  - summary: Check that plain HTTP redirects to HTTPS on the same host (top page and a deep path)
+    auto_run: true
+    evidence: [http-root-http, http-redirect-chain]
+    command: >-
+      grep -iE '^(HTTP/|location:)' {ev:http-root-http}/stdout.txt; tail -1 {ev:http-redirect-chain}/stdout.txt
+  - summary: Note an HSTS header sent over plain HTTP (it has no effect)
+    auto_run: true
+    evidence: [http-root-http]
+    command: grep -i '^strict-transport-security:' {ev:http-root-http}/stdout.txt || echo "none on plain HTTP"

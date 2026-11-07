@@ -1,0 +1,31 @@
+id: WSTG-CONF-08
+overview: >-
+  Check the cross-domain policy files of rich internet application clients (Flash
+  crossdomain.xml, Silverlight clientaccesspolicy.xml) for overly broad access.
+pass: >-
+  Neither file exists, or each one allows only the organization's own domains over HTTPS.
+fail: >-
+  A policy allows any domain (domain="*", uri="*"), allows HTTP origins to read HTTPS
+  content (secure="false"), or allows headers from any domain.
+notes:
+  - Flash and Silverlight are gone from browsers, but other clients (some PDF readers and older apps) still read these files; a permissive file is still a finding, usually low.
+  - A non-200 answer (stdout.txt of metafiles) means the file does not exist; the saved file then holds the error page.
+  - CORS headers are tested in WSTG-CLNT-07.
+finding_kinds: [cross-domain-policy-permissive]
+steps:
+  - summary: Check whether crossdomain.xml and clientaccesspolicy.xml exist
+    auto_run: true
+    evidence: [metafiles]
+    command: grep -E 'crossdomain\.xml|clientaccesspolicy\.xml' {ev:metafiles}/stdout.txt
+  - summary: Read the allowed domains, headers, and secure flags
+    auto_run: true
+    evidence: [metafiles]
+    command: >-
+      cd {ev:metafiles} && grep -HiE 'allow-access-from|allow-http-request-headers-from|site-control|domain uri|allow-from|grant-to|resource path' crossdomain.xml clientaccesspolicy.xml || echo "no policy entries"
+  - summary: Judge the policies
+    evidence: [metafiles]
+    ai_task: >-
+      From steps 1 and 2, say for each file whether it exists (200 with XML) and list its
+      rules. Verdict: fail when a rule allows any domain ("*"), a wildcard on a shared
+      parent domain, HTTP origins (secure="false"), or headers from any domain; pass when
+      neither file exists or every rule is limited to the organization's own HTTPS origins.

@@ -1,0 +1,54 @@
+id: WSTG-CONF-06
+overview: >-
+  Find which HTTP methods the server accepts, and check that risky methods (PUT, DELETE,
+  TRACE, CONNECT) are off and that method override headers cannot turn a request into a
+  method the server would otherwise refuse.
+pass: >-
+  Only the methods the application needs (GET, POST, HEAD, OPTIONS) are accepted, TRACE
+  and unknown methods are refused (405 or 501), PUT and DELETE do not create or remove
+  files, and method override headers are ignored.
+fail: >-
+  TRACE echoes the request, PUT stores a file, DELETE removes one, an unknown method is
+  handled like GET, or a method override header is honored where it bypasses a method
+  restriction.
+notes:
+  - The Allow header of OPTIONS is what the server says, not what it does. Judge from the codes of the methods actually sent.
+  - An unknown method that answers like GET usually means the server ignores the method; access rules written per method (for example "deny POST") can then be bypassed.
+  - REST APIs legitimately accept PUT, DELETE, and PATCH on their own paths; judge those under WSTG-APIT and WSTG-ATHZ. Here the question is the web root.
+  - The PUT and DELETE check (http-methods-write) changes data when the server allows it; collect it only with the owner's agreement.
+finding_kinds: [http-method-enabled]
+steps:
+  - summary: Send OPTIONS, TRACE, HEAD, and an unknown method, and read the Allow header
+    auto_run: true
+    evidence: [http-methods]
+    command: >-
+      cat {ev:http-methods}/stdout.txt;
+      echo "-- Allow headers:"; grep -hiE '^(allow|public|access-control-allow-methods):' {ev:http-methods}/options.txt {ev:http-methods}/options-star.txt || echo "none"
+  - summary: Check whether TRACE echoes the request (cross-site tracing)
+    auto_run: true
+    evidence: [http-methods]
+    command: >-
+      head -1 {ev:http-methods}/trace.txt;
+      grep -q 'wstg-xst-marker' {ev:http-methods}/trace-body.txt && echo "TRACE echoed the marker header: TRACE is on" || echo "marker not echoed"
+  - summary: Check whether method override headers are honored
+    auto_run: true
+    evidence: [http-methods]
+    command: >-
+      grep -E '^(WSTGX|POST) ' {ev:http-methods}/stdout.txt;
+      echo "(an override is honored when its code differs from the plain POST and matches the WSTGX line)"
+  - summary: Check whether PUT stores a file and DELETE removes it
+    auto_run: true
+    evidence: [http-methods-write]
+    command: >-
+      cat {ev:http-methods-write}/stdout.txt;
+      echo "-- served after PUT:"; head -c 200 {ev:http-methods-write}/get-after-put.txt
+  - summary: Judge the methods
+    evidence: [http-methods, http-methods-write]
+    ai_task: >-
+      From steps 1 to 4, list each method and override header with its code and what it
+      means (refused, accepted, ignored and handled like GET, file stored or removed). PUT
+      stored a file when the GET after the PUT returned "wstg put test". Say whether
+      /wstg-put-test.txt may still be on the server (PUT worked and the last GET did not
+      return 404). Verdict: fail when TRACE is on, PUT stores or DELETE removes a file, an
+      unknown method is handled like GET, or an override header changes the result; pass
+      when none of these happens; "-" when the evidence is missing.

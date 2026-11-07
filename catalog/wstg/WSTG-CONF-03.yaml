@@ -1,0 +1,54 @@
+id: WSTG-CONF-03
+overview: >-
+  Check that files whose extension the server does not execute (backups, includes,
+  configuration, source) are not served as plain text, and that the server handles
+  unusual extensions (other case, double extensions) safely.
+pass: >-
+  Configuration, include, and source file names answer 404 or 403, and changing the case
+  or adding an extension to a script name neither reveals its source nor runs it as
+  another type.
+fail: >-
+  A configuration, include, or source file (web.config, .env, .inc, .bak copy of a script,
+  WEB-INF/web.xml) is served with its content, or an extension variant returns the
+  source of a script.
+notes:
+  - Compare 200 answers with the default 404 response (size, content) before treating them as found.
+  - Quote only what a finding needs from a file that holds secrets; the file itself stays in the evidence.
+  - Upload of files with dangerous extensions is tested in WSTG-BUSL-08 and WSTG-BUSL-09.
+finding_kinds: [sensitive-file-exposed, secret-in-client-code]
+steps:
+  - summary: List the extensions the site uses (from the crawl)
+    auto_run: true
+    evidence: [katana-crawl]
+    command: sed -E 's#[?#].*##' {ev:katana-crawl}/katana.txt | grep -oE '\.[A-Za-z0-9]{1,6}$' | sort | uniq -c | sort -rn
+  - summary: Request configuration, include, and source file names
+    auto_run: true
+    evidence: [backup-files, http-404]
+    command: >-
+      echo "default 404: $(head -1 {ev:http-404}/stdout.txt | tr -d '\r'), $(wc -c < {ev:http-404}/body.html) bytes";
+      grep -vE '^(404|000) ' {ev:backup-files}/stdout.txt || echo "every name answered 404"
+  - summary: Find answers that hold source code or configuration (file names only, not their content)
+    auto_run: true
+    evidence: [backup-files]
+    command: >-
+      cd {ev:backup-files}/files && grep -lE '<\?php|<%@|<%=|<configuration|<connectionStrings|<web-app|DB_(PASSWORD|HOST)|APP_KEY=|SECRET|^ref: refs/|\[core\]|repositoryformatversion|"require"|"dependencies"|INSERT INTO|CREATE TABLE' * || echo "no source or configuration content"
+  - summary: Request extension variants of the site's own scripts
+    evidence: [katana-crawl]
+    command: >-
+      sed -E 's#[?#].*##' {ev:katana-crawl}/katana.txt | grep -iE '\.(php|asp|aspx|jsp|do|action|cgi|pl|py|cfm)$' | sed -E 's#^https?://[^/]+##' | sort -u | head -20
+      | while read -r p; do b=$(echo "$p" | sed -E 's/\.[^.]+$//'); x=$(echo "$p" | sed -E 's/.*\.//');
+      for v in "$p.bak" "$p.old" "$p~" "$p.txt" "$p.inc" "$b.inc" "$b.$(echo "$x" | tr 'a-z' 'A-Z')" "$p.jpg" "$p%00.jpg"; do
+      echo "$(curl -sk -m 10 -o /dev/null -w '%{http_code} %{size_download} %{content_type}' "{base_url}$v") $v"; done; done | tee ext-variants.txt
+    operation: >-
+      Run the command and save ext-variants.txt as a text item of the page source review
+      evidence (or attach it to the finding). For each variant that answers 200 with a
+      size different from the normal page, open it and check whether it shows source code.
+    load_note: Up to 180 requests (20 scripts, 9 variants each).
+  - summary: Judge what was served
+    evidence: [backup-files, http-404]
+    ai_task: >-
+      From steps 2 to 4, list each name that is served with real content (code, size, type,
+      and what the content is: source, configuration, dump, repository metadata). Treat a
+      200 that matches the default 404 response or the site's own not-found page as not
+      found. Verdict: fail when source or configuration is served; pass when nothing is;
+      "-" when the evidence is missing.

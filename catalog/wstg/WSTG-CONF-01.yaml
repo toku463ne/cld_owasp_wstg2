@@ -1,0 +1,57 @@
+id: WSTG-CONF-01
+overview: >-
+  Check that the network around the web server exposes only the services the site needs:
+  no remote administration, database, or management ports open to the Internet, no
+  unsupported server products, and firewall rules that match what is actually reachable.
+pass: >-
+  Every port open from the Internet serves a public purpose (usually 80 and 443 only),
+  administrative and database ports are closed or limited to known source addresses, and
+  no product shown in banners or by Nikto is out of support.
+fail: >-
+  SSH, RDP, a database, a cache, a container or cloud management API, or an administrative
+  console is reachable from the Internet without a source restriction, or a banner shows an
+  unsupported product version.
+notes:
+  - "Reuse the port scans of WSTG-INFO-04 (ports-web-common, nmap-external-allports); do not scan twice."
+  - The tester's own scan (ports-web-common) may run from an allowed network. Only the external all-port scan shows what the Internet sees.
+  - If every port is filtered or there is no answer, the scan did not reach the target; do not judge from it.
+  - Nikto findings are leads, not results; confirm each one before writing a finding.
+finding_kinds: [non-public-service-exposed, internal-component-exposed, vulnerable-component, default-content]
+steps:
+  - summary: List open ports and services from the tester's scan of web and administrative ports
+    auto_run: true
+    evidence: [ports-web-common]
+    command: grep -E '^[0-9]+/(tcp|udp) +open' {ev:ports-web-common}/nmap-web.txt || echo "no open port in the scan"
+  - summary: List open ports from the all-port scan run outside the target's network, and pick out remote administration, database, and management ports
+    auto_run: true
+    evidence: [nmap-external-allports]
+    command: >-
+      grep -hE '^[0-9]+/(tcp|udp) +open' {ev:nmap-external-allports}/items/* | tee open.txt;
+      echo "-- administration, database, and management ports:";
+      grep -E '^(21|22|23|25|135|139|445|1433|1521|2049|2375|2376|3306|3389|5432|5601|5900|5985|5986|6379|8080|8161|8443|9000|9090|9200|9300|9990|10000|11211|15672|27017)/' open.txt || echo "none"
+  - summary: Read the Nikto findings (server software, risky configuration, default files)
+    auto_run: true
+    evidence: [nikto]
+    command: >-
+      jq -r '.. | objects | select(has("msg")) | [(.id // ""), (.method // ""), (.url // ""), .msg] | @tsv'
+      {ev:nikto}/nikto.json | sort -u
+  - summary: Judge every open port and server product
+    evidence: [ports-web-common, nmap-external-allports, nikto, whatweb]
+    ai_task: >-
+      From steps 1 to 3, list every open port (port, service and product from the banner,
+      seen from outside or only from the tester's network) and say whether it should be
+      reachable from the Internet. Flag remote administration (SSH, RDP, WinRM, VNC,
+      Telnet), databases and caches (MySQL, PostgreSQL, MSSQL, Oracle, Redis, MongoDB,
+      Elasticsearch, Memcached), container and cloud management APIs (Docker 2375/2376,
+      Kubernetes), message queues, and administrative consoles. Name any product version
+      that is out of support. Sort the Nikto lines into confirmed-looking issues and noise.
+      Verdict: fail when such a port is open from the Internet or an unsupported product
+      runs; pass when only public web ports are open; "-" when the external scan is missing.
+  - summary: Compare the reachable ports with the firewall or security group rules
+    evidence: [firewall-rules, nmap-external-allports]
+    operation: >-
+      Ask the system owner for the inbound rules of the server (cloud security group,
+      firewall, load balancer listeners) and save them as firewall-rules. Every port open in
+      the external scan must have a rule with a business reason; report open ports without a
+      rule, rules wider than needed (0.0.0.0/0 for administration), and rules for services
+      that no longer exist.

@@ -1,0 +1,42 @@
+id: WSTG-CONF-09
+overview: >-
+  Check that files and folders on the server have the least permissions needed:
+  configuration, keys, and logs readable only by the users that need them, the web server
+  unable to change its own code and configuration, and upload folders unable to run
+  scripts.
+pass: >-
+  Configuration files, private keys, and logs are not readable by other users, the web
+  server's user cannot write to the code or configuration, and upload folders do not run
+  scripts.
+fail: >-
+  A configuration file, private key, or log is readable by every user, the web server's
+  user owns or can write the code or configuration, or an upload folder runs scripts.
+notes:
+  - This test needs information from the server itself. From outside it cannot be judged; without the owner's output, leave the verdict "-" and say so in the report.
+  - "Linux: others-readable is the last r in the mode (-rw-r--r--); world-writable is the last w. Windows: look for Everyone, Users, or Authenticated Users with read or write in icacls."
+finding_kinds: [file-permission]
+steps:
+  - summary: Get the permissions of the web root, configuration, keys, logs, and upload folders from the owner
+    evidence: [file-permissions]
+    operation: >-
+      Ask the system owner to run, as an administrator on the server, `ls -la` (recursive
+      for the web root: `find /var/www -printf '%M %u %g %p\n'`) or `icacls <folder> /T`
+      for the web root, the application's configuration files, key and certificate files,
+      log folders, and upload folders, and `ps -o user= -C nginx,apache2,httpd,java,php-fpm`
+      for the users the services run as. Save the output as file-permissions.
+  - summary: Judge the permissions
+    evidence: [file-permissions]
+    ai_task: >-
+      From the output in file-permissions, list each file or folder whose permissions are
+      too wide (path, mode or ACL, owner, why it matters): configuration, .env, private
+      keys, and logs readable by others; code or configuration owned by or writable by the
+      web server's user; world-writable folders; upload folders where scripts can run.
+      Verdict: fail when any is found; pass when none is; "-" when the output was not
+      provided.
+  - summary: Check that an uploaded file is not run as a script
+    operation: >-
+      If the application accepts uploads and the owner agrees, upload a harmless text file
+      named wstg-test.php (or .jsp, .aspx, matching the platform) containing only the text
+      "wstg upload test", open its URL, and check that it is served as text or download, not
+      run (a run script would show an empty page or an error). Remove the file afterwards.
+      Upload validation itself is tested in WSTG-BUSL-08 and WSTG-BUSL-09.

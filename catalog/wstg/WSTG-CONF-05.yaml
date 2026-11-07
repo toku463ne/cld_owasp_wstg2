@@ -1,0 +1,55 @@
+id: WSTG-CONF-05
+overview: >-
+  Find administrative interfaces of the infrastructure (server, database, CI, monitoring
+  consoles) and of the application (back office, CMS admin), and check that they are not
+  reachable from the Internet or are protected by a source restriction and strong
+  authentication.
+pass: >-
+  No administrative interface is reachable from the Internet, or each one that is limits
+  the source addresses and needs strong authentication (MFA), with no default credentials.
+fail: >-
+  An administrative interface is reachable from the Internet without a source restriction,
+  accepts default or weak credentials, or relies only on an unlinked path.
+notes:
+  - A hidden path is not protection; if the brute force finds it, it is reachable.
+  - Login attempts can lock accounts and raise alerts. Try default credentials only with the owner's agreement, a few attempts per interface.
+  - Ports of administrative consoles (8080, 8443, 9990, 10000, 7001, 8161, 15672, 5601) come from WSTG-INFO-04 and WSTG-CONF-01.
+finding_kinds: [admin-interface-exposed, unprotected-path, non-public-service-exposed]
+steps:
+  - summary: Request common administrative paths
+    auto_run: true
+    evidence: [admin-paths, http-404]
+    command: >-
+      echo "default 404: $(head -1 {ev:http-404}/stdout.txt | tr -d '\r'), $(wc -c < {ev:http-404}/body.html) bytes";
+      cat {ev:admin-paths}/stdout.txt
+  - summary: Read the titles and login forms of the answers
+    auto_run: true
+    evidence: [admin-paths]
+    command: >-
+      cd {ev:admin-paths}/paths && grep -HoiE '<title>[^<]{0,80}' * | sort;
+      echo "-- pages with a password field:"; grep -liE 'type=["'"'"']?password' * || echo "none"
+  - summary: Pick administrative names from the brute force and administrative ports from the port scan
+    auto_run: true
+    evidence: [content-ffuf, ports-web-common]
+    command: >-
+      jq -r '.results[] | [.status, .length, .url] | @tsv' {ev:content-ffuf}/ffuf-content.json
+      | grep -iE 'admin|manag|console|dashboard|panel|cpanel|phpmyadmin|adminer|backend|control|setup|install|config|jenkins|grafana|kibana|actuator|swagger|graphql' || echo "no administrative name";
+      grep -E '^(2375|5601|7001|8080|8161|8443|9000|9090|9200|9990|10000|15672)/tcp +open' {ev:ports-web-common}/nmap-web.txt || echo "no administrative port open"
+  - summary: Judge the administrative interfaces found
+    evidence: [admin-paths, content-ffuf, ports-web-common, http-404]
+    ai_task: >-
+      From steps 1 to 3, list each administrative interface that is reachable (URL or
+      host:port, product, code, whether it shows a login form, needs HTTP authentication,
+      or opens without login). Treat a 200 that matches the default 404 response or the
+      site's own not-found page as not found. Verdict: fail when an interface opens without
+      login, or a login page of an infrastructure or platform console is reachable from the
+      Internet; pass when none is reachable; "-" when the evidence is missing or the
+      protection must be checked by hand (step 5).
+  - summary: Check the protection of each interface found
+    operation: >-
+      For each interface: ask the owner whether its source addresses are restricted (and
+      check from the tester's network that the restriction applies), whether MFA is on, and,
+      with the owner's agreement, try the product's default credentials once (for example
+      admin/admin, tomcat/tomcat, the vendor's documented defaults). Record the result as a
+      text item of the finding, without the passwords that worked.
+    load_note: Login attempts can lock accounts and raise alerts.

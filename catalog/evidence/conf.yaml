@@ -1,0 +1,272 @@
+# Evidence used by the Configuration and Deployment Management (CONF) scenarios.
+# Schema: see the comments at the top of core.yaml.
+evidence:
+
+  # ---- FQDN targets: light ---------------------------------------------------
+
+  - id: default-content
+    title: Default pages, sample applications, and listable folders
+    target_type: fqdn
+    kind: auto
+    level: light
+    description: >-
+      One GET per well-known default path of web and application servers (status and
+      info pages, manuals, sample applications, Tomcat/JBoss consoles, IIS start page)
+      and per common asset folder (to spot directory listings). stdout.txt has
+      "code size content-type URL" per path; bodies are under paths/.
+    argv: [curl, -sS, -k, --max-time, "10", --create-dirs,
+           -w, "%{http_code} %{size_download} %{content_type} %{url_effective}\n",
+           -o, "{out}/paths/server-status.html", "{base_url}/server-status",
+           -o, "{out}/paths/server-info.html", "{base_url}/server-info",
+           -o, "{out}/paths/phpinfo.php.html", "{base_url}/phpinfo.php",
+           -o, "{out}/paths/info.php.html", "{base_url}/info.php",
+           -o, "{out}/paths/test.php.html", "{base_url}/test.php",
+           -o, "{out}/paths/examples.html", "{base_url}/examples/",
+           -o, "{out}/paths/manual.html", "{base_url}/manual/",
+           -o, "{out}/paths/docs.html", "{base_url}/docs/",
+           -o, "{out}/paths/test.html", "{base_url}/test/",
+           -o, "{out}/paths/manager-html.html", "{base_url}/manager/html",
+           -o, "{out}/paths/host-manager-html.html", "{base_url}/host-manager/html",
+           -o, "{out}/paths/jmx-console.html", "{base_url}/jmx-console/",
+           -o, "{out}/paths/web-console.html", "{base_url}/web-console/",
+           -o, "{out}/paths/iisstart.htm.html", "{base_url}/iisstart.htm",
+           -o, "{out}/paths/aspnet_client.html", "{base_url}/aspnet_client/",
+           -o, "{out}/paths/cgi-bin.html", "{base_url}/cgi-bin/",
+           -o, "{out}/paths/icons.html", "{base_url}/icons/",
+           -o, "{out}/paths/images.html", "{base_url}/images/",
+           -o, "{out}/paths/img.html", "{base_url}/img/",
+           -o, "{out}/paths/css.html", "{base_url}/css/",
+           -o, "{out}/paths/js.html", "{base_url}/js/",
+           -o, "{out}/paths/static.html", "{base_url}/static/",
+           -o, "{out}/paths/assets.html", "{base_url}/assets/",
+           -o, "{out}/paths/uploads.html", "{base_url}/uploads/",
+           -o, "{out}/paths/files.html", "{base_url}/files/",
+           -o, "{out}/paths/include.html", "{base_url}/include/",
+           -o, "{out}/paths/backup.html", "{base_url}/backup/",
+           -o, "{out}/paths/tmp.html", "{base_url}/tmp/"]
+    files: [paths]
+    timeout: 360
+
+  - id: admin-paths
+    title: Administrative interface paths
+    target_type: fqdn
+    kind: auto
+    level: light
+    description: >-
+      One GET per common administrative path (CMS back ends, database tools, CI and
+      monitoring consoles, mail and portal logins, Spring actuator). stdout.txt has
+      "code size content-type URL" per path; bodies are under paths/. No login is tried.
+    argv: [curl, -sS, -k, --max-time, "10", --create-dirs,
+           -w, "%{http_code} %{size_download} %{content_type} %{url_effective}\n",
+           -o, "{out}/paths/admin.html", "{base_url}/admin/",
+           -o, "{out}/paths/administrator.html", "{base_url}/administrator/",
+           -o, "{out}/paths/admin.php.html", "{base_url}/admin.php",
+           -o, "{out}/paths/login.html", "{base_url}/login",
+           -o, "{out}/paths/wp-admin.html", "{base_url}/wp-admin/",
+           -o, "{out}/paths/phpmyadmin.html", "{base_url}/phpmyadmin/",
+           -o, "{out}/paths/pma.html", "{base_url}/pma/",
+           -o, "{out}/paths/adminer.php.html", "{base_url}/adminer.php",
+           -o, "{out}/paths/manager.html", "{base_url}/manager/",
+           -o, "{out}/paths/console.html", "{base_url}/console/",
+           -o, "{out}/paths/admin-console.html", "{base_url}/admin-console/",
+           -o, "{out}/paths/jenkins.html", "{base_url}/jenkins/",
+           -o, "{out}/paths/grafana.html", "{base_url}/grafana/",
+           -o, "{out}/paths/kibana.html", "{base_url}/kibana/",
+           -o, "{out}/paths/solr.html", "{base_url}/solr/",
+           -o, "{out}/paths/actuator.html", "{base_url}/actuator/",
+           -o, "{out}/paths/cpanel.html", "{base_url}/cpanel",
+           -o, "{out}/paths/webmail.html", "{base_url}/webmail/",
+           -o, "{out}/paths/owa.html", "{base_url}/owa/",
+           -o, "{out}/paths/ecp.html", "{base_url}/ecp/",
+           -o, "{out}/paths/portal.html", "{base_url}/portal/",
+           -o, "{out}/paths/dashboard.html", "{base_url}/dashboard/",
+           -o, "{out}/paths/backend.html", "{base_url}/backend/",
+           -o, "{out}/paths/cms.html", "{base_url}/cms/",
+           -o, "{out}/paths/system.html", "{base_url}/system/"]
+    files: [paths]
+    timeout: 300
+
+  - id: backup-files
+    title: Backup, source, and repository files
+    target_type: fqdn
+    kind: auto
+    level: light
+    description: >-
+      One GET per common backup, editor, configuration, dump, and repository metadata
+      file name (.git/, .svn/, .env, web.config, *.bak, *.sql, *.zip...). stdout.txt has
+      "code size content-type URL" per name; bodies are under files/ (they can hold
+      secrets: keep them here, quote only what a finding needs).
+    argv: [curl, -sS, -k, --max-time, "10", --create-dirs,
+           -w, "%{http_code} %{size_download} %{content_type} %{url_effective}\n",
+           -o, "{out}/files/git-HEAD", "{base_url}/.git/HEAD",
+           -o, "{out}/files/git-config", "{base_url}/.git/config",
+           -o, "{out}/files/svn-entries", "{base_url}/.svn/entries",
+           -o, "{out}/files/svn-wc.db", "{base_url}/.svn/wc.db",
+           -o, "{out}/files/hg-hgrc", "{base_url}/.hg/hgrc",
+           -o, "{out}/files/DS_Store", "{base_url}/.DS_Store",
+           -o, "{out}/files/env", "{base_url}/.env",
+           -o, "{out}/files/env.bak", "{base_url}/.env.bak",
+           -o, "{out}/files/htaccess", "{base_url}/.htaccess",
+           -o, "{out}/files/htpasswd", "{base_url}/.htpasswd",
+           -o, "{out}/files/web.config", "{base_url}/web.config",
+           -o, "{out}/files/web.config.bak", "{base_url}/web.config.bak",
+           -o, "{out}/files/WEB-INF-web.xml", "{base_url}/WEB-INF/web.xml",
+           -o, "{out}/files/config.php.bak", "{base_url}/config.php.bak",
+           -o, "{out}/files/config.inc", "{base_url}/config.inc",
+           -o, "{out}/files/wp-config.php.bak", "{base_url}/wp-config.php.bak",
+           -o, "{out}/files/index.php.bak", "{base_url}/index.php.bak",
+           -o, "{out}/files/index.php~", "{base_url}/index.php~",
+           -o, "{out}/files/index.php.old", "{base_url}/index.php.old",
+           -o, "{out}/files/index.php.swp", "{base_url}/.index.php.swp",
+           -o, "{out}/files/index.html.bak", "{base_url}/index.html.bak",
+           -o, "{out}/files/composer.json", "{base_url}/composer.json",
+           -o, "{out}/files/package.json", "{base_url}/package.json",
+           -o, "{out}/files/database.sql", "{base_url}/database.sql",
+           -o, "{out}/files/dump.sql", "{base_url}/dump.sql",
+           -o, "{out}/files/backup.zip", "{base_url}/backup.zip",
+           -o, "{out}/files/backup.tar.gz", "{base_url}/backup.tar.gz",
+           -o, "{out}/files/site.zip", "{base_url}/site.zip",
+           -o, "{out}/files/www.zip", "{base_url}/www.zip",
+           -o, "{out}/files/fqdn.zip", "{base_url}/{fqdn}.zip"]
+    files: [files]
+    timeout: 360
+
+  - id: http-methods
+    title: HTTP methods (OPTIONS, TRACE, HEAD, unknown method)
+    target_type: fqdn
+    kind: auto
+    level: light
+    description: >-
+      Read-only method checks on {base_url}/: OPTIONS / and OPTIONS * (headers in
+      options.txt, options-star.txt), TRACE with a marker header (trace.txt, trace-body.txt:
+      an echoed marker means TRACE is on), HEAD, an invented method WSTGX (a 2xx means
+      the server ignores the method), and an empty POST without and with the method
+      override headers X-HTTP-Method-Override, X-HTTP-Method, and X-Method-Override set to
+      WSTGX (a code that changes to the WSTGX code means the override is honored).
+      stdout.txt has "method code URL" per request. No PUT, DELETE, or PATCH is sent.
+    argv: [curl, -sS, -k, --max-time, "15", -w, "%{method} %{http_code} %{url_effective}\n",
+           -X, OPTIONS, -D, "{out}/options.txt", -o, /dev/null, "{base_url}/",
+           --next, -sS, -k, --max-time, "15", -w, "%{method} * %{http_code} %{url_effective}\n",
+           -X, OPTIONS, --request-target, "*", -D, "{out}/options-star.txt", -o, /dev/null, "{base_url}/",
+           --next, -sS, -k, --max-time, "15", -w, "%{method} %{http_code} %{url_effective}\n",
+           -X, TRACE, -H, "X-WSTG-Trace: wstg-xst-marker", -D, "{out}/trace.txt", -o, "{out}/trace-body.txt", "{base_url}/",
+           --next, -sS, -k, --max-time, "15", -w, "%{method} %{http_code} %{url_effective}\n",
+           -I, -o, /dev/null, "{base_url}/",
+           --next, -sS, -k, --max-time, "15", -w, "%{method} %{http_code} %{url_effective}\n",
+           -X, WSTGX, -D, "{out}/unknown-method.txt", -o, /dev/null, "{base_url}/",
+           --next, -sS, -k, --max-time, "15", -w, "%{method} (no override) %{http_code} %{url_effective}\n",
+           -X, POST, --data, "", -o, /dev/null, "{base_url}/",
+           --next, -sS, -k, --max-time, "15", -w, "%{method} X-HTTP-Method-Override=WSTGX %{http_code} %{url_effective}\n",
+           -X, POST, --data, "", -H, "X-HTTP-Method-Override: WSTGX", -o, /dev/null, "{base_url}/",
+           --next, -sS, -k, --max-time, "15", -w, "%{method} X-HTTP-Method=WSTGX %{http_code} %{url_effective}\n",
+           -X, POST, --data, "", -H, "X-HTTP-Method: WSTGX", -o, /dev/null, "{base_url}/",
+           --next, -sS, -k, --max-time, "15", -w, "%{method} X-Method-Override=WSTGX %{http_code} %{url_effective}\n",
+           -X, POST, --data, "", -H, "X-Method-Override: WSTGX", -o, /dev/null, "{base_url}/"]
+    files: [options.txt, options-star.txt, trace.txt, trace-body.txt, unknown-method.txt]
+    timeout: 120
+
+  # ---- FQDN targets: full ----------------------------------------------------
+
+  - id: http-methods-write
+    title: PUT and DELETE of a test file
+    target_type: fqdn
+    kind: auto
+    level: full
+    heavy: true
+    description: >-
+      PUT {base_url}/wstg-put-test.txt with the body "wstg put test", GET it, DELETE it,
+      and GET it again. stdout.txt has "method code URL" per request; get-after-put.txt
+      holds the body served after the PUT.
+    argv: [curl, -sS, -k, --max-time, "15", -w, "%{method} %{http_code} %{url_effective}\n",
+           -X, PUT, -H, "Content-Type: text/plain", --data-binary, "wstg put test", -o, /dev/null,
+           "{base_url}/wstg-put-test.txt",
+           --next, -sS, -k, --max-time, "15", -w, "%{method} %{http_code} %{url_effective}\n",
+           -o, "{out}/get-after-put.txt", "{base_url}/wstg-put-test.txt",
+           --next, -sS, -k, --max-time, "15", -w, "%{method} %{http_code} %{url_effective}\n",
+           -X, DELETE, -o, /dev/null, "{base_url}/wstg-put-test.txt",
+           --next, -sS, -k, --max-time, "15", -w, "%{method} %{http_code} %{url_effective}\n",
+           -o, /dev/null, "{base_url}/wstg-put-test.txt"]
+    files: [get-after-put.txt]
+    timeout: 120
+    load_note: >-
+      Changes data when the server allows it: PUT creates /wstg-put-test.txt and DELETE
+      removes it again. If PUT works but DELETE does not, the file stays; ask the owner
+      to remove it. Agree on this with the owner first.
+
+  - id: content-ffuf
+    title: Unlinked files and folders (ffuf, common names)
+    target_type: fqdn
+    kind: auto
+    level: full
+    heavy: true
+    description: >-
+      Paths under {base_url}/ that answer differently from the default response, from
+      SecLists Web-Content/common.txt (about 4,700 names): admin areas, old pages,
+      configuration and backup files that nothing links to.
+    argv: [ffuf, -s, -noninteractive, -ac, -rate, "50",
+           -w, "/usr/share/seclists/Discovery/Web-Content/common.txt:FUZZ",
+           -u, "{base_url}/FUZZ", -o, "{out}/ffuf-content.json", -of, json,
+           "{proxy_args}", "{pause_args}"]
+    proxy_args: [-x, "{proxy_url}"]
+    pause_args: [-p, "{pause}", -t, "1"]
+    files: [ffuf-content.json]
+    timeout: 14400
+    load_note: >-
+      About 4,700 requests at up to 50 per second (about 2 minutes; with WSTG_PAUSE, one
+      request at a time with that many seconds between them, about 80 minutes at 1
+      second). Login paths in the list can trigger alerts. Needs the seclists package.
+
+  - id: backup-ffuf
+    title: Backup copies of common names (ffuf, with extensions)
+    target_type: fqdn
+    kind: auto
+    level: full
+    heavy: true
+    description: >-
+      Like content-ffuf, with each name also tried with .bak, .old, .orig, .zip, .tar.gz,
+      and ~ (about 33,000 requests): old versions and backups left in the web root.
+    argv: [ffuf, -s, -noninteractive, -ac, -rate, "50",
+           -w, "/usr/share/seclists/Discovery/Web-Content/common.txt:FUZZ",
+           -e, ".bak,.old,.orig,.zip,.tar.gz,~",
+           -u, "{base_url}/FUZZ", -o, "{out}/ffuf-backup.json", -of, json,
+           "{proxy_args}", "{pause_args}"]
+    proxy_args: [-x, "{proxy_url}"]
+    pause_args: [-p, "{pause}", -t, "1"]
+    files: [ffuf-backup.json]
+    timeout: 14400
+    load_note: >-
+      About 33,000 requests at up to 50 per second (about 11 minutes). With WSTG_PAUSE the
+      run takes many hours and stops at the 4-hour timeout, which is recorded as a failed
+      collection; collect it without WSTG_PAUSE on targets that can take the load, or skip
+      it. Needs the seclists package.
+
+  # ---- FQDN targets: manual --------------------------------------------------
+
+  - id: firewall-rules
+    title: Firewall and security group rules
+    target_type: fqdn
+    kind: manual
+    description: >-
+      The inbound rules for {fqdn} from the system owner (cloud security group, firewall,
+      or load balancer listener export, or a screenshot): port, protocol, allowed source,
+      and purpose, with the date they were taken.
+
+  - id: file-permissions
+    title: File permissions on the server
+    target_type: fqdn
+    kind: manual
+    description: >-
+      Output provided by the system owner, run on the server as an administrator:
+      `ls -la` (Linux) or `icacls` (Windows) of the web root, the configuration files,
+      key and certificate files, log folders, and upload folders, plus the user the web
+      server and the application run as (`ps -o user= -C nginx,apache2,httpd,java,php-fpm`).
+      Write "not provided" as text when the owner cannot give it.
+
+  - id: subdomain-cnames
+    title: CNAME of every known subdomain
+    target_type: domain
+    kind: manual
+    description: >-
+      cname-check.txt from the command in WSTG-CONF-10 step 1 (one line per subdomain:
+      "name -> CNAME target", empty when the name has no CNAME), run on the tester's
+      host; DNS lookups only.

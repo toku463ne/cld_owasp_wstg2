@@ -9,7 +9,7 @@ Last updated: 2026-11-07
 | # | Milestone | Status | Notes |
 |---|---|---|---|
 | M0 | Skeleton | **Done** (`5d9c082`) | 23 tests pass; CLI and waitress server checked by hand |
-| M1 | Catalog | **In progress** | Index (97), schema and validator, INFO + CRYP scenarios; CONF pending |
+| M1 | Catalog | **In progress** | Index (97), schema and validator, INFO + CONF + CRYP scenarios (24); IDNT onwards pending |
 | M2 | Targets and main page | **Done** | Targets, scope records and check, selector, tabs, WSTG index |
 | M3 | WSTG page | **Done** | Overview, criteria, steps, verdict/reset, commands, evidence (view, edit, collected date), findings, AI prompt |
 | M4 | Manual evidence | **Done** (browser paste to be checked on Kali) | Versioned store, capture box, upload, text, edit/remove as new versions |
@@ -68,8 +68,15 @@ Last updated: 2026-11-07
 - `catalog/wstg_index.yaml`: 97 WSTG v4.2 tests with one-line summary, target types (domain: INFO-01; both: INFO-04, CONF-10), OWASP page path checked against the OWASP/wstg v4.2 file list, merged tests (INFO-09, INPV-03, ERRH-02).
 - `src/wstg/catalog.py` + `uv run wstg catalog-check [-v]`: loader and validator (unknown keys, duplicates, references, placeholders, domain = passive only, heavy = full + load_note, manual evidence has no command). Placeholders are replaced by name only, so curl globs and `%{http_code}` pass through.
 - Evidence: 34 definitions (23 auto, 11 manual) in `catalog/evidence/{core,info,cryp}.yaml`; `ok_exit_codes` for tools that exit non-zero with usable output (wget 8).
-- Scenarios: INFO-01 to 08 and 10, CRYP-01 to 04 (13).
-- Open: CONF-01 to 11 (writing was interrupted; resume later, possibly alongside M3), the remaining categories, and checking tool options on Kali (e.g. katana `-ct`). Commands were not run against any host.
+- Scenarios: INFO-01 to 08 and 10, CONF-01 to 11, CRYP-01 to 04 (24).
+- CONF (from cld_owasp_wstg criteria, reworked for automatic evidence): new evidence in `catalog/evidence/conf.yaml`:
+  - light: `default-content` (28 default, status, sample, console paths and asset folders, bodies kept), `admin-paths` (25 administrative paths), `backup-files` (30 backup, config, dump, repository names; bodies kept, prompts show file names only), `http-methods` (OPTIONS / and *, TRACE with a marker header, HEAD, unknown method WSTGX, empty POST with and without three method override headers; nothing that changes data).
+  - full/heavy: `http-methods-write` (PUT, GET, DELETE, GET of /wstg-put-test.txt), `content-ffuf` and `backup-ffuf` (SecLists common.txt, the latter with 6 backup extensions; WSTG_PAUSE aware).
+  - manual: `firewall-rules`, `file-permissions` (from the owner), `subdomain-cnames` (domain; tester's DNS loop).
+  - 8 finding kinds (default-content, admin-interface-exposed, http-method-enabled, hsts-missing, cross-domain-policy-permissive, file-permission, subdomain-takeover, cloud-storage-public); `seclists-web-content` in tools.yaml.
+  - Auto-run steps read every collected output (port lists, Nikto JSON, page markers, directory listings, repository markers, ffuf results, archived backup names, Allow headers, TRACE echo, HSTS max-age, CNAME chain, unclaimed-resource messages, storage URLs); AI tasks judge each test. Still manual: firewall rules and file permissions from the owner, extension variants and archived files (requests built from earlier results), default credentials, subdomain responses and cloud storage checks (hosts outside the target's scope), writes to storage.
+  - curl arguments of the four light evidence and http-methods-write checked against a loopback server.
+- Open: the remaining categories, and checking tool options on Kali (e.g. katana `-ct`). Commands were not run against any host.
 
 ### M8 (pulled forward) delivered
 - `scripts/setup-kali.sh`: apt base packages, uv, data dirs (`/srv/wstg2/{evidence,db}`), config file and secret key generated once, `uv sync`, `check-config`, `migrate`, first admin, systemd user service `wstg2-web` (restarted on every run, lingering), nginx site rendered from `deploy/nginx/wstg2.conf.template` (port and allow list from the config), `nginx -t` with rollback, smoke test. Options `--no-packages`, `--no-nginx`, `--no-systemd`, `--dry-run`. Rerun after `git pull` to update a Kali host.
@@ -106,7 +113,8 @@ Last updated: 2026-11-07
 
 ### Open items carried forward
 - Check on Kali: katana `-sr -srd` (store responses) and the responses folder layout; gitleaks package and `detect --no-git --redact --report-format json` output fields (RuleID, File, StartLine, Match); the jump host (Ubuntu 24.04) with real whois/traceroute/nmap/sslscan; RDAP for the target's TLD; the proxy options of each tool (openssl, testssl, whatweb, nikto, ffuf, katana, subfinder, wafw00f) behind the real proxy; Kali package names in `catalog/tools.yaml` (katana, padbuster, theharvester); browser clipboard paste into the capture box, the worker with real tools against a lab target (tool options such as katana `-ct`), backup.
-- M1: CONF-01 to 11 and the remaining categories (IDNT, ATHN, ATHZ, SESS, INPV, ERRH, BUSL, CLNT, APIT).
+- M1: the remaining categories (IDNT, ATHN, ATHZ, SESS, INPV, ERRH, BUSL, CLNT, APIT).
+- Check on Kali: the CONF evidence against a lab target (content-ffuf and backup-ffuf run time, Nikto JSON layout read by `jq '.. | objects | select(has("msg"))'`).
 - M9: headless-browser HAR recording (needs a decision on adding Playwright and a browser), HAR analysis (cookies, headers, parameters) to replace manual Burp checks.
 - Backup frequency is the owner's decision; `--backup-timer` installs a daily one only when asked. Evidence is copied with rsync (versions never change).
 - Login rate limiting is not implemented yet (consider in M8, or rely on nginx `limit_req`).

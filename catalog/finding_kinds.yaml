@@ -57,6 +57,32 @@ kinds:
     title: Internal component reachable from outside
     subject: "`host:port` or the URL, for example `www.example.com:9200`"
 
+  # ---- configuration and deployment ---------------------------------------
+  - id: default-content
+    title: Default page or sample application reachable
+    subject: "the path, for example `/server-status`, `/examples/`"
+  - id: admin-interface-exposed
+    title: Administrative interface reachable from the Internet
+    subject: "the URL without query, for example `https://www.example.com/admin/`"
+  - id: http-method-enabled
+    title: Risky HTTP method enabled or method override honored
+    subject: "`host method`, for example `www.example.com trace`, `www.example.com put`, `www.example.com x-http-method-override`"
+  - id: hsts-missing
+    title: HSTS missing or weak
+    subject: "the host, for example `www.example.com`"
+  - id: cross-domain-policy-permissive
+    title: Permissive cross-domain policy
+    subject: "the file name, for example `crossdomain.xml`, `clientaccesspolicy.xml`"
+  - id: file-permission
+    title: Excessive file or folder permissions on the server
+    subject: "the path on the server, for example `/var/www/html/.env`"
+  - id: subdomain-takeover
+    title: Subdomain can be taken over
+    subject: "the host name, for example `old.example.com`"
+  - id: cloud-storage-public
+    title: Cloud storage readable or writable anonymously
+    subject: "the bucket or container, as its host and path, for example `examplebucket.s3.amazonaws.com`"
+
   # ---- cryptography --------------------------------------------------------
   - id: tls-weak-protocol
     title: Obsolete TLS or SSL protocol accepted

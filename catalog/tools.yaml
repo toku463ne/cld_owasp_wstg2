@@ -29,6 +29,10 @@ tools:
   - name: seclists
     path: /usr/share/seclists/Discovery/DNS/subdomains-top1million-5000.txt
     note: word lists for vhost-ffuf
+  - name: seclists-web-content
+    package: seclists
+    path: /usr/share/seclists/Discovery/Web-Content/common.txt
+    note: word list for content-ffuf and backup-ffuf
 
   # ---- commands in scenario steps --------------------------------------------
   - {name: jq}

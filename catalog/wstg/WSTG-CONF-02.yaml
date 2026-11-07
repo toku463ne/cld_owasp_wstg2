@@ -1,0 +1,55 @@
+id: WSTG-CONF-02
+overview: >-
+  Check that the web and application server is not left in its default state: no sample
+  applications, default or status pages, administrative consoles of the platform,
+  directory listings, or debug output.
+pass: >-
+  Default, status, and sample pages answer 404 or 403 (or the site's normal not-found
+  page), no folder lists its files, and errors show no debug information.
+fail: >-
+  A sample application, server status or info page (server-status, phpinfo), platform
+  console (Tomcat manager, JBoss), default welcome page, or directory listing is
+  reachable, or an error page shows stack traces or debug data.
+notes:
+  - Many servers answer 200 with the site's own not-found page. Compare the size and content with the default 404 response (http-404) before treating a 200 as found.
+  - 401 or 403 means the path exists but is protected; report a reachable login of a platform console under WSTG-CONF-05.
+  - Debug and error output is examined in depth in WSTG-ERRH-01; record here what the default pages show.
+finding_kinds: [default-content, directory-listing, admin-interface-exposed, infrastructure-information-leak]
+steps:
+  - summary: Request default, status, sample, and console paths and common asset folders
+    auto_run: true
+    evidence: [default-content, http-404]
+    command: >-
+      echo "default 404: $(head -1 {ev:http-404}/stdout.txt | tr -d '\r'), $(wc -c < {ev:http-404}/body.html) bytes";
+      cat {ev:default-content}/stdout.txt
+  - summary: Find default and sample pages in the answers (status pages, phpinfo, Tomcat, IIS, welcome pages)
+    auto_run: true
+    evidence: [default-content]
+    command: >-
+      cd {ev:default-content}/paths && grep -HoiE "Apache Status|Apache Server Information|phpinfo\(\)|PHP Version [0-9.]+|Apache Tomcat[^<]{0,20}|Tomcat Web Application Manager|JBoss[^<]{0,30}|WildFly|IIS Windows Server|Internet Information Services|Welcome to nginx|It works!|Test Page for the [A-Za-z ]+|Servlet Examples|JSP Examples|Apache HTTP Server Documentation" * | sort | uniq -c
+  - summary: Find directory listings
+    auto_run: true
+    evidence: [default-content]
+    command: >-
+      cd {ev:default-content}/paths && grep -liE "<title>Index of /|Directory listing for|\[To Parent Directory\]|<h1>Index of" * || echo "no directory listing among the requested folders"
+  - summary: Check the folders the site's own pages and scripts are loaded from for directory listings
+    evidence: [site-assets]
+    command: >-
+      cd {ev:site-assets}/site && find . -type f | sed -E 's#^\./##; s#/[^/]*$##' | grep / | sort -u
+      | while read -r d; do echo "$(curl -sk -m 10 -o /dev/null -w '%{http_code} %{size_download}' "{base_url}/$d/") /$d/"; done
+    operation: >-
+      Open each folder that answered 200 in the browser and check whether it lists files.
+  - summary: Look for debug output and stack traces in the default error page and the Nikto findings
+    auto_run: true
+    evidence: [http-404, nikto]
+    command: >-
+      grep -oiE "stack ?trace|traceback|exception[^<]{0,60}|debug[^<]{0,40}|at [A-Za-z0-9_.$]+\([A-Za-z0-9_]+\.java:[0-9]+\)|Whoops|Laravel|Django|Werkzeug|ASP\.NET is configured" {ev:http-404}/body.html | sort | uniq -c;
+      jq -r '.. | objects | select(has("msg")) | [(.url // ""), .msg] | @tsv' {ev:nikto}/nikto.json | grep -iE "default|sample|example|install|readme|debug|status|listing|phpinfo|manager" | sort -u
+  - summary: Judge the default content found
+    evidence: [default-content, http-404, nikto]
+    ai_task: >-
+      From steps 1 to 5, list each path that serves default, sample, status, console, or
+      debug content, or a directory listing (path, code, what it is). Treat a 200 whose
+      size matches the default 404 response, or that is the site's own not-found page, as
+      not found. Verdict: fail when any such content is served; pass when none is; "-" when
+      the evidence is missing.

@@ -1,0 +1,61 @@
+id: WSTG-CONF-10
+overview: >-
+  Find DNS records that point to cloud or hosting resources that no longer exist (dangling
+  CNAMEs), which a third party could claim to serve content under the organization's
+  name.
+pass: >-
+  Every subdomain's CNAME points to a resource that exists and answers normally, and no
+  name answers with a provider's "no such site / bucket / app" message.
+fail: >-
+  A CNAME points to a provider resource that does not exist (the provider answers with
+  its unclaimed-resource message, or the target name has no address), so a third party
+  could register it.
+notes:
+  - Never claim the resource (create the bucket, app, or page) to prove it. The DNS record and the provider's error message are the evidence.
+  - "Typical unclaimed messages: S3 NoSuchBucket, GitHub Pages \"There isn't a GitHub Pages site here\", Heroku \"No such app\", Azure \"404 Web Site not found\", Fastly \"unknown domain\", Shopify \"Sorry, this shop is currently unavailable\". See https://github.com/EdOverflow/can-i-take-over-xyz for the current list of services that can be claimed."
+  - Steps 1 to 4 are for the domain target; steps 5 and 6 for an FQDN target.
+finding_kinds: [subdomain-takeover]
+steps:
+  - summary: "Domain: look up the CNAME of every known subdomain"
+    evidence: [ct-crtsh, subdomains-subfinder, subdomain-cnames]
+    command: >-
+      { jq -r '.[].name_value' {ev:ct-crtsh}/crtsh.json; cat {ev:subdomains-subfinder}/subfinder.txt; }
+      | tr 'A-Z' 'a-z' | sed 's/^\*\.//' | sort -u
+      | while read -r h; do c=$(dig +short CNAME "$h" | head -1); n="";
+      [ -n "$c" ] && [ -z "$(dig +short A "$c")$(dig +short AAAA "$c")" ] && n=" [no address]";
+      echo "$h -> $c$n"; done | tee cname-check.txt
+    operation: >-
+      Run the command on the tester's host (DNS lookups only, no request to the hosts) and
+      upload cname-check.txt as subdomain-cnames.
+  - summary: "Domain: pick CNAMEs that point to services that can be claimed, and CNAMEs without an address"
+    auto_run: true
+    evidence: [subdomain-cnames]
+    command: >-
+      grep -hiE ' -> .*(\.s3[.-][a-z0-9.-]*amazonaws\.com|\.s3\.amazonaws\.com|\.s3-website|\.github\.io|herokuapp\.com|herokudns\.com|\.azurewebsites\.net|\.cloudapp\.net|\.cloudapp\.azure\.com|\.trafficmanager\.net|\.blob\.core\.windows\.net|\.azureedge\.net|\.cloudfront\.net|\.fastly\.net|\.pantheonsite\.io|\.ghost\.io|myshopify\.com|\.netlify\.app|\.vercel\.app|\.surge\.sh|\.bitbucket\.io|\.wordpress\.com|\.zendesk\.com|\.readme\.io|\.statuspage\.io|\.helpscoutdocs\.com|\.elasticbeanstalk\.com|\.storage\.googleapis\.com)|\[no address\]' {ev:subdomain-cnames}/items/* || echo "no candidate"
+  - summary: "Domain: fetch each candidate and look for the provider's unclaimed-resource message"
+    evidence: [subdomain-cnames]
+    command: >-
+      grep -hiE ' -> [^ ]+' {ev:subdomain-cnames}/items/* | awk '{print $1}' | sort -u
+      | while read -r h; do echo "===== $h"; curl -sk -m 10 "https://$h/" | head -c 600; echo; done | tee takeover-responses.txt
+    operation: >-
+      Limit the input to the candidates of step 2 when the list is long. Save
+      takeover-responses.txt with subdomain-cnames.
+    load_note: One request per subdomain with a CNAME; the hosts may be outside the authorized scope. Check the scope before running it.
+  - summary: "Domain: judge each candidate"
+    evidence: [subdomain-cnames]
+    ai_task: >-
+      From steps 2 and 3, list each subdomain whose CNAME points to a service that can be
+      claimed or has no address (subdomain, CNAME target, service, the error message seen).
+      Use your knowledge of which services can be taken over and the message each shows
+      for an unclaimed resource. Verdict: fail when a subdomain shows an unclaimed-resource
+      message or its CNAME target does not resolve at such a service; pass when no
+      candidate remains; "-" when subdomain-cnames is missing.
+  - summary: "FQDN: read the CNAME chain of the target itself"
+    auto_run: true
+    evidence: [dns-fqdn]
+    command: grep -iE '\sCNAME\s' {ev:dns-fqdn}/stdout.txt || echo "no CNAME"
+  - summary: "FQDN: look for an unclaimed-resource message on the target's top page"
+    auto_run: true
+    evidence: [http-root-https]
+    command: >-
+      grep -oiE "NoSuchBucket|The specified bucket does not exist|There isn.t a GitHub Pages site here|No such app|herokucdn\.com/error-pages/no-such-app|404 Web Site not found|Fastly error: unknown domain|Sorry, this shop is currently unavailable|Domain (is )?not configured|project not found|The thing you were looking for is no longer here|Repository not found|NoSuchContainer|The specified container does not exist" {ev:http-root-https}/body.html || echo "no unclaimed-resource message"
