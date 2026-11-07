@@ -1,0 +1,143 @@
+# Core evidence shared by many WSTG scenarios.
+#
+# Keys:
+#   id           lower-case words joined by '-'; referenced from catalog/wstg/*.yaml steps
+#   title        short name shown in the UI
+#   target_type  domain | fqdn (an FQDN target can also read its parent domain's evidence)
+#   kind         auto (collected by a command) | manual (captured by the tester)
+#   description  what the evidence holds; for manual evidence, exactly what to capture
+#   level        auto only: light | full ("light" mode skips full)
+#   passive      auto only: true when the command does not send traffic to the target
+#                itself (DNS, WHOIS, CT logs, archives). Domain targets run passive only.
+#   heavy        slow, noisy, or lockout-prone; must be level full and have a load_note
+#   argv         auto only: the command as a list (no shell). stdout is saved as
+#                stdout.txt and stderr as stderr.txt in the evidence version folder
+#   files        extra files the command writes under {out}
+#   timeout      seconds (default 120)
+#   load_note    load, rate-limit, or lockout warning shown with the evidence
+#
+# Placeholders: {domain} {fqdn} {base_url} {port} {out} (see src/wstg/catalog.py).
+evidence:
+
+  # ---- domain targets (passive) -------------------------------------------
+
+  - id: dns-whois
+    title: WHOIS record
+    target_type: domain
+    kind: auto
+    level: light
+    passive: true
+    description: Registrant, organization, registrar, and name servers of the domain.
+    argv: [whois, "{domain}"]
+    timeout: 60
+
+  - id: dns-records
+    title: DNS records (A, AAAA, MX, NS, TXT, SOA, CAA)
+    target_type: domain
+    kind: auto
+    level: light
+    passive: true
+    description: Main DNS records of the domain, from the system resolver.
+    argv: [dig, +noall, +answer, "{domain}", A, "{domain}", AAAA, "{domain}", MX,
+           "{domain}", NS, "{domain}", TXT, "{domain}", SOA, "{domain}", CAA]
+    timeout: 60
+
+  - id: ct-crtsh
+    title: Certificate Transparency log (crt.sh)
+    target_type: domain
+    kind: auto
+    level: light
+    passive: true
+    description: Certificates issued for the domain and its subdomains, as JSON from crt.sh.
+    argv: [curl, -sS, --max-time, "90", -o, "{out}/crtsh.json", -w, "%{http_code}\n",
+           "https://crt.sh/?q=%25.{domain}&output=json"]
+    files: [crtsh.json]
+    timeout: 120
+    load_note: crt.sh is a shared public service and is often slow or fails with HTTP 502/503. An empty or failed result is not "no certificates"; collect again later.
+
+  - id: subdomains-subfinder
+    title: Subdomains (subfinder)
+    target_type: domain
+    kind: auto
+    level: full
+    passive: true
+    description: Subdomains found in public passive sources.
+    argv: [subfinder, -d, "{domain}", -all, -silent, -o, "{out}/subfinder.txt"]
+    files: [subfinder.txt]
+    timeout: 600
+    load_note: Queries many third-party APIs (not the target). Free tiers rate-limit; zero results can mean a failed collection, check stderr.txt.
+
+  - id: wayback-urls
+    title: Archived URLs (Wayback Machine)
+    target_type: domain
+    kind: auto
+    level: light
+    passive: true
+    description: URLs of the domain and its subdomains known to the Wayback Machine (up to 5000).
+    argv: [curl, -sS, --max-time, "120", -o, "{out}/wayback.txt", -w, "%{http_code}\n",
+           "https://web.archive.org/cdx/search/cdx?url=*.{domain}/*&fl=original&collapse=urlkey&limit=5000"]
+    files: [wayback.txt]
+    timeout: 180
+
+  - id: search-dorks
+    title: Search engine dork results
+    target_type: domain
+    kind: manual
+    description: >-
+      Screenshots of Google and Bing result pages for each dork in WSTG-INFO-01, with the
+      query and result count visible. One item per dork; write "no results" as text when
+      nothing is found.
+
+  # ---- FQDN targets ---------------------------------------------------------
+
+  - id: http-root-https
+    title: HTTPS response of /
+    target_type: fqdn
+    kind: auto
+    level: light
+    description: Response headers (stdout.txt) and body (body.html) of GET {base_url}/, without following redirects.
+    argv: [curl, -sS, -k, --max-time, "20", -D, "-", -o, "{out}/body.html", "{base_url}/"]
+    files: [body.html]
+    timeout: 30
+
+  - id: http-root-http
+    title: Plain HTTP response of /
+    target_type: fqdn
+    kind: auto
+    level: light
+    description: Response headers of GET http://{fqdn}/ (port 80), to check the redirect to HTTPS.
+    argv: [curl, -sS, --max-time, "20", -D, "-", -o, "{out}/body.html", "http://{fqdn}/"]
+    files: [body.html]
+    timeout: 30
+
+  - id: http-404
+    title: Response to a missing page
+    target_type: fqdn
+    kind: auto
+    level: light
+    description: Headers and body of a request for a path that does not exist (default error page).
+    argv: [curl, -sS, -k, --max-time, "20", -D, "-", -o, "{out}/body.html", "{base_url}/wstg-missing-page-404"]
+    files: [body.html]
+    timeout: 30
+
+  - id: whatweb
+    title: Technology fingerprint (WhatWeb)
+    target_type: fqdn
+    kind: auto
+    level: light
+    description: Products, versions, and frameworks WhatWeb recognizes on {base_url}/ (aggression level 1, one request).
+    argv: [whatweb, --color=never, -a, "1", "--log-json={out}/whatweb.json", "{base_url}/"]
+    files: [whatweb.json]
+    timeout: 120
+
+  - id: nikto
+    title: Web server scan (Nikto)
+    target_type: fqdn
+    kind: auto
+    level: full
+    heavy: true
+    description: Nikto findings for {base_url}/ (outdated software, default files, risky configuration).
+    argv: [nikto, -h, "{base_url}/", -ask, "no", -nointeractive, -Format, json, -output, "{out}/nikto.json"]
+    files: [nikto.json]
+    timeout: 3600
+    load_note: Sends thousands of requests and takes 10 to 60 minutes. Agree on the time window first; a WAF may block the tester's address.

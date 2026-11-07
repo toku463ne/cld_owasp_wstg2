@@ -1,0 +1,47 @@
+id: WSTG-INFO-01
+overview: >-
+  Check whether search engines, certificate logs, and web archives hold information the
+  organization exposed by mistake: internal host names, documents, configuration files,
+  error messages, credentials, or personal data.
+pass: >-
+  Every source was collected successfully, and none of them shows credentials, internal
+  URLs or host names, configuration files, non-public documents, or personal data.
+fail: >-
+  A dork hit, archived URL, or certificate entry exposes internal host names, error
+  messages, credentials, or non-public documents. Content that survives only in a cache or
+  archive also counts.
+notes:
+  - '"No results" and "collection failed" are different. Check stderr.txt and the HTTP code of each source before judging; a failed source is collected again, not passed.'
+  - Recommend removal requests (for example Google Search Console) for exposed content, including cached copies.
+  - Behind a proxy, theHarvester and subfinder ignore http_proxy/https_proxy; pass the proxy explicitly (theHarvester -p, subfinder -proxy) or they return zero results.
+steps:
+  - summary: Identify the organization, registrant, and name servers as the starting point
+    evidence: [dns-whois, dns-records]
+  - summary: List subdomains and host names from Certificate Transparency and passive sources
+    evidence: [ct-crtsh, subdomains-subfinder]
+    command: jq -r '.[].name_value' {ev:ct-crtsh}/crtsh.json | sort -u
+  - summary: Collect exposed e-mail addresses and hosts with theHarvester
+    command: theHarvester -d {domain} -b crtsh,duckduckgo,hackertarget -f theharvester
+    load_note: Queries several third-party sources at once. Rate limits give zero results or HTTP 429; narrow -b and retry later.
+  - summary: "Dork 1: exposed business and configuration files"
+    operation: >-
+      Search Google and Bing for `site:{domain} ext:pdf OR ext:xls OR ext:xlsx OR ext:doc
+      OR ext:docx OR ext:csv OR ext:conf OR ext:bak OR ext:sql`. Capture the result page
+      with the query and result count visible.
+    evidence: [search-dorks]
+  - summary: "Dork 2: open directory listings"
+    operation: Search Google and Bing for `intitle:"index of" site:{domain}`. Capture the result page.
+    evidence: [search-dorks]
+  - summary: "Dork 3: administrative and login pages"
+    operation: >-
+      Search Google and Bing for `site:{domain} inurl:admin OR inurl:login OR
+      inurl:phpmyadmin OR inurl:wp-admin`. Capture the result page.
+    evidence: [search-dorks]
+  - summary: "Dork 4: error messages and stack traces"
+    operation: >-
+      Search Google and Bing for `site:{domain} "error" OR "exception" OR "stack trace"`.
+      Capture the result page.
+    evidence: [search-dorks]
+  - summary: Check archived pages for content that was removed from the live site
+    evidence: [wayback-urls]
+    command: grep -iE '\.(bak|old|sql|conf|env|zip|tar|gz|log)(\?|$)|/(admin|backup|test|debug)/' {ev:wayback-urls}/wayback.txt

@@ -1,0 +1,36 @@
+id: WSTG-INFO-02
+overview: >-
+  Determine how far the web server's product and version can be identified from outside
+  (banners, response headers, default error pages), and whether that version has known
+  vulnerabilities.
+pass: >-
+  Headers, error pages, and fingerprinting do not reveal the product version, or the
+  revealed version has no known vulnerability.
+fail: >-
+  The version can be identified (for example `Server: Apache/2.4.49`) and has a known
+  vulnerability. A version disclosed without a known vulnerability is reported as low
+  severity information disclosure.
+notes:
+  - Hiding the version is not a fix by itself; report it together with the patch level.
+  - Server header names differ from NVD product names (Apache/2.4.49 is cpe:2.3:a:apache:http_server:2.4.49). Do not write "no known vulnerabilities" until the CPE lookup returned a product.
+  - The NVD API without a key allows 5 requests per 30 seconds; HTTP 403 means the limit was hit.
+  - X-AspNet-Version 4.0.30319 is shared by .NET 4.0 to 4.8 and does not identify a version; report the header itself.
+steps:
+  - summary: Read Server, X-Powered-By, Via, and similar headers on HTTPS and HTTP
+    evidence: [http-root-https, http-root-http]
+  - summary: Look for product names and versions in the default error page
+    evidence: [http-404]
+  - summary: Fingerprint the server and components with WhatWeb
+    evidence: [whatweb]
+  - summary: Look up each product and version in NVD and list known CVEs
+    command: >-
+      curl -s --get --data-urlencode "keywordSearch=PRODUCT VERSION"
+      https://services.nvd.nist.gov/rest/json/cpes/2.0 | jq -r '.products[].cpe.cpeName';
+      sleep 7;
+      curl -s "https://services.nvd.nist.gov/rest/json/cves/2.0?virtualMatchString=CPE_NAME&resultsPerPage=100"
+      | jq -r '.vulnerabilities[].cve | [.id, (.metrics.cvssMetricV31[0].cvssData.baseScore // "-" | tostring)] | @tsv'
+    load_note: NVD API without a key allows 5 requests per 30 seconds; wait 7 seconds between requests.
+  - summary: Record the products, versions, and CVEs with CVSS 7.0 or higher as a finding
+    operation: >-
+      For each CVE with CVSS 7.0 or higher, write the CVE ID, the version, and where the
+      version was seen (header, error page, WhatWeb) in the finding.

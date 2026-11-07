@@ -7,7 +7,7 @@ import getpass
 import os
 import sys
 
-from . import config, db as dbmod, users
+from . import catalog, config, db as dbmod, users
 
 
 def _cfg() -> config.Config:
@@ -76,6 +76,23 @@ def cmd_user_list(args) -> int:
     return 0
 
 
+def cmd_catalog_check(args) -> int:
+    c = catalog.load()
+    autos = [e for e in c.evidence.values() if e.kind == "auto"]
+    print(f"WSTG {c.wstg_version}: {len(c.tests)} tests, {len(c.scenarios)} scenarios")
+    print(f"evidence: {len(c.evidence)} ({len(autos)} auto, "
+          f"{sum(e.level == 'light' for e in autos)} light, {len(c.evidence) - len(autos)} manual)")
+    missing = [t.id for t in c.tests.values() if not t.merged_into and t.id not in c.scenarios]
+    print(f"tests without a scenario: {len(missing)}")
+    if args.verbose and missing:
+        print("  " + " ".join(missing))
+    unused = [e for e in c.evidence if not c.tests_using(e)]
+    if unused:
+        print("evidence not used by any scenario: " + ", ".join(unused))
+    print("OK")
+    return 0
+
+
 def cmd_serve(args) -> int:
     from .web import create_app
 
@@ -119,6 +136,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     sub.add_parser("user-list", help="list users").set_defaults(func=cmd_user_list)
 
+    s = sub.add_parser("catalog-check", help="load and validate the WSTG catalog (catalog/)")
+    s.add_argument("-v", "--verbose", action="store_true", help="list tests without a scenario")
+    s.set_defaults(func=cmd_catalog_check)
+
     s = sub.add_parser("serve", help="run the web app on 127.0.0.1:WSTG_APP_PORT (behind nginx)")
     s.add_argument("--dev", action="store_true", help="use the Flask development server")
     s.set_defaults(func=cmd_serve)
@@ -129,7 +150,7 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
         return args.func(args)
-    except (config.ConfigError, users.UserError) as e:
+    except (config.ConfigError, users.UserError, catalog.CatalogError) as e:
         print(f"error: {e}", file=sys.stderr)
         return 2
 

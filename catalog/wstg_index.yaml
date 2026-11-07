@@ -1,0 +1,688 @@
+# WSTG v4.2 test index: every test, with a one-line summary.
+# target_types: which target type runs the test (domain, fqdn).
+# owasp_path: page under https://owasp.org/www-project-web-security-testing-guide/v42/4-Web_Application_Security_Testing/
+# Scenarios (overview, criteria, steps) live in catalog/wstg/<id>.yaml.
+wstg_version: "4.2"
+tests:
+  - id: WSTG-INFO-01
+    category: INFO
+    category_name: "Information Gathering"
+    title: "Conduct Search Engine Discovery Reconnaissance for Information Leakage"
+    summary: "Find sensitive information about the organization exposed by search engines, certificate logs, and web archives."
+    target_types: [domain]
+    owasp_path: 01-Information_Gathering/01-Conduct_Search_Engine_Discovery_Reconnaissance_for_Information_Leakage
+  - id: WSTG-INFO-02
+    category: INFO
+    category_name: "Information Gathering"
+    title: "Fingerprint Web Server"
+    summary: "Identify the web server product and version from banners, headers, and error pages, and check for known vulnerabilities."
+    target_types: [fqdn]
+    owasp_path: 01-Information_Gathering/02-Fingerprint_Web_Server
+  - id: WSTG-INFO-03
+    category: INFO
+    category_name: "Information Gathering"
+    title: "Review Webserver Metafiles for Information Leakage"
+    summary: "Review robots.txt, sitemaps, security.txt, and HTML meta tags for paths and information they disclose."
+    target_types: [fqdn]
+    owasp_path: 01-Information_Gathering/03-Review_Webserver_Metafiles_for_Information_Leakage
+  - id: WSTG-INFO-04
+    category: INFO
+    category_name: "Information Gathering"
+    title: "Enumerate Applications on Webserver"
+    summary: "Enumerate applications hosted on the server: virtual hosts, subdomains, non-standard ports, and base paths."
+    target_types: [domain, fqdn]
+    owasp_path: 01-Information_Gathering/04-Enumerate_Applications_on_Webserver
+  - id: WSTG-INFO-05
+    category: INFO
+    category_name: "Information Gathering"
+    title: "Review Webpage Content for Information Leakage"
+    summary: "Review page source, comments, and JavaScript for leaked information such as internal paths, keys, or credentials."
+    target_types: [fqdn]
+    owasp_path: 01-Information_Gathering/05-Review_Webpage_Content_for_Information_Leakage
+  - id: WSTG-INFO-06
+    category: INFO
+    category_name: "Information Gathering"
+    title: "Identify Application Entry Points"
+    summary: "List the application's entry points: URLs, parameters, forms, headers, and cookies that accept input."
+    target_types: [fqdn]
+    owasp_path: 01-Information_Gathering/06-Identify_Application_Entry_Points
+  - id: WSTG-INFO-07
+    category: INFO
+    category_name: "Information Gathering"
+    title: "Map Execution Paths Through Application"
+    summary: "Map the application's workflows and execution paths to plan test coverage."
+    target_types: [fqdn]
+    owasp_path: 01-Information_Gathering/07-Map_Execution_Paths_Through_Application
+  - id: WSTG-INFO-08
+    category: INFO
+    category_name: "Information Gathering"
+    title: "Fingerprint Web Application Framework"
+    summary: "Identify the web framework and components from headers, cookies, HTML, and file paths."
+    target_types: [fqdn]
+    owasp_path: 01-Information_Gathering/08-Fingerprint_Web_Application_Framework
+  - id: WSTG-INFO-09
+    category: INFO
+    category_name: "Information Gathering"
+    title: "Fingerprint Web Application"
+    summary: "Merged into WSTG-INFO-08 in WSTG v4.2."
+    target_types: [fqdn]
+    owasp_path: 01-Information_Gathering/09-Fingerprint_Web_Application
+    merged_into: WSTG-INFO-08
+  - id: WSTG-INFO-10
+    category: INFO
+    category_name: "Information Gathering"
+    title: "Map Application Architecture"
+    summary: "Map the application architecture: proxies, load balancers, CDN, WAF, back-end servers, and third-party services."
+    target_types: [fqdn]
+    owasp_path: 01-Information_Gathering/10-Map_Application_Architecture
+  - id: WSTG-CONF-01
+    category: CONF
+    category_name: "Configuration and Deployment Management"
+    title: "Test Network Infrastructure Configuration"
+    summary: "Check the network and infrastructure around the web server: open ports, exposed services, and administrative interfaces."
+    target_types: [fqdn]
+    owasp_path: 02-Configuration_and_Deployment_Management_Testing/01-Test_Network_Infrastructure_Configuration
+  - id: WSTG-CONF-02
+    category: CONF
+    category_name: "Configuration and Deployment Management"
+    title: "Test Application Platform Configuration"
+    summary: "Check the application platform for default files, sample applications, debug settings, and verbose logging."
+    target_types: [fqdn]
+    owasp_path: 02-Configuration_and_Deployment_Management_Testing/02-Test_Application_Platform_Configuration
+  - id: WSTG-CONF-03
+    category: CONF
+    category_name: "Configuration and Deployment Management"
+    title: "Test File Extensions Handling for Sensitive Information"
+    summary: "Check how the server handles file extensions and whether sensitive file types can be downloaded."
+    target_types: [fqdn]
+    owasp_path: 02-Configuration_and_Deployment_Management_Testing/03-Test_File_Extensions_Handling_for_Sensitive_Information
+  - id: WSTG-CONF-04
+    category: CONF
+    category_name: "Configuration and Deployment Management"
+    title: "Review Old Backup and Unreferenced Files for Sensitive Information"
+    summary: "Look for old, backup, and unreferenced files that disclose source code or sensitive data."
+    target_types: [fqdn]
+    owasp_path: 02-Configuration_and_Deployment_Management_Testing/04-Review_Old_Backup_and_Unreferenced_Files_for_Sensitive_Information
+  - id: WSTG-CONF-05
+    category: CONF
+    category_name: "Configuration and Deployment Management"
+    title: "Enumerate Infrastructure and Application Admin Interfaces"
+    summary: "Find administrative interfaces of the infrastructure and the application, and check that they are protected."
+    target_types: [fqdn]
+    owasp_path: 02-Configuration_and_Deployment_Management_Testing/05-Enumerate_Infrastructure_and_Application_Admin_Interfaces
+  - id: WSTG-CONF-06
+    category: CONF
+    category_name: "Configuration and Deployment Management"
+    title: "Test HTTP Methods"
+    summary: "Check which HTTP methods are allowed and whether risky methods (PUT, DELETE, TRACE) or method overriding work."
+    target_types: [fqdn]
+    owasp_path: 02-Configuration_and_Deployment_Management_Testing/06-Test_HTTP_Methods
+  - id: WSTG-CONF-07
+    category: CONF
+    category_name: "Configuration and Deployment Management"
+    title: "Test HTTP Strict Transport Security"
+    summary: "Check that HTTP Strict Transport Security is set with a sufficient max-age."
+    target_types: [fqdn]
+    owasp_path: 02-Configuration_and_Deployment_Management_Testing/07-Test_HTTP_Strict_Transport_Security
+  - id: WSTG-CONF-08
+    category: CONF
+    category_name: "Configuration and Deployment Management"
+    title: "Test RIA Cross Domain Policy"
+    summary: "Check Flash and Silverlight cross-domain policy files (crossdomain.xml, clientaccesspolicy.xml) for overly broad rules."
+    target_types: [fqdn]
+    owasp_path: 02-Configuration_and_Deployment_Management_Testing/08-Test_RIA_Cross_Domain_Policy
+  - id: WSTG-CONF-09
+    category: CONF
+    category_name: "Configuration and Deployment Management"
+    title: "Test File Permission"
+    summary: "Check file and directory permissions on the server for overly permissive access."
+    target_types: [fqdn]
+    owasp_path: 02-Configuration_and_Deployment_Management_Testing/09-Test_File_Permission
+  - id: WSTG-CONF-10
+    category: CONF
+    category_name: "Configuration and Deployment Management"
+    title: "Test for Subdomain Takeover"
+    summary: "Find DNS records and subdomains that point to unclaimed external resources and can be taken over."
+    target_types: [domain, fqdn]
+    owasp_path: 02-Configuration_and_Deployment_Management_Testing/10-Test_for_Subdomain_Takeover
+  - id: WSTG-CONF-11
+    category: CONF
+    category_name: "Configuration and Deployment Management"
+    title: "Test Cloud Storage"
+    summary: "Check cloud storage (for example S3 buckets) used by the application for public read or write access."
+    target_types: [fqdn]
+    owasp_path: 02-Configuration_and_Deployment_Management_Testing/11-Test_Cloud_Storage
+  - id: WSTG-IDNT-01
+    category: IDNT
+    category_name: "Identity Management"
+    title: "Test Role Definitions"
+    summary: "Identify the application's roles and check that permissions are separated as intended."
+    target_types: [fqdn]
+    owasp_path: 03-Identity_Management_Testing/01-Test_Role_Definitions
+  - id: WSTG-IDNT-02
+    category: IDNT
+    category_name: "Identity Management"
+    title: "Test User Registration Process"
+    summary: "Check that the user registration process verifies identity and cannot be abused."
+    target_types: [fqdn]
+    owasp_path: 03-Identity_Management_Testing/02-Test_User_Registration_Process
+  - id: WSTG-IDNT-03
+    category: IDNT
+    category_name: "Identity Management"
+    title: "Test Account Provisioning Process"
+    summary: "Check who can provision and de-provision accounts, and how."
+    target_types: [fqdn]
+    owasp_path: 03-Identity_Management_Testing/03-Test_Account_Provisioning_Process
+  - id: WSTG-IDNT-04
+    category: IDNT
+    category_name: "Identity Management"
+    title: "Testing for Account Enumeration and Guessable User Account"
+    summary: "Check whether responses reveal which user names exist, and whether account names are guessable."
+    target_types: [fqdn]
+    owasp_path: 03-Identity_Management_Testing/04-Testing_for_Account_Enumeration_and_Guessable_User_Account
+  - id: WSTG-IDNT-05
+    category: IDNT
+    category_name: "Identity Management"
+    title: "Testing for Weak or Unenforced Username Policy"
+    summary: "Check that the user name policy prevents weak or predictable user names."
+    target_types: [fqdn]
+    owasp_path: 03-Identity_Management_Testing/05-Testing_for_Weak_or_Unenforced_Username_Policy
+  - id: WSTG-ATHN-01
+    category: ATHN
+    category_name: "Authentication"
+    title: "Testing for Credentials Transported over an Encrypted Channel"
+    summary: "Check that credentials are always sent over an encrypted channel."
+    target_types: [fqdn]
+    owasp_path: 04-Authentication_Testing/01-Testing_for_Credentials_Transported_over_an_Encrypted_Channel
+  - id: WSTG-ATHN-02
+    category: ATHN
+    category_name: "Authentication"
+    title: "Testing for Default Credentials"
+    summary: "Check for default or well-known credentials on the application and its components."
+    target_types: [fqdn]
+    owasp_path: 04-Authentication_Testing/02-Testing_for_Default_Credentials
+  - id: WSTG-ATHN-03
+    category: ATHN
+    category_name: "Authentication"
+    title: "Testing for Weak Lock Out Mechanism"
+    summary: "Check that the lockout mechanism resists brute force without enabling denial of service."
+    target_types: [fqdn]
+    owasp_path: 04-Authentication_Testing/03-Testing_for_Weak_Lock_Out_Mechanism
+  - id: WSTG-ATHN-04
+    category: ATHN
+    category_name: "Authentication"
+    title: "Testing for Bypassing Authentication Schema"
+    summary: "Check whether authentication can be bypassed (direct page access, parameter modification, session prediction)."
+    target_types: [fqdn]
+    owasp_path: 04-Authentication_Testing/04-Testing_for_Bypassing_Authentication_Schema
+  - id: WSTG-ATHN-05
+    category: ATHN
+    category_name: "Authentication"
+    title: "Testing for Vulnerable Remember Password"
+    summary: "Check that remember-me and stored-password features do not expose credentials."
+    target_types: [fqdn]
+    owasp_path: 04-Authentication_Testing/05-Testing_for_Vulnerable_Remember_Password
+  - id: WSTG-ATHN-06
+    category: ATHN
+    category_name: "Authentication"
+    title: "Testing for Browser Cache Weaknesses"
+    summary: "Check that sensitive pages are not cached by the browser and cannot be viewed after logout with the back button."
+    target_types: [fqdn]
+    owasp_path: 04-Authentication_Testing/06-Testing_for_Browser_Cache_Weaknesses
+  - id: WSTG-ATHN-07
+    category: ATHN
+    category_name: "Authentication"
+    title: "Testing for Weak Password Policy"
+    summary: "Check that the password policy enforces sufficient length and complexity."
+    target_types: [fqdn]
+    owasp_path: 04-Authentication_Testing/07-Testing_for_Weak_Password_Policy
+  - id: WSTG-ATHN-08
+    category: ATHN
+    category_name: "Authentication"
+    title: "Testing for Weak Security Question Answer"
+    summary: "Check that security questions and answers are not weak or guessable."
+    target_types: [fqdn]
+    owasp_path: 04-Authentication_Testing/08-Testing_for_Weak_Security_Question_Answer
+  - id: WSTG-ATHN-09
+    category: ATHN
+    category_name: "Authentication"
+    title: "Testing for Weak Password Change or Reset Functionalities"
+    summary: "Check password change and reset functions for weaknesses."
+    target_types: [fqdn]
+    owasp_path: 04-Authentication_Testing/09-Testing_for_Weak_Password_Change_or_Reset_Functionalities
+  - id: WSTG-ATHN-10
+    category: ATHN
+    category_name: "Authentication"
+    title: "Testing for Weaker Authentication in Alternative Channel"
+    summary: "Check alternative authentication channels (mobile, API, legacy) for weaker controls."
+    target_types: [fqdn]
+    owasp_path: 04-Authentication_Testing/10-Testing_for_Weaker_Authentication_in_Alternative_Channel
+  - id: WSTG-ATHZ-01
+    category: ATHZ
+    category_name: "Authorization"
+    title: "Testing Directory Traversal File Include"
+    summary: "Check for directory traversal and file inclusion through parameters that name files."
+    target_types: [fqdn]
+    owasp_path: 05-Authorization_Testing/01-Testing_Directory_Traversal_File_Include
+  - id: WSTG-ATHZ-02
+    category: ATHZ
+    category_name: "Authorization"
+    title: "Testing for Bypassing Authorization Schema"
+    summary: "Check whether authorization checks can be bypassed to reach functions or data of other roles."
+    target_types: [fqdn]
+    owasp_path: 05-Authorization_Testing/02-Testing_for_Bypassing_Authorization_Schema
+  - id: WSTG-ATHZ-03
+    category: ATHZ
+    category_name: "Authorization"
+    title: "Testing for Privilege Escalation"
+    summary: "Check whether a user can escalate privileges horizontally or vertically."
+    target_types: [fqdn]
+    owasp_path: 05-Authorization_Testing/03-Testing_for_Privilege_Escalation
+  - id: WSTG-ATHZ-04
+    category: ATHZ
+    category_name: "Authorization"
+    title: "Testing for Insecure Direct Object References"
+    summary: "Check whether object references (IDs) can be changed to access other users' data."
+    target_types: [fqdn]
+    owasp_path: 05-Authorization_Testing/04-Testing_for_Insecure_Direct_Object_References
+  - id: WSTG-SESS-01
+    category: SESS
+    category_name: "Session Management"
+    title: "Testing for Session Management Schema"
+    summary: "Analyze session tokens for predictability, sufficient randomness, and safe handling."
+    target_types: [fqdn]
+    owasp_path: 06-Session_Management_Testing/01-Testing_for_Session_Management_Schema
+  - id: WSTG-SESS-02
+    category: SESS
+    category_name: "Session Management"
+    title: "Testing for Cookies Attributes"
+    summary: "Check cookie attributes: Secure, HttpOnly, SameSite, Domain, Path, and expiry."
+    target_types: [fqdn]
+    owasp_path: 06-Session_Management_Testing/02-Testing_for_Cookies_Attributes
+  - id: WSTG-SESS-03
+    category: SESS
+    category_name: "Session Management"
+    title: "Testing for Session Fixation"
+    summary: "Check whether the session identifier changes after login (session fixation)."
+    target_types: [fqdn]
+    owasp_path: 06-Session_Management_Testing/03-Testing_for_Session_Fixation
+  - id: WSTG-SESS-04
+    category: SESS
+    category_name: "Session Management"
+    title: "Testing for Exposed Session Variables"
+    summary: "Check that session identifiers are not exposed in URLs, logs, or unencrypted traffic."
+    target_types: [fqdn]
+    owasp_path: 06-Session_Management_Testing/04-Testing_for_Exposed_Session_Variables
+  - id: WSTG-SESS-05
+    category: SESS
+    category_name: "Session Management"
+    title: "Testing for Cross Site Request Forgery"
+    summary: "Check whether state-changing requests are protected against cross-site request forgery."
+    target_types: [fqdn]
+    owasp_path: 06-Session_Management_Testing/05-Testing_for_Cross_Site_Request_Forgery
+  - id: WSTG-SESS-06
+    category: SESS
+    category_name: "Session Management"
+    title: "Testing for Logout Functionality"
+    summary: "Check that logout invalidates the session on the server side."
+    target_types: [fqdn]
+    owasp_path: 06-Session_Management_Testing/06-Testing_for_Logout_Functionality
+  - id: WSTG-SESS-07
+    category: SESS
+    category_name: "Session Management"
+    title: "Testing Session Timeout"
+    summary: "Check that idle and absolute session timeouts are enforced on the server side."
+    target_types: [fqdn]
+    owasp_path: 06-Session_Management_Testing/07-Testing_Session_Timeout
+  - id: WSTG-SESS-08
+    category: SESS
+    category_name: "Session Management"
+    title: "Testing for Session Puzzling"
+    summary: "Check whether the same session variable is reused across flows in a way that can be abused (session puzzling)."
+    target_types: [fqdn]
+    owasp_path: 06-Session_Management_Testing/08-Testing_for_Session_Puzzling
+  - id: WSTG-SESS-09
+    category: SESS
+    category_name: "Session Management"
+    title: "Testing for Session Hijacking"
+    summary: "Check whether a session can be hijacked, for example over an unencrypted channel."
+    target_types: [fqdn]
+    owasp_path: 06-Session_Management_Testing/09-Testing_for_Session_Hijacking
+  - id: WSTG-INPV-01
+    category: INPV
+    category_name: "Input Validation"
+    title: "Testing for Reflected Cross Site Scripting"
+    summary: "Check whether input is reflected into responses without encoding (reflected XSS)."
+    target_types: [fqdn]
+    owasp_path: 07-Input_Validation_Testing/01-Testing_for_Reflected_Cross_Site_Scripting
+  - id: WSTG-INPV-02
+    category: INPV
+    category_name: "Input Validation"
+    title: "Testing for Stored Cross Site Scripting"
+    summary: "Check whether stored input is rendered to users without encoding (stored XSS)."
+    target_types: [fqdn]
+    owasp_path: 07-Input_Validation_Testing/02-Testing_for_Stored_Cross_Site_Scripting
+  - id: WSTG-INPV-03
+    category: INPV
+    category_name: "Input Validation"
+    title: "Testing for HTTP Verb Tampering"
+    summary: "Merged into WSTG-CONF-06 in WSTG v4.2."
+    target_types: [fqdn]
+    owasp_path: 07-Input_Validation_Testing/03-Testing_for_HTTP_Verb_Tampering
+    merged_into: WSTG-CONF-06
+  - id: WSTG-INPV-04
+    category: INPV
+    category_name: "Input Validation"
+    title: "Testing for HTTP Parameter Pollution"
+    summary: "Check how the application handles repeated parameters (HTTP parameter pollution)."
+    target_types: [fqdn]
+    owasp_path: 07-Input_Validation_Testing/04-Testing_for_HTTP_Parameter_Pollution
+  - id: WSTG-INPV-05
+    category: INPV
+    category_name: "Input Validation"
+    title: "Testing for SQL Injection"
+    summary: "Check for SQL injection in parameters, headers, and cookies."
+    target_types: [fqdn]
+    owasp_path: 07-Input_Validation_Testing/05-Testing_for_SQL_Injection
+  - id: WSTG-INPV-06
+    category: INPV
+    category_name: "Input Validation"
+    title: "Testing for LDAP Injection"
+    summary: "Check for LDAP injection where input reaches directory queries."
+    target_types: [fqdn]
+    owasp_path: 07-Input_Validation_Testing/06-Testing_for_LDAP_Injection
+  - id: WSTG-INPV-07
+    category: INPV
+    category_name: "Input Validation"
+    title: "Testing for XML Injection"
+    summary: "Check for XML injection and XML external entity (XXE) processing."
+    target_types: [fqdn]
+    owasp_path: 07-Input_Validation_Testing/07-Testing_for_XML_Injection
+  - id: WSTG-INPV-08
+    category: INPV
+    category_name: "Input Validation"
+    title: "Testing for SSI Injection"
+    summary: "Check for server-side include (SSI) injection."
+    target_types: [fqdn]
+    owasp_path: 07-Input_Validation_Testing/08-Testing_for_SSI_Injection
+  - id: WSTG-INPV-09
+    category: INPV
+    category_name: "Input Validation"
+    title: "Testing for XPath Injection"
+    summary: "Check for XPath injection where input reaches XML queries."
+    target_types: [fqdn]
+    owasp_path: 07-Input_Validation_Testing/09-Testing_for_XPath_Injection
+  - id: WSTG-INPV-10
+    category: INPV
+    category_name: "Input Validation"
+    title: "Testing for IMAP SMTP Injection"
+    summary: "Check for IMAP/SMTP injection in mail-related functions."
+    target_types: [fqdn]
+    owasp_path: 07-Input_Validation_Testing/10-Testing_for_IMAP_SMTP_Injection
+  - id: WSTG-INPV-11
+    category: INPV
+    category_name: "Input Validation"
+    title: "Testing for Code Injection"
+    summary: "Check for code injection and local or remote file inclusion."
+    target_types: [fqdn]
+    owasp_path: 07-Input_Validation_Testing/11-Testing_for_Code_Injection
+  - id: WSTG-INPV-12
+    category: INPV
+    category_name: "Input Validation"
+    title: "Testing for Command Injection"
+    summary: "Check for operating system command injection."
+    target_types: [fqdn]
+    owasp_path: 07-Input_Validation_Testing/12-Testing_for_Command_Injection
+  - id: WSTG-INPV-13
+    category: INPV
+    category_name: "Input Validation"
+    title: "Testing for Format String Injection"
+    summary: "Check for format string injection."
+    target_types: [fqdn]
+    owasp_path: 07-Input_Validation_Testing/13-Testing_for_Format_String_Injection
+  - id: WSTG-INPV-14
+    category: INPV
+    category_name: "Input Validation"
+    title: "Testing for Incubated Vulnerability"
+    summary: "Check for incubated (stored, later-triggered) vulnerabilities such as uploaded payloads."
+    target_types: [fqdn]
+    owasp_path: 07-Input_Validation_Testing/14-Testing_for_Incubated_Vulnerability
+  - id: WSTG-INPV-15
+    category: INPV
+    category_name: "Input Validation"
+    title: "Testing for HTTP Splitting Smuggling"
+    summary: "Check for HTTP response splitting and request smuggling."
+    target_types: [fqdn]
+    owasp_path: 07-Input_Validation_Testing/15-Testing_for_HTTP_Splitting_Smuggling
+  - id: WSTG-INPV-16
+    category: INPV
+    category_name: "Input Validation"
+    title: "Testing for HTTP Incoming Requests"
+    summary: "Monitor incoming and outgoing HTTP requests on the server side to find hidden traffic."
+    target_types: [fqdn]
+    owasp_path: 07-Input_Validation_Testing/16-Testing_for_HTTP_Incoming_Requests
+  - id: WSTG-INPV-17
+    category: INPV
+    category_name: "Input Validation"
+    title: "Testing for Host Header Injection"
+    summary: "Check whether the Host header is trusted for links, redirects, or password reset URLs."
+    target_types: [fqdn]
+    owasp_path: 07-Input_Validation_Testing/17-Testing_for_Host_Header_Injection
+  - id: WSTG-INPV-18
+    category: INPV
+    category_name: "Input Validation"
+    title: "Testing for Server-side Template Injection"
+    summary: "Check for server-side template injection."
+    target_types: [fqdn]
+    owasp_path: 07-Input_Validation_Testing/18-Testing_for_Server-side_Template_Injection
+  - id: WSTG-INPV-19
+    category: INPV
+    category_name: "Input Validation"
+    title: "Testing for Server-Side Request Forgery"
+    summary: "Check for server-side request forgery (SSRF) where the server fetches URLs from input."
+    target_types: [fqdn]
+    owasp_path: 07-Input_Validation_Testing/19-Testing_for_Server-Side_Request_Forgery
+  - id: WSTG-ERRH-01
+    category: ERRH
+    category_name: "Error Handling"
+    title: "Testing for Improper Error Handling"
+    summary: "Check that error pages do not disclose stack traces, versions, or internal details."
+    target_types: [fqdn]
+    owasp_path: 08-Testing_for_Error_Handling/01-Testing_For_Improper_Error_Handling
+  - id: WSTG-ERRH-02
+    category: ERRH
+    category_name: "Error Handling"
+    title: "Testing for Stack Traces"
+    summary: "Merged into WSTG-ERRH-01 in WSTG v4.2."
+    target_types: [fqdn]
+    owasp_path: 08-Testing_for_Error_Handling/02-Testing_for_Stack_Traces
+    merged_into: WSTG-ERRH-01
+  - id: WSTG-CRYP-01
+    category: CRYP
+    category_name: "Weak Cryptography"
+    title: "Testing for Weak Transport Layer Security"
+    summary: "Check TLS protocols, cipher suites, certificates, and HTTP-to-HTTPS redirects."
+    target_types: [fqdn]
+    owasp_path: 09-Testing_for_Weak_Cryptography/01-Testing_for_Weak_Transport_Layer_Security
+  - id: WSTG-CRYP-02
+    category: CRYP
+    category_name: "Weak Cryptography"
+    title: "Testing for Padding Oracle"
+    summary: "Check whether encrypted values can be decrypted through padding oracle responses."
+    target_types: [fqdn]
+    owasp_path: 09-Testing_for_Weak_Cryptography/02-Testing_for_Padding_Oracle
+  - id: WSTG-CRYP-03
+    category: CRYP
+    category_name: "Weak Cryptography"
+    title: "Testing for Sensitive Information Sent via Unencrypted Channels"
+    summary: "Check that sensitive information is not sent over unencrypted channels."
+    target_types: [fqdn]
+    owasp_path: 09-Testing_for_Weak_Cryptography/03-Testing_for_Sensitive_Information_Sent_via_Unencrypted_Channels
+  - id: WSTG-CRYP-04
+    category: CRYP
+    category_name: "Weak Cryptography"
+    title: "Testing for Weak Encryption"
+    summary: "Check for weak cryptographic algorithms, keys, and random number generation."
+    target_types: [fqdn]
+    owasp_path: 09-Testing_for_Weak_Cryptography/04-Testing_for_Weak_Encryption
+  - id: WSTG-BUSL-01
+    category: BUSL
+    category_name: "Business Logic"
+    title: "Test Business Logic Data Validation"
+    summary: "Check that business data is validated on the server side."
+    target_types: [fqdn]
+    owasp_path: 10-Business_Logic_Testing/01-Test_Business_Logic_Data_Validation
+  - id: WSTG-BUSL-02
+    category: BUSL
+    category_name: "Business Logic"
+    title: "Test Ability to Forge Requests"
+    summary: "Check whether requests can be forged to reach hidden or unintended functions."
+    target_types: [fqdn]
+    owasp_path: 10-Business_Logic_Testing/02-Test_Ability_to_Forge_Requests
+  - id: WSTG-BUSL-03
+    category: BUSL
+    category_name: "Business Logic"
+    title: "Test Integrity Checks"
+    summary: "Check that the integrity of data and hidden fields is verified on the server side."
+    target_types: [fqdn]
+    owasp_path: 10-Business_Logic_Testing/03-Test_Integrity_Checks
+  - id: WSTG-BUSL-04
+    category: BUSL
+    category_name: "Business Logic"
+    title: "Test for Process Timing"
+    summary: "Check whether process timing can be abused or reveals information."
+    target_types: [fqdn]
+    owasp_path: 10-Business_Logic_Testing/04-Test_for_Process_Timing
+  - id: WSTG-BUSL-05
+    category: BUSL
+    category_name: "Business Logic"
+    title: "Test Number of Times a Function Can Be Used Limits"
+    summary: "Check that limits on how many times a function can be used are enforced."
+    target_types: [fqdn]
+    owasp_path: 10-Business_Logic_Testing/05-Test_Number_of_Times_a_Function_Can_Be_Used_Limits
+  - id: WSTG-BUSL-06
+    category: BUSL
+    category_name: "Business Logic"
+    title: "Testing for the Circumvention of Work Flows"
+    summary: "Check whether workflow steps can be skipped or performed out of order."
+    target_types: [fqdn]
+    owasp_path: 10-Business_Logic_Testing/06-Testing_for_the_Circumvention_of_Work_Flows
+  - id: WSTG-BUSL-07
+    category: BUSL
+    category_name: "Business Logic"
+    title: "Test Defenses Against Application Misuse"
+    summary: "Check that the application detects and responds to misuse."
+    target_types: [fqdn]
+    owasp_path: 10-Business_Logic_Testing/07-Test_Defenses_Against_Application_Misuse
+  - id: WSTG-BUSL-08
+    category: BUSL
+    category_name: "Business Logic"
+    title: "Test Upload of Unexpected File Types"
+    summary: "Check that uploads of unexpected file types are rejected."
+    target_types: [fqdn]
+    owasp_path: 10-Business_Logic_Testing/08-Test_Upload_of_Unexpected_File_Types
+  - id: WSTG-BUSL-09
+    category: BUSL
+    category_name: "Business Logic"
+    title: "Test Upload of Malicious Files"
+    summary: "Check that uploads of malicious files are detected and rejected."
+    target_types: [fqdn]
+    owasp_path: 10-Business_Logic_Testing/09-Test_Upload_of_Malicious_Files
+  - id: WSTG-CLNT-01
+    category: CLNT
+    category_name: "Client-side"
+    title: "Testing for DOM-Based Cross Site Scripting"
+    summary: "Check for DOM-based cross-site scripting in client-side code."
+    target_types: [fqdn]
+    owasp_path: 11-Client-side_Testing/01-Testing_for_DOM-based_Cross_Site_Scripting
+  - id: WSTG-CLNT-02
+    category: CLNT
+    category_name: "Client-side"
+    title: "Testing for JavaScript Execution"
+    summary: "Check whether attacker-controlled JavaScript can be executed in the page."
+    target_types: [fqdn]
+    owasp_path: 11-Client-side_Testing/02-Testing_for_JavaScript_Execution
+  - id: WSTG-CLNT-03
+    category: CLNT
+    category_name: "Client-side"
+    title: "Testing for HTML Injection"
+    summary: "Check for HTML injection in the page."
+    target_types: [fqdn]
+    owasp_path: 11-Client-side_Testing/03-Testing_for_HTML_Injection
+  - id: WSTG-CLNT-04
+    category: CLNT
+    category_name: "Client-side"
+    title: "Testing for Client-side URL Redirect"
+    summary: "Check for client-side open redirects."
+    target_types: [fqdn]
+    owasp_path: 11-Client-side_Testing/04-Testing_for_Client-side_URL_Redirect
+  - id: WSTG-CLNT-05
+    category: CLNT
+    category_name: "Client-side"
+    title: "Testing for CSS Injection"
+    summary: "Check for CSS injection."
+    target_types: [fqdn]
+    owasp_path: 11-Client-side_Testing/05-Testing_for_CSS_Injection
+  - id: WSTG-CLNT-06
+    category: CLNT
+    category_name: "Client-side"
+    title: "Testing for Client-side Resource Manipulation"
+    summary: "Check whether client-side resources (scripts, frames) can be loaded from attacker-controlled locations."
+    target_types: [fqdn]
+    owasp_path: 11-Client-side_Testing/06-Testing_for_Client-side_Resource_Manipulation
+  - id: WSTG-CLNT-07
+    category: CLNT
+    category_name: "Client-side"
+    title: "Testing Cross Origin Resource Sharing"
+    summary: "Check that CORS headers do not allow untrusted origins, especially with credentials."
+    target_types: [fqdn]
+    owasp_path: 11-Client-side_Testing/07-Testing_Cross_Origin_Resource_Sharing
+  - id: WSTG-CLNT-08
+    category: CLNT
+    category_name: "Client-side"
+    title: "Testing for Cross Site Flashing"
+    summary: "Check Flash content for cross-site flashing issues."
+    target_types: [fqdn]
+    owasp_path: 11-Client-side_Testing/08-Testing_for_Cross_Site_Flashing
+  - id: WSTG-CLNT-09
+    category: CLNT
+    category_name: "Client-side"
+    title: "Testing for Clickjacking"
+    summary: "Check that pages cannot be framed by other sites (clickjacking)."
+    target_types: [fqdn]
+    owasp_path: 11-Client-side_Testing/09-Testing_for_Clickjacking
+  - id: WSTG-CLNT-10
+    category: CLNT
+    category_name: "Client-side"
+    title: "Testing WebSockets"
+    summary: "Check WebSocket endpoints for origin checks, authentication, and input validation."
+    target_types: [fqdn]
+    owasp_path: 11-Client-side_Testing/10-Testing_WebSockets
+  - id: WSTG-CLNT-11
+    category: CLNT
+    category_name: "Client-side"
+    title: "Testing Web Messaging"
+    summary: "Check postMessage use for origin checks and safe handling of messages."
+    target_types: [fqdn]
+    owasp_path: 11-Client-side_Testing/11-Testing_Web_Messaging
+  - id: WSTG-CLNT-12
+    category: CLNT
+    category_name: "Client-side"
+    title: "Testing Browser Storage"
+    summary: "Check that sensitive data is not kept in browser storage (localStorage, sessionStorage, IndexedDB)."
+    target_types: [fqdn]
+    owasp_path: 11-Client-side_Testing/12-Testing_Browser_Storage
+  - id: WSTG-CLNT-13
+    category: CLNT
+    category_name: "Client-side"
+    title: "Testing for Cross Site Script Inclusion"
+    summary: "Check for cross-site script inclusion (XSSI) of sensitive data."
+    target_types: [fqdn]
+    owasp_path: 11-Client-side_Testing/13-Testing_for_Cross_Site_Script_Inclusion
+  - id: WSTG-APIT-01
+    category: APIT
+    category_name: "API Testing"
+    title: "Testing GraphQL"
+    summary: "Check GraphQL endpoints for introspection, authorization, and injection issues."
+    target_types: [fqdn]
+    owasp_path: 12-API_Testing/01-Testing_GraphQL
