@@ -209,6 +209,8 @@ Environment=WSTG_CONFIG=$CONFIG
 WorkingDirectory=$REPO
 ExecStart=$UV_BIN run --frozen wstg serve
 Restart=on-failure
+# uv exits with 143 when systemd stops it with SIGTERM; that is a normal stop.
+SuccessExitStatus=143
 RestartSec=5
 
 [Install]
