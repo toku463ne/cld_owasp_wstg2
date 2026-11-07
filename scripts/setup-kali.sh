@@ -84,8 +84,7 @@ echo "config      $CONFIG"
 # --------------------------------------------------------------------------
 if [ "$PACKAGES" = 1 ]; then
   step "Packages (apt)"
-  # Base packages only. Test tools (nikto, nmap, ...) are added when the
-  # automatic evidence catalog needs them; Kali ships most of them already.
+  # Base packages. The test tools come from catalog/tools.yaml (step "Test tools").
   pkgs=(git curl openssl python3 pipx sqlite3)
   [ "$NGINX" = 0 ] || pkgs+=(nginx)
   run sudo apt-get update
@@ -181,6 +180,39 @@ run "$UV_BIN" --directory "$REPO" sync --frozen
 wstg() { "$UV_BIN" --directory "$REPO" run --frozen wstg "$@"; }
 [ "$DRY" = 1 ] || wstg check-config
 
+step "Test tools (catalog/tools.yaml)"
+if [ "$PACKAGES" = 1 ]; then
+  if [ "$DRY" = 1 ]; then
+    echo "  [dry-run] would install: $(wstg tools-check --packages apt 2>/dev/null | tr '\n' ' ')"
+  else
+    mapfile -t tool_pkgs < <(wstg tools-check --packages apt)
+    if ! sudo apt-get install -y "${tool_pkgs[@]}"; then
+      # One unknown package fails the whole install; retry one by one.
+      echo "warning: installing all at once failed; trying one package at a time"
+      for p in "${tool_pkgs[@]}"; do
+        sudo apt-get install -y "$p" >/dev/null || echo "warning: could not install $p"
+      done
+    fi
+    mapfile -t npm_pkgs < <(wstg tools-check --packages npm)
+    if [ "${#npm_pkgs[@]}" -gt 0 ]; then
+      command -v npm >/dev/null 2>&1 || sudo apt-get install -y npm || true
+      if command -v npm >/dev/null 2>&1; then
+        # Into ~/.local (no root); npm does not read http_proxy, so pass the proxy.
+        npm_proxy=()
+        PROXY="$(env_get "$CONFIG" WSTG_HTTP_PROXY)"
+        [ -z "$PROXY" ] || npm_proxy=(--proxy "$PROXY" --https-proxy "$PROXY")
+        npm install -g --prefix "$HOME/.local" "${npm_proxy[@]}" "${npm_pkgs[@]}" \
+          || echo "warning: npm install of ${npm_pkgs[*]} failed"
+      else
+        echo "warning: npm is not available; skipping ${npm_pkgs[*]}"
+      fi
+    fi
+  fi
+else
+  echo "skipping installation (--no-packages)"
+fi
+[ "$DRY" = 1 ] || wstg tools-check
+
 step "Database migrations"
 run wstg migrate
 
@@ -209,6 +241,8 @@ Description=$2
 
 [Service]
 Environment=WSTG_CONFIG=$CONFIG
+# Tools installed into ~/.local/bin (npm, pipx) are found by collection commands.
+Environment=PATH=$HOME/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 WorkingDirectory=$REPO
 ExecStart=$UV_BIN run --frozen wstg $3
 Restart=on-failure

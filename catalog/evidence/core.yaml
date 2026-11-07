@@ -17,6 +17,12 @@
 #   ok_exit_codes  exit codes that mean the collection finished (default [0]); anything
 #                else marks the collection failed, never complete
 #   load_note    load, rate-limit, or lockout warning shown with the evidence
+#   proxy_args   auto only: arguments for WSTG_HTTP_PROXY, for tools that ignore
+#                http_proxy/https_proxy. They replace the argv element "{proxy_args}"
+#                when a proxy is set and are dropped otherwise. Placeholders:
+#                {proxy_url} (http://host:port) and {proxy_hostport} (host:port)
+#   direct       auto only: the tool cannot use a proxy and needs direct connections
+#                (raw TCP, UDP, or ICMP); behind a proxy-only network it fails
 #
 # Placeholders: {domain} {fqdn} {base_url} {port} {out} (see src/wstg/catalog.py).
 evidence:
@@ -31,6 +37,7 @@ evidence:
     passive: true
     description: Registrant, organization, registrar, and name servers of the domain.
     argv: [whois, "{domain}"]
+    direct: true
     timeout: 60
 
   - id: dns-records
@@ -64,7 +71,8 @@ evidence:
     level: full
     passive: true
     description: Subdomains found in public passive sources.
-    argv: [subfinder, -d, "{domain}", -all, -silent, -o, "{out}/subfinder.txt"]
+    argv: [subfinder, -d, "{domain}", -all, -silent, -o, "{out}/subfinder.txt", "{proxy_args}"]
+    proxy_args: [-proxy, "{proxy_url}"]
     files: [subfinder.txt]
     timeout: 600
     load_note: Queries many third-party APIs (not the target). Free tiers rate-limit; zero results can mean a failed collection, check stderr.txt.
@@ -142,7 +150,8 @@ evidence:
     kind: auto
     level: light
     description: Products, versions, and frameworks WhatWeb recognizes on {base_url}/ (aggression level 1, one request).
-    argv: [whatweb, --color=never, -a, "1", "--log-json={out}/whatweb.json", "{base_url}/"]
+    argv: [whatweb, --color=never, -a, "1", "--log-json={out}/whatweb.json", "{proxy_args}", "{base_url}/"]
+    proxy_args: [--proxy, "{proxy_hostport}"]
     files: [whatweb.json]
     timeout: 120
 
@@ -153,7 +162,9 @@ evidence:
     level: full
     heavy: true
     description: Nikto findings for {base_url}/ (outdated software, default files, risky configuration).
-    argv: [nikto, -h, "{base_url}/", -ask, "no", -nointeractive, -Format, json, -output, "{out}/nikto.json"]
+    argv: [nikto, -h, "{base_url}/", -ask, "no", -nointeractive, -Format, json, -output, "{out}/nikto.json",
+           "{proxy_args}"]
+    proxy_args: [-useproxy, "{proxy_url}"]
     files: [nikto.json]
     timeout: 3600
     load_note: Sends thousands of requests and takes 10 to 60 minutes. Agree on the time window first; a WAF may block the tester's address.

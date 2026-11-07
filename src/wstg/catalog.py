@@ -5,6 +5,7 @@ Layout (YAML, in the repository, English):
     catalog/wstg_index.yaml        every WSTG v4.2 test (summary, target types, OWASP page)
     catalog/evidence/*.yaml        evidence definitions, list under `evidence:`
     catalog/wstg/WSTG-*.yaml       one scenario per test (overview, criteria, steps)
+    catalog/tools.yaml             tools the commands need, and how to install them
 
 Evidence is defined once and referenced by ID from scenario steps, so several
 tests share the same collected evidence. `load()` parses and validates
@@ -18,6 +19,13 @@ Placeholders in commands and text, filled in per target:
     {port}      the port of {base_url} (443 by default)
     {out}       evidence commands only: the version folder the command writes files into
     {ev:ID}     step commands only: the latest version folder of evidence ID
+
+Proxy (WSTG_HTTP_PROXY): commands get http_proxy/https_proxy in their
+environment. Tools that ignore it declare `proxy_args`, which replace the
+argv element "{proxy_args}" when a proxy is set and are dropped otherwise:
+
+    {proxy_url}       the proxy URL, for example http://proxy.example.com:3128
+    {proxy_hostport}  host:port of the proxy
 
 Only these names are replaced (by regular expression, not str.format), so other
 braces pass through unchanged: curl globs such as {a,b} and curl's own
@@ -49,6 +57,9 @@ EVIDENCE_ID_RE = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
 # "%{name}" is curl --write-out syntax, not a placeholder.
 PLACEHOLDER_RE = re.compile(r"(?<!%)\{([a-z_]+)\}")
 EV_REF_RE = re.compile(r"\{ev:([a-z0-9-]+)\}")
+PROXY_ARGS = "{proxy_args}"
+PROXY_PLACEHOLDERS = {"proxy_url", "proxy_hostport"}
+TOOL_INSTALLS = ("apt", "npm", "none")
 
 
 class CatalogError(Exception):
@@ -87,8 +98,19 @@ class Evidence:
     files: tuple[str, ...] = ()       # extra files the command writes under {out}
     timeout: int = 120
     ok_exit_codes: tuple[int, ...] = (0,)  # exit codes that mean "finished"
+    proxy_args: tuple[str, ...] = ()  # replace "{proxy_args}" in argv when a proxy is set
+    direct: bool = False              # the tool cannot use a proxy (needs direct connections)
     load_note: str = ""
     source: str = ""                  # file it was defined in
+
+
+@dataclass(frozen=True)
+class Tool:
+    name: str
+    install: str = "apt"
+    package: str = ""
+    path: str = ""
+    note: str = ""
 
 
 @dataclass(frozen=True)
@@ -116,6 +138,7 @@ class Catalog:
     tests: dict[str, Test]
     evidence: dict[str, Evidence]
     scenarios: dict[str, Scenario] = field(default_factory=dict)
+    tools: dict[str, Tool] = field(default_factory=dict)
 
     def evidence_for(self, test_id: str) -> list[Evidence]:
         """Evidence the scenario of a test uses, in step order, without duplicates."""
@@ -200,7 +223,8 @@ def _load_index(path: Path, problems: list[str]) -> tuple[str, dict[str, Test]]:
 
 
 EVIDENCE_KEYS = {"id", "title", "target_type", "kind", "description", "level", "passive", "heavy",
-                 "argv", "files", "timeout", "ok_exit_codes", "load_note"}
+                 "argv", "files", "timeout", "ok_exit_codes", "load_note",
+                 "proxy_args", "direct"}
 
 
 def _load_evidence(dir_: Path, problems: list[str]) -> dict[str, Evidence]:
@@ -223,7 +247,8 @@ def _load_evidence(dir_: Path, problems: list[str]) -> dict[str, Evidence]:
                 passive=bool(e.get("passive", False)), heavy=bool(e.get("heavy", False)),
                 argv=_strs(e.get("argv")), files=_strs(e.get("files")),
                 timeout=int(e.get("timeout", 120)),
-                ok_exit_codes=tuple(int(x) for x in e.get("ok_exit_codes", [0])), load_note=_str(e.get("load_note")), source=path.name,
+                ok_exit_codes=tuple(int(x) for x in e.get("ok_exit_codes", [0])), load_note=_str(e.get("load_note")),
+                proxy_args=_strs(e.get("proxy_args")), direct=bool(e.get("direct", False)), source=path.name,
             )
             _check_evidence(ev, problems)
             out[eid] = ev
@@ -251,8 +276,20 @@ def _check_evidence(ev: Evidence, problems: list[str]) -> None:
             problems.append(f"{w}: heavy evidence needs a load_note")
         if not 1 <= ev.timeout <= 3600:
             problems.append(f"{w}: timeout must be 1..3600 seconds")
+        n = ev.argv.count(PROXY_ARGS)
+        if ev.proxy_args and n != 1:
+            problems.append(f"{w}: proxy_args needs exactly one \"{PROXY_ARGS}\" element in argv")
+        if not ev.proxy_args and n:
+            problems.append(f"{w}: argv has \"{PROXY_ARGS}\" but no proxy_args")
+        if ev.proxy_args and ev.direct:
+            problems.append(f"{w}: direct and proxy_args exclude each other")
+        for a in ev.proxy_args:
+            for name in PLACEHOLDER_RE.findall(a):
+                if name not in PROXY_PLACEHOLDERS:
+                    problems.append(f"{w}: proxy_args may only use {{proxy_url}} and {{proxy_hostport}}, not {{{name}}}")
     else:
         for k, v in (("argv", ev.argv), ("level", ev.level), ("files", ev.files),
+                     ("proxy_args", ev.proxy_args), ("direct", ev.direct),
                      ("ok_exit_codes", ev.ok_exit_codes != (0,))):
             if v:
                 problems.append(f"{w}: manual evidence must not set {k}")
@@ -260,6 +297,8 @@ def _check_evidence(ev: Evidence, problems: list[str]) -> None:
             problems.append(f"{w}: manual evidence needs a description of what to capture")
     allowed = PLACEHOLDERS[ev.target_type]
     for s in ev.argv:
+        if s == PROXY_ARGS:
+            continue
         for name in PLACEHOLDER_RE.findall(s):
             if name not in allowed:
                 problems.append(f"{w}: placeholder {{{name}}} is not available for {ev.target_type} targets")
@@ -327,9 +366,36 @@ def load(root: Path | None = None) -> Catalog:
     version, tests = _load_index(root / "wstg_index.yaml", problems)
     evidence = _load_evidence(root / "evidence", problems)
     scenarios = _load_scenarios(root / "wstg", tests, evidence, problems)
+    tools = _load_tools(root / "tools.yaml", problems)
+    if tools is not None:
+        for ev in evidence.values():
+            if ev.kind == "auto" and ev.argv and ev.argv[0] not in tools:
+                problems.append(f"evidence {ev.id}: tool '{ev.argv[0]}' is not listed in tools.yaml")
     if problems:
         raise CatalogError(problems)
-    return Catalog(wstg_version=version, tests=tests, evidence=evidence, scenarios=scenarios)
+    return Catalog(wstg_version=version, tests=tests, evidence=evidence, scenarios=scenarios,
+                   tools=tools or {})
+
+
+def _load_tools(path: Path, problems: list[str]) -> dict[str, Tool] | None:
+    if not path.exists():
+        problems.append("tools.yaml is missing")
+        return None
+    data = _read_yaml(path, problems) or {}
+    out: dict[str, Tool] = {}
+    for i, t in enumerate(data.get("tools") or []):
+        where = f"tools.yaml[{i}]"
+        if not _keys(where, t, {"name", "install", "package", "path", "note"}, {"name"}, problems):
+            continue
+        tool = Tool(name=_str(t["name"]), install=_str(t.get("install")) or "apt",
+                    package=_str(t.get("package")) or _str(t["name"]), path=_str(t.get("path")),
+                    note=_str(t.get("note")))
+        if tool.install not in TOOL_INSTALLS:
+            problems.append(f"{where}: install must be one of {', '.join(TOOL_INSTALLS)}")
+        if tool.name in out:
+            problems.append(f"{where}: duplicate tool {tool.name}")
+        out[tool.name] = tool
+    return out
 
 
 # --------------------------------------------------------------------------

@@ -59,7 +59,7 @@
     <tr>
       <td>{% if e.owner %}<a href="{{ url_for('evidence_page', name=e.owner, eid=e.ev.id) }}"><b>{{ e.ev.title }}</b></a>{% else %}<b>{{ e.ev.title }}</b>{% endif %} <code class="muted">{{ e.ev.id }}</code>
         {% if e.owner and e.owner != target.name %}<br><span class="muted">from {{ e.owner }}</span>{% endif %}
-        {% if e.ev.kind == 'auto' %}<br><code class="muted small">{{ e.ev.argv | join(' ') }}</code>{% else %}<br><span class="muted">{{ e.ev.description }}</span>{% endif %}</td>
+        {% if e.ev.kind == 'auto' %}<br><code class="muted small">{{ e.ev.argv | reject('equalto', '{proxy_args}') | join(' ') }}</code>{% else %}<br><span class="muted">{{ e.ev.description }}</span>{% endif %}</td>
       <td class="nowrap">{{ e.ev.kind }}{% if e.ev.level %} · {{ e.ev.level }}{% endif %}{% if e.ev.heavy %} <span class="chip warn">heavy</span>{% endif %}</td>
       <td class="nowrap">{% if not e.owner %}<span class="muted">no parent domain</span>{% elif e.row %}{{ e.row.created_at }}<br><span class="muted">v{{ e.row.version }} · {{ e.row.item_count }} item(s)</span>{% else %}<span class="muted">not collected</span>{% endif %}</td>
       <td>{{ test_links(e.used_by, target) }}</td>

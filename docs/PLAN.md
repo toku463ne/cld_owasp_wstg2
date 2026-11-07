@@ -16,7 +16,7 @@ Last updated: 2026-11-07
 | M5 | Automatic evidence | **Done** (real tools to be checked on Kali) | Jobs, worker, light/full, resume, scope check, cancel, proxy |
 | M6 | Findings | **Done** | List, create from WSTG page, detail/edit, status and dates, CVSS 3.1 |
 | M7 | AI prompt | **Done** | Criteria, verdicts, commands, evidence excerpts, findings |
-| M8 | Deployment | **Partly done** (setup script, checked on Kali) | `scripts/setup-kali.sh`, nginx :8083, `wstg2-web` user service; worker unit and backup pending |
+| M8 | Deployment | **Done** (checked on Kali) | `scripts/setup-kali.sh`, nginx :8083, user services, backup, test tools from `catalog/tools.yaml` |
 | M9 | More automation | Not started | |
 
 ### M0 delivered
@@ -79,9 +79,12 @@ Last updated: 2026-11-07
 - Checked on Kali (2026-11-07): full run with nginx and the `wstg2-web` user service; smoke test returns 200 on 5083 and 8083.
 - Fixed on Kali: smoke test hung (curl without timeout, through the user's proxy) → `--noproxy '*'` and timeouts, progress output, service log on failure; exit 143 on restart counted as normal (`SuccessExitStatus=143`).
 - Config, data, service, and nginx names use the `wstg2` prefix so mine.wstg can run on the same host.
+- Test tools: `catalog/tools.yaml` (command, apt or npm package); `catalog-check` fails when an automatic evidence command is not listed. `wstg tools-check [--packages apt|npm] [--strict]`. The setup script installs them (apt, retried one by one on failure; npm into `~/.local` through `WSTG_HTTP_PROXY`) and prints the check. User units put `~/.local/bin` on PATH.
+- Proxy (from a Kali check: `openssl s_client` timed out behind the proxy): evidence `proxy_args` replace the argv element `{proxy_args}` only when `WSTG_HTTP_PROXY` is set (`{proxy_url}`, `{proxy_hostport}`); the scope check runs without them; credentials in the proxy URL are masked in the recorded command. `direct: true` marks tools that cannot use a proxy (whois, traceroute, nmap, sslscan); their failure message says so.
+- Evidence page: a missing tool or refused command creates no version, so the page shows the last job attempt (status and message).
 
 ### Open items carried forward
-- Check on Kali: browser clipboard paste into the capture box, the worker with real tools against a lab target (tool options such as katana `-ct`), backup.
+- Check on Kali: the proxy options of each tool (openssl, testssl, whatweb, nikto, ffuf, katana, subfinder, wafw00f) behind the real proxy; Kali package names in `catalog/tools.yaml` (katana, padbuster, theharvester); browser clipboard paste into the capture box, the worker with real tools against a lab target (tool options such as katana `-ct`), backup.
 - M1: CONF-01 to 11 and the remaining categories (IDNT, ATHN, ATHZ, SESS, INPV, ERRH, BUSL, CLNT, APIT).
 - M9: headless-browser HAR recording (needs a decision on adding Playwright and a browser), HAR analysis (cookies, headers, parameters) to replace manual Burp checks.
 - Backup frequency is the owner's decision; `--backup-timer` installs a daily one only when asked. Evidence is copied with rsync (versions never change).

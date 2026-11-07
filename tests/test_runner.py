@@ -144,3 +144,40 @@ def test_proxy_and_clean_environment(cfg, db, site, monkeypatch):
     r2, store2 = make(cfg, db, ev("env2", [PY, "-c", "import os; print(os.environ['https_proxy'])"]))
     run(r2, site)
     assert (store2.load(site.name, "env2").path / "stdout.txt").read_text() == "http://127.0.0.1:8080\n"
+
+
+def test_proxy_args_only_with_a_proxy_and_masked(cfg, db, site):
+    argv = [PY, "-c", "import sys; print(sys.argv[1:])", "{proxy_args}", "{base_url}/"]
+    e = ev("px", argv, proxy_args=("--proxy", "{proxy_hostport}", "{proxy_url}"))
+    r, store = make(cfg, db, e)
+    run(r, site)
+    v = store.load(site.name, "px")
+    assert (v.path / "stdout.txt").read_text() == "['https://www.example.com/']\n"
+    assert "{proxy_args}" not in v.meta["argv"]
+    # With a proxy (credentials in the URL): the proxy host is not a scope violation,
+    # the tool gets the arguments, and the record masks the credentials.
+    object.__setattr__(cfg, "http_proxy", "http://user:pw@proxy.example.net:3128")
+    r2, store2 = make(cfg, db, ev("px2", argv, proxy_args=e.proxy_args))
+    items = run(r2, site)
+    assert items["px2"]["status"] == "complete", items["px2"]["message"]
+    v = store2.load(site.name, "px2")
+    assert (v.path / "stdout.txt").read_text() == (
+        "['--proxy', 'proxy.example.net:3128', 'http://user:pw@proxy.example.net:3128', 'https://www.example.com/']\n")
+    assert "pw" not in " ".join(v.meta["argv"]) and "pw" not in (v.path / "command.txt").read_text()
+    assert "http://***@proxy.example.net:3128" in v.meta["argv"]
+
+
+def test_direct_tool_failure_mentions_the_proxy(cfg, db, site):
+    object.__setattr__(cfg, "http_proxy", "http://127.0.0.1:8080")
+    r, store = make(cfg, db, ev("raw", [PY, "-c", "raise SystemExit(1)"], direct=True))
+    items = run(r, site)
+    assert items["raw"]["status"] == "failed" and "cannot use WSTG_HTTP_PROXY" in items["raw"]["message"]
+    assert rmod.last_attempt(db, site, "raw")["status"] == "failed"
+
+
+def test_missing_tool_is_reported_on_the_evidence_page_data(cfg, db, site):
+    r, store = make(cfg, db, ev("nope", ["wstg-no-such-tool-xyz"]))
+    items = run(r, site)
+    assert items["nope"]["message"] == "tool not installed: wstg-no-such-tool-xyz"
+    assert store.load(site.name, "nope") is None
+    assert rmod.last_attempt(db, site, "nope")["message"].startswith("tool not installed")

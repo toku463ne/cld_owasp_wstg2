@@ -6,7 +6,9 @@
   <span class="chip">{{ ev.kind }}{% if ev.level %} · {{ ev.level }}{% endif %}</span>
 </div>
 <p>{{ ev.description }}</p>
-{% if ev.kind == 'auto' %}<p><code>{{ ev.argv | join(' ') }}</code></p>
+{% if ev.kind == 'auto' %}<p><code>{{ ev.argv | reject('equalto', '{proxy_args}') | join(' ') }}</code></p>
+{% if ev.proxy_args %}<p class="muted small">With WSTG_HTTP_PROXY set, adds <code>{{ ev.proxy_args | join(' ') }}</code>.</p>{% endif %}
+{% if ev.direct %}<p class="muted small">Needs a direct connection to the target; this tool cannot use WSTG_HTTP_PROXY.</p>{% endif %}
 {% if version and version.meta.argv %}<p class="muted small">Ran: <code>{{ version.meta.argv | join(' ') }}</code> · exit {{ version.meta.exit_code }} · {{ version.meta.duration_s }} s{% if version.meta.message %} · {{ version.meta.message }}{% endif %}</p>{% endif %}{% endif %}
 <p class="muted">Used by:
   {% for tid in used_by %}<a href="{{ url_for('wstg_page', name=target.name, test_id=tid) }}">{{ tid }}</a> {% endfor %}</p>
@@ -44,6 +46,10 @@
 </div>
 {% else %}
 <p class="muted">Not collected yet.</p>
+{% if attempt and attempt.status in ('failed', 'refused') %}
+<div class="warnbox">Last attempt (job {{ attempt.job_id }}, {{ attempt.mode }}, {{ attempt.finished_at or attempt.started_at }}):
+  <b>{{ attempt.status }}</b>{% if attempt.message %} · {{ attempt.message }}{% endif %}</div>
+{% endif %}
 {% endif %}
 
 {% if can_write and ev.kind == 'manual' and (is_latest or not version) %}

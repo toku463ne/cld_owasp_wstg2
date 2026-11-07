@@ -11,6 +11,7 @@ from flask import (Flask, abort, flash, g, jsonify, redirect, render_template, r
 
 from . import catalog as catmod
 from . import evidence as evmod
+from . import runner as rmod
 from . import targets as tmod
 from .web import admin_required, login_required
 
@@ -53,7 +54,8 @@ def register(app: Flask, store: evmod.Store, cat: catmod.Catalog) -> None:
         return render_template("evidence.html", tab="manual" if ev.kind == "manual" else "auto", ev=ev,
                                version=version, texts=texts, history=history,
                                is_latest=bool(version and latest and version.version == latest.version),
-                               used_by=cat.tests_using(eid))
+                               used_by=cat.tests_using(eid),
+                               attempt=rmod.last_attempt(store.db, t, eid) if ev.kind == "auto" else None)
 
     @app.post("/t/<name>/evidence/<eid>/images")
     @admin_required

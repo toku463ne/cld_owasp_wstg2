@@ -103,3 +103,17 @@ def test_auto_collect_queue_and_cancel(admin_client, guest_client, db, cfg):
     assert "nikto" not in [i["evidence_id"] for i in rmod.job_items(db, job["id"])]
     post(admin_client, f"/t/www.example.com/auto/jobs/{job['id']}/cancel")
     assert rmod.last_job(db, tm.get(db, "www.example.com"))["status"] == "cancelled"
+
+
+def test_evidence_page_shows_proxy_args_and_last_failure(admin_client, db, cfg):
+    t = tm.create(db, cfg, "www.example.com", "fqdn")
+    page = admin_client.get("/t/www.example.com/evidence/tls-cert-chain").get_data(as_text=True)
+    assert "{proxy_args}" not in page and "With WSTG_HTTP_PROXY set, adds <code>-proxy {proxy_hostport}</code>" in page
+    assert "cannot use WSTG_HTTP_PROXY" in admin_client.get("/t/www.example.com/evidence/tls-sslscan").get_data(as_text=True)
+    with db.tx() as conn:
+        conn.execute("INSERT INTO jobs (id, target_id, mode, status, created_at, created_by, finished_at)"
+                     " VALUES (7, ?, 'light', 'done', 'x', 'test', '2026-06-01T00:00:00Z')", (t.id,))
+        conn.execute("INSERT INTO job_items (job_id, seq, evidence_id, status, message)"
+                     " VALUES (7, 0, 'tls-sslscan', 'failed', 'tool not installed: sslscan')")
+    page = admin_client.get("/t/www.example.com/evidence/tls-sslscan").get_data(as_text=True)
+    assert "Last attempt (job 7" in page and "tool not installed: sslscan" in page

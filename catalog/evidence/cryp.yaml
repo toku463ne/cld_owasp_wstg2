@@ -12,7 +12,8 @@ evidence:
       testssl.json is a flat JSON list of {id, severity, finding, cve}; stdout.txt is the
       readable report.
     argv: [testssl, --quiet, --color, "0", --warnings, batch, --jsonfile, "{out}/testssl.json",
-           "{fqdn}:{port}"]
+           "{proxy_args}", "{fqdn}:{port}"]
+    proxy_args: [--proxy, "{proxy_hostport}"]
     files: [testssl.json]
     timeout: 1800
     load_note: >-
@@ -30,6 +31,7 @@ evidence:
       the leaf certificate of {fqdn}:{port}. sslscan's own OpenSSL can still test SSLv3 and
       TLS 1.0/1.1, unlike the system OpenSSL.
     argv: [sslscan, --no-colour, --show-certificate, "--xml={out}/sslscan.xml", "{fqdn}:{port}"]
+    direct: true
     files: [sslscan.xml]
     timeout: 300
     load_note: About a hundred short TLS handshakes in under a minute.
@@ -44,7 +46,8 @@ evidence:
       the verification result against the system trust store including the host name
       ("Verify return code"), and the OCSP stapling response.
     argv: [openssl, s_client, -connect, "{fqdn}:{port}", -servername, "{fqdn}",
-           -verify_hostname, "{fqdn}", -showcerts, -status]
+           -verify_hostname, "{fqdn}", -showcerts, -status, "{proxy_args}"]
+    proxy_args: [-proxy, "{proxy_hostport}"]
     timeout: 30
 
   - id: http-redirect-chain

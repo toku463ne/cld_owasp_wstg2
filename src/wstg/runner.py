@@ -11,6 +11,11 @@
   code in `ok_exit_codes` with every declared output file present makes a
   complete version; anything else is recorded as a failed version, which never
   becomes `latest` and is never a pass.
+- WSTG_HTTP_PROXY: commands get http_proxy/https_proxy in a clean environment;
+  tools that ignore those get their own proxy arguments (`proxy_args` in the
+  catalog). The scope check runs on the command without them, so the proxy
+  host is never mistaken for a contacted target. Credentials in the proxy URL
+  are masked in the recorded command line.
 - One worker process (`wstg worker`) runs jobs one at a time. On start it marks
   jobs left running by a dead worker as interrupted.
 """
@@ -24,6 +29,7 @@ import socket
 import subprocess
 import time
 from dataclasses import dataclass
+from urllib.parse import urlsplit
 
 from . import catalog as catmod
 from . import db as dbmod
@@ -49,6 +55,35 @@ class Outcome:
     exit_code: int | None = None
 
 
+def proxy_values(proxy: str) -> tuple[dict[str, str], dict[str, str]]:
+    """Placeholder values for proxy_args: (real, masked for the record)."""
+    u = urlsplit(proxy if "://" in proxy else "http://" + proxy)
+    if not u.hostname:
+        raise RunError(f"WSTG_HTTP_PROXY is not a URL: {proxy!r}")
+    host = f"[{u.hostname}]" if ":" in u.hostname else u.hostname
+    hostport = f"{host}:{u.port or (443 if u.scheme == 'https' else 80)}"
+    real = {"proxy_url": proxy if "://" in proxy else "http://" + proxy, "proxy_hostport": hostport}
+    masked = dict(real)
+    if u.username or u.password:
+        masked["proxy_url"] = f"{u.scheme}://***@{hostport}"
+    return real, masked
+
+
+def build_argv(ev: catmod.Evidence, values: dict[str, str], proxy: str) -> tuple[list[str], list[str], list[str]]:
+    """(argv to check against the scope, argv to run, argv to record)."""
+    base = [catmod.render(a, values) for a in ev.argv]
+    if not proxy or not ev.proxy_args:
+        argv = [a for a in base if a != catmod.PROXY_ARGS]
+        return argv, argv, argv
+    real, masked = proxy_values(proxy)
+    i = base.index(catmod.PROXY_ARGS)
+    checked = base[:i] + base[i + 1:]
+
+    def with_args(v):
+        return base[:i] + [catmod.render(a, v) for a in ev.proxy_args] + base[i + 1:]
+    return checked, with_args(real), with_args(masked)
+
+
 def plan(cat: catmod.Catalog, target: tmod.Target, mode: str) -> list[catmod.Evidence]:
     if mode not in MODES:
         raise RunError(f"mode must be one of {', '.join(MODES)}")
@@ -66,6 +101,14 @@ def active_job(db: dbmod.Database, target: tmod.Target) -> dict | None:
 
 def last_job(db: dbmod.Database, target: tmod.Target) -> dict | None:
     return db.one("SELECT * FROM jobs WHERE target_id = ? ORDER BY id DESC", (target.id,))
+
+
+def last_attempt(db: dbmod.Database, target: tmod.Target, evidence_id: str) -> dict | None:
+    """The most recent job item for one evidence of a target that ran (or was refused)."""
+    return db.one(
+        "SELECT i.*, j.mode FROM job_items i JOIN jobs j ON j.id = i.job_id"
+        " WHERE j.target_id = ? AND i.evidence_id = ? AND i.status IN ('complete', 'failed', 'refused', 'cancelled')"
+        " ORDER BY i.job_id DESC LIMIT 1", (target.id, evidence_id))
 
 
 def job_items(db: dbmod.Database, job_id: int) -> list[dict]:
@@ -138,7 +181,11 @@ class Runner:
         values = tmod.placeholder_values(self.cfg, target, scope)
         tmp = self.store.begin(target, ev.id)
         values["out"] = str(tmp)
-        argv = [catmod.render(a, values) for a in ev.argv]
+        try:
+            argv, run_argv, rec_argv = build_argv(ev, values, self.cfg.http_proxy)
+        except RunError as e:
+            shutil.rmtree(tmp, ignore_errors=True)
+            return Outcome("failed", str(e))
         leftover = [a for a in argv if catmod.PLACEHOLDER_RE.search(a)]
         try:
             if leftover:
@@ -157,7 +204,7 @@ class Runner:
         exit_code, message, cancelled = None, "", False
         with open(tmp / "stdout.txt", "wb") as out, open(tmp / "stderr.txt", "wb") as err:
             try:
-                proc = subprocess.Popen([tool, *argv[1:]], cwd=tmp, stdin=subprocess.DEVNULL, stdout=out,
+                proc = subprocess.Popen([tool, *run_argv[1:]], cwd=tmp, stdin=subprocess.DEVNULL, stdout=out,
                                         stderr=err, env=self.env(), start_new_session=True)
             except OSError as e:
                 shutil.rmtree(tmp, ignore_errors=True)
@@ -203,13 +250,15 @@ class Runner:
                 message = f"exit code {exit_code}"
             elif missing:
                 message = f"missing output: {', '.join(missing)}"
+        if message and ev.direct and self.cfg.http_proxy:
+            message += f" ({argv[0]} cannot use WSTG_HTTP_PROXY; it needs a direct connection to the target)"
         status = "failed" if message else "complete"
-        cmd_line = " ".join(argv)
+        cmd_line = " ".join(rec_argv)
         (tmp / "command.txt").write_text(cmd_line + "\n")
         v = self.store.commit(
             target, ev.id, tmp, source="auto", actor=actor, status=status,
             summary=("collected" if status == "complete" else f"failed: {message}"), items=items,
-            extra_meta={"argv": argv, "exit_code": exit_code, "started_at": started, "duration_s": duration,
+            extra_meta={"argv": rec_argv, "exit_code": exit_code, "started_at": started, "duration_s": duration,
                         "tool": tool, "job_id": job_id, "proxy": bool(self.cfg.http_proxy),
                         "message": message, "files": {"command.txt": {}}})
         if cancelled:

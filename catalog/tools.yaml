@@ -1,0 +1,42 @@
+# Tools the catalog runs: automatic evidence commands (argv[0]) and the commands
+# shown in scenario steps. scripts/setup-kali.sh installs them; `wstg tools-check`
+# reports what is missing. `wstg catalog-check` fails when an automatic evidence
+# command is not listed here.
+#
+# Keys:
+#   name     command name as found on PATH (or a path, for data files)
+#   install  apt (default) | npm | none (part of the base system)
+#   package  package name for apt or npm (default: name)
+#   path     check this file or folder instead of a command (data packages)
+#   note     shown by tools-check
+tools:
+  # ---- automatic evidence ---------------------------------------------------
+  - {name: whois}
+  - {name: dig, package: bind9-dnsutils}
+  - {name: curl}
+  - {name: subfinder}
+  - {name: whatweb}
+  - {name: nikto}
+  - {name: testssl, package: testssl.sh}
+  - {name: sslscan}
+  - {name: openssl}
+  - {name: wget}
+  - {name: traceroute}
+  - {name: nmap}
+  - {name: ffuf}
+  - {name: katana}
+  - {name: wafw00f}
+  - name: seclists
+    path: /usr/share/seclists/Discovery/DNS/subdomains-top1million-5000.txt
+    note: word lists for vhost-ffuf
+
+  # ---- commands in scenario steps --------------------------------------------
+  - {name: jq}
+  - {name: theHarvester, package: theharvester}
+  - {name: padbuster}
+  - {name: xxd}
+  - {name: zip}
+  - {name: perl, install: none}
+  - name: retire
+    install: npm
+    note: retire.js (JavaScript library check); installed with npm into ~/.local

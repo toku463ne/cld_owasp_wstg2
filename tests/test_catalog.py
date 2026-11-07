@@ -47,7 +47,11 @@ tests:
 """
 
 
-def make(tmp_path, evidence: str, scenarios: dict[str, str]):
+TOOLS = "tools:\n" + "".join(f"  - {{name: {n}}}\n" for n in ("whois", "dig", "curl", "nikto"))
+
+
+def make(tmp_path, evidence: str, scenarios: dict[str, str], tools: str = TOOLS):
+    (tmp_path / "tools.yaml").write_text(tools)
     (tmp_path / "evidence").mkdir()
     (tmp_path / "wstg").mkdir()
     (tmp_path / "wstg_index.yaml").write_text(INDEX)
@@ -191,3 +195,47 @@ def test_unknown_keys_and_duplicates(tmp_path):
     colour: red
 """)
     assert "unknown key 'colour'" in p and "defined in both" in p
+
+
+def test_auto_evidence_tools_must_be_listed(tmp_path):
+    with pytest.raises(catalog.CatalogError) as ei:
+        catalog.load(make(tmp_path, GOOD_EVIDENCE, {}, tools="tools:\n  - {name: whois}\n  - {name: x, install: brew}\n"))
+    p = "\n".join(ei.value.problems)
+    assert "tool 'curl' is not listed in tools.yaml" in p and "install must be one of" in p
+
+
+def test_repository_tools_cover_every_command():
+    c = catalog.load()
+    assert {e.argv[0] for e in c.evidence.values() if e.kind == "auto"} <= set(c.tools)
+    assert c.tools["testssl"].package == "testssl.sh"
+
+
+def test_proxy_args_are_checked(tmp_path):
+    p = problems_for(tmp_path, """\
+        evidence:
+          - id: a-root
+            title: a
+            target_type: fqdn
+            kind: auto
+            level: light
+            argv: [curl, "{base_url}/"]
+            proxy_args: [-x, "{proxy_url}"]
+          - id: b-root
+            title: b
+            target_type: fqdn
+            kind: auto
+            level: light
+            argv: [curl, "{proxy_args}", "{base_url}/"]
+          - id: c-root
+            title: c
+            target_type: fqdn
+            kind: auto
+            level: light
+            direct: true
+            argv: [curl, "{proxy_args}", "{base_url}/"]
+            proxy_args: [-x, "{fqdn}"]
+        """)
+    assert 'a-root: proxy_args needs exactly one "{proxy_args}"' in p
+    assert 'b-root: argv has "{proxy_args}" but no proxy_args' in p
+    assert "c-root: direct and proxy_args exclude each other" in p
+    assert "not {fqdn}" in p

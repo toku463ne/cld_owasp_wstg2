@@ -89,6 +89,7 @@ evidence:
     level: full
     description: Hops between the tester and {fqdn} (UDP probes, one per hop, up to 20 hops).
     argv: [traceroute, -n, -w, "2", -q, "1", -m, "20", "{fqdn}"]
+    direct: true
     timeout: 120
 
   - id: ports-web-common
@@ -103,9 +104,10 @@ evidence:
     argv: [nmap, -Pn, -sV, --version-light, --max-rate, "50", --open,
            -p, "80,81,443,591,2375,3000,5000,5601,7001,8000,8008,8080,8081,8088,8161,8443,8888,9000,9090,9200,9443,9990,10000,15672",
            -oN, "{out}/nmap-web.txt", "{fqdn}"]
+    direct: true
     files: [nmap-web.txt]
     timeout: 900
-    load_note: Port scan of 24 ports with service detection; IDS/IPS may react and block the tester's address. nmap ignores HTTP proxies, so it only works with direct reachability. Tell the target's administrator the source IP first.
+    load_note: Port scan of 24 ports with service detection; IDS/IPS may react and block the tester's address. Tell the target's administrator the source IP first.
 
   - id: vhost-ffuf
     title: Virtual host brute force (ffuf)
@@ -119,10 +121,11 @@ evidence:
     argv: [ffuf, -s, -noninteractive, -ac, -rate, "50", -t, "10",
            -w, "/usr/share/seclists/Discovery/DNS/subdomains-top1million-5000.txt:FUZZ",
            -u, "{base_url}/", -H, "Host: FUZZ.{domain}",
-           -o, "{out}/ffuf-vhost.json", -of, json]
+           -o, "{out}/ffuf-vhost.json", -of, json, "{proxy_args}"]
+    proxy_args: [-x, "{proxy_url}"]
     files: [ffuf-vhost.json]
     timeout: 900
-    load_note: About 5000 requests at up to 50 per second. Needs the seclists package. ffuf ignores http_proxy/https_proxy; behind a proxy it fails unless -x is added.
+    load_note: About 5000 requests at up to 50 per second. Needs the seclists package.
 
   - id: katana-crawl
     title: Unauthenticated crawl (katana)
@@ -135,10 +138,12 @@ evidence:
       endpoints parsed from JavaScript, robots.txt, and sitemap.xml. One URL per line in
       katana.txt.
     argv: [katana, -u, "{base_url}/", -d, "3", -jc, -kf, "robotstxt,sitemapxml", -fs, fqdn,
-           -rl, "10", -c, "5", -ct, "1200", -silent, -nc, -o, "{out}/katana.txt"]
+           -rl, "10", -c, "5", -ct, "1200", -silent, -nc, -o, "{out}/katana.txt",
+           "{proxy_args}"]
+    proxy_args: [-proxy, "{proxy_url}"]
     files: [katana.txt]
     timeout: 1800
-    load_note: Crawler; hundreds to thousands of GET requests at up to 10 per second, for at most 20 minutes. It follows links only (no form submission), but GET links that change state (logout, delete) are followed too. Install with `sudo apt install katana`.
+    load_note: Crawler; hundreds to thousands of GET requests at up to 10 per second, for at most 20 minutes. It follows links only (no form submission), but GET links that change state (logout, delete) are followed too.
 
   - id: wafw00f
     title: WAF detection (wafw00f)
@@ -147,7 +152,8 @@ evidence:
     level: full
     heavy: true
     description: WAF product wafw00f recognizes in front of {base_url}/ (or "No WAF detected").
-    argv: [wafw00f, -a, "{base_url}/"]
+    argv: [wafw00f, -a, "{proxy_args}", "{base_url}/"]
+    proxy_args: [-p, "{proxy_url}"]
     timeout: 300
     load_note: Sends requests with attack-like payloads (XSS, SQL injection strings); a WAF or IDS may alert or block the tester's address.
 

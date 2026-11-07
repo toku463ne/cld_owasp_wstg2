@@ -94,6 +94,40 @@ def cmd_catalog_check(args) -> int:
     return 0
 
 
+def cmd_tools_check(args) -> int:
+    import os
+    import shutil
+    c = catalog.load()
+    tools = list(c.tools.values())
+    if args.packages:
+        for t in tools:
+            if t.install == args.packages:
+                print(t.package)
+        return 0
+    used = {}
+    for e in c.evidence.values():
+        if e.kind == "auto":
+            used.setdefault(e.argv[0], []).append(e.id)
+    path = os.environ.get("PATH", "/usr/bin:/bin") + os.pathsep + os.path.expanduser("~/.local/bin")
+    missing = []
+    for t in tools:
+        found = (t.path if os.path.exists(t.path) else None) if t.path else shutil.which(t.name, path=path)
+        if not found:
+            missing.append(t)
+        how = "base system" if t.install == "none" else f"{t.install} {t.package}"
+        line = f"{'ok     ' if found else 'MISSING'} {t.name:<14} {found or '(' + how + ')'}"
+        if t.name in used and not found:
+            line += "  needed by " + ", ".join(used[t.name])
+        if t.note and not found:
+            line += f"  [{t.note}]"
+        print(line)
+    if missing:
+        print(f"{len(missing)} missing; install with scripts/setup-kali.sh (without --no-packages)")
+        return 1 if args.strict else 0
+    print("OK")
+    return 0
+
+
 def _runner(cfg):
     from . import evidence as evmod, runner as rmod
     db = _db(cfg)
@@ -195,6 +229,12 @@ def build_parser() -> argparse.ArgumentParser:
     s = sub.add_parser("catalog-check", help="load and validate the WSTG catalog (catalog/)")
     s.add_argument("-v", "--verbose", action="store_true", help="list tests without a scenario")
     s.set_defaults(func=cmd_catalog_check)
+
+    s = sub.add_parser("tools-check", help="show which tools of catalog/tools.yaml are installed; needs no config")
+    s.add_argument("--packages", choices=catalog.TOOL_INSTALLS[:2],
+                   help="only print the package names installed with apt or npm (for setup-kali.sh)")
+    s.add_argument("--strict", action="store_true", help="exit 1 when a tool is missing")
+    s.set_defaults(func=cmd_tools_check)
 
     s = sub.add_parser("worker", help="run queued automatic evidence jobs (one at a time)")
     s.add_argument("--once", action="store_true", help="run what is queued, then exit")

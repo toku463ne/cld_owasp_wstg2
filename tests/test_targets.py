@@ -137,6 +137,7 @@ def test_bare_host_arguments_are_checked(db, cfg):
 def test_every_catalog_command_passes_a_standard_scope(db, cfg, tmp_path):
     """The real catalog's active commands only contact the target on 80/443."""
     from wstg import catalog as catmod
+    from wstg import runner as rmod
     cat = catmod.load()
     tm.create(db, cfg, "example.com", "domain")
     f = tm.create(db, cfg, "www.example.com", "fqdn", parent="example.com")
@@ -145,6 +146,8 @@ def test_every_catalog_command_passes_a_standard_scope(db, cfg, tmp_path):
     for e in cat.evidence.values():
         if e.kind != "auto" or e.target_type != "fqdn":
             continue
-        argv = [catmod.render(a, values) for a in e.argv]
-        assert not any(catmod.PLACEHOLDER_RE.search(a) for a in argv), e.id
-        tm.check_command(f, s, argv, passive=e.passive, today=date(2026, 6, 1))
+        for proxy in ("", "http://proxy.example.net:3128"):
+            argv, run_argv, _ = rmod.build_argv(e, values, proxy)
+            assert not any(catmod.PLACEHOLDER_RE.search(a) for a in run_argv), e.id
+            tm.check_command(f, s, argv, passive=e.passive, today=date(2026, 6, 1))
+            assert ("proxy.example.net:3128" in " ".join(run_argv)) == bool(proxy and e.proxy_args), e.id

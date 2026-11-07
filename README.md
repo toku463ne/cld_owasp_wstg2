@@ -34,7 +34,9 @@ The script is safe to run again. It:
 1. installs base packages (`git curl openssl python3 pipx sqlite3 nginx`) and `uv`,
 2. creates `/srv/wstg2/evidence` and `/srv/wstg2/db` (mode 700),
 3. writes `~/.config/wstg2/wstg2.env` and a random `secret_key` if missing (existing ones are kept),
-4. runs `uv sync`, `wstg check-config`, `wstg migrate`,
+4. runs `uv sync`, then installs the test tools listed in `catalog/tools.yaml` (apt: nikto,
+   nmap, sslscan, testssl.sh, whatweb, ffuf, katana, seclists, ...; npm into `~/.local`:
+   retire) and prints `wstg tools-check`; then `wstg check-config`, `wstg migrate`,
 5. asks for the first admin password if no user exists (12+ characters),
 6. installs and restarts the systemd **user** services `wstg2-web` (web app) and `wstg2-worker`
    (automatic evidence jobs), with lingering,
@@ -51,7 +53,7 @@ Options:
 | `--data-dir DIR` | data root (default `/srv/wstg2`) |
 | `--config FILE` | config file (default `~/.config/wstg2/wstg2.env`) |
 | `--admin NAME` | first admin user name (default `admin`) |
-| `--no-packages` | skip apt |
+| `--no-packages` | skip apt and npm (base packages and test tools); `tools-check` still reports what is missing |
 | `--no-nginx` | skip the nginx site |
 | `--no-systemd` | skip the user services; run `uv run wstg serve` and `uv run wstg worker` yourself |
 | `--backup-timer` | also install a daily database backup (`wstg backup`, keeps 14) |
@@ -66,7 +68,10 @@ Without a terminal (for example over a non-interactive SSH command), set
 cd ~/cld_owasp_wstg2
 git pull
 scripts/setup-kali.sh --no-packages     # sync deps, migrate, restart wstg2-web, re-render nginx
+uv run wstg tools-check                 # which test tools are installed
 ```
+
+When `catalog/tools.yaml` gains a tool, run `scripts/setup-kali.sh` without `--no-packages`.
 
 Check it:
 
@@ -100,7 +105,7 @@ curl -s --noproxy '*' --max-time 5 -o /dev/null -w '%{http_code}\n' http://127.0
 | `WSTG_SECRET_KEY_FILE` / `WSTG_SECRET_KEY` | (required to serve) | Flask session key |
 | `WSTG_APP_PORT` | `5083` | loopback port of the app |
 | `WSTG_WEB_PORT` | `8083` | nginx port (used by the setup script) |
-| `WSTG_HTTP_PROXY` | (empty) | proxy for collection commands, e.g. `http://127.0.0.1:8080` (some tools ignore it: nmap, ffuf) |
+| `WSTG_HTTP_PROXY` | (empty) | proxy for collection commands, e.g. `http://127.0.0.1:8080`. Set as `http_proxy`/`https_proxy`; tools that ignore those get their own option (openssl `-proxy`, testssl `--proxy`, whatweb `--proxy`, nikto `-useproxy`, ffuf `-x`, katana/subfinder `-proxy`, wafw00f `-p`). whois, traceroute, nmap, and sslscan cannot use a proxy and need direct connections |
 | `WSTG_JOB_STALE_SECONDS` | `120` | a running job without a worker heartbeat for this long is shown as stalled |
 | `WSTG_ALLOWED_NETWORKS` | `192.168.0.0/16,127.0.0.0/8` | client networks; enforced by nginx and the app |
 

@@ -14,7 +14,8 @@ repository. Explicit environment variables win over the file.
                             (default 192.168.0.0/16,127.0.0.0/8); nginx enforces
                             the same list, this is a second line of defense
     WSTG_HTTP_PROXY         proxy for collection commands (http_proxy/https_proxy of the
-                            child processes), e.g. http://127.0.0.1:8080; empty = none
+                            child processes, plus `proxy_args` of tools that ignore
+                            those), e.g. http://127.0.0.1:8080; empty = none
     WSTG_JOB_STALE_SECONDS  a running job without a heartbeat for this long is marked
                             interrupted (default 120)
     WSTG_WEB_PORT           nginx port (default 8083); read by scripts/setup-kali.sh,
