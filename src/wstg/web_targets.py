@@ -179,6 +179,21 @@ def register(app: Flask, cfg: Config, db: dbmod.Database, cat: catmod.Catalog, s
             flash(str(e))
         return redirect(url_for("auto_tab", name=t.name))
 
+    @app.post("/t/<name>/auto/collect/<eid>")
+    @admin_required
+    def auto_collect_one(name: str, eid: str):
+        t = load_target(name)
+        force = bool(request.form.get("force"))
+        try:
+            job = rmod.enqueue(db, cat, t, "light", g.user["username"], evidence_id=eid, force=force)
+            flash(f"Job {job} queued: {eid}" + (" (collect again; earlier versions are kept)." if force else "."))
+        except rmod.RunError as e:
+            flash(str(e))
+        back = request.form.get("back")
+        if back == "evidence":
+            return redirect(url_for("evidence_page", name=t.name, eid=eid))
+        return redirect(url_for("auto_tab", name=t.name))
+
     @app.post("/t/<name>/auto/jobs/<int:job_id>/cancel")
     @admin_required
     def auto_cancel(name: str, job_id: int):

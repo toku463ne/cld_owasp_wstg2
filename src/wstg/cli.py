@@ -189,10 +189,11 @@ def cmd_collect(args) -> int:
     if not t:
         raise config.ConfigError(f"no such target: {args.target}")
     try:
-        job = rmod.enqueue(r.db, r.cat, t, args.mode, actor="cli")
+        job = rmod.enqueue(r.db, r.cat, t, args.mode, actor="cli", evidence_id=args.evidence or "",
+                           force=args.force)
     except rmod.RunError as e:
         raise config.ConfigError(str(e)) from None
-    print(f"queued job {job} ({args.mode}) for {t.name}")
+    print(f"queued job {job} ({args.evidence or args.mode}) for {t.name}")
     if args.run:
         r.recover()
         r.run_job(r.claim())
@@ -325,6 +326,8 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("target")
     s.add_argument("--mode", choices=("light", "full"), default="light")
     s.add_argument("--run", action="store_true", help="run it now in this process (no worker needed)")
+    s.add_argument("--evidence", help="collect only this evidence ID")
+    s.add_argument("--force", action="store_true", help="with --evidence: collect again even if collected")
     s.set_defaults(func=cmd_collect)
 
     s = sub.add_parser("ai-prompts", help="save AI prompts to <evidence>/<target>/_ai/prompts for an AI agent")

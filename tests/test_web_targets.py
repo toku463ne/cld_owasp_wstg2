@@ -153,3 +153,26 @@ def test_failed_collection_shows_command_and_output(admin_client, db, cfg):
     # an explicit version view does not repeat the block
     assert "Last failed collection" not in admin_client.get("/t/example.com/evidence/dns-whois?v=1").get_data(as_text=True)
     assert "#failed-log" in admin_client.get("/t/example.com/auto").get_data(as_text=True)
+
+
+def test_collect_one_evidence_buttons(admin_client, guest_client, db, cfg):
+    from wstg import runner as rmod
+    t = tm.create(db, cfg, "www.example.com", "fqdn")
+    tm.update_scope(db, t, allowed_hosts="www.example.com", allowed_ports="80,443",
+                    base_url="https://www.example.com", authorization_ref="Contract 2026-001",
+                    valid_from="2000-01-01", valid_until="2099-12-31", actor="test")
+    page = admin_client.get("/t/www.example.com/auto").get_data(as_text=True)
+    assert "/t/www.example.com/auto/collect/http-404" in page and "is heavy" in page
+    assert "/auto/collect/http-404" not in guest_client.get("/t/www.example.com/auto").get_data(as_text=True)
+    assert post(guest_client, "/t/www.example.com/auto/collect/http-404").status_code == 403
+    r = post(admin_client, "/t/www.example.com/auto/collect/http-404", back="evidence")
+    assert r.headers["Location"].endswith("/t/www.example.com/evidence/http-404")
+    job = rmod.last_job(db, t)
+    assert (job["evidence_id"], job["force"], job["status"]) == ("http-404", 0, "queued")
+    assert [i["evidence_id"] for i in rmod.job_items(db, job["id"])] == ["http-404"]
+    page = admin_client.get("/t/www.example.com/evidence/http-404").get_data(as_text=True)
+    assert "A job is running for this target" in page
+    assert f"Job {job['id']} · http-404" in admin_client.get("/t/www.example.com/auto").get_data(as_text=True)
+    post(admin_client, f"/t/www.example.com/auto/jobs/{job['id']}/cancel")
+    post(admin_client, "/t/www.example.com/auto/collect/dns-whois")       # domain evidence on an FQDN: refused
+    assert rmod.last_job(db, t)["evidence_id"] == "http-404"

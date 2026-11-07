@@ -291,3 +291,21 @@ def test_stop_item_kills_only_that_command_and_goes_on(cfg, db, site):
     # the stopped evidence is kept as a failed version, never complete
     assert store.load(site.name, "slow") is None
     assert rmod.last_attempt(db, site, "slow")["status"] == "cancelled"
+
+
+def test_single_evidence_job_and_collect_again(cfg, db, site):
+    r, store = make(cfg, db, ev("a", [PY, "-c", "print('a')"]), ev("b", [PY, "-c", "print('b')"], level="full"))
+    job = rmod.enqueue(db, r.cat, site, "light", "test", evidence_id="b")
+    assert rmod.last_job(db, site)["mode"] == "full"                  # the evidence's own level
+    assert r.claim() == job and r.run_job(job) == "done"
+    assert [(i["evidence_id"], i["status"]) for i in rmod.job_items(db, job)] == [("b", "complete")]
+    assert store.load(site.name, "a") is None and store.load(site.name, "b").version == 1
+    # without force a collected evidence is skipped; with force a new version is added
+    job = rmod.enqueue(db, r.cat, site, "light", "test", evidence_id="b")
+    r.claim(); r.run_job(job)
+    assert rmod.job_items(db, job)[0]["status"] == "skipped"
+    job = rmod.enqueue(db, r.cat, site, "light", "test", evidence_id="b", force=True)
+    r.claim(); r.run_job(job)
+    assert rmod.job_items(db, job)[0]["status"] == "complete" and store.load(site.name, "b").version == 2
+    with pytest.raises(rmod.RunError, match="not automatic evidence"):
+        rmod.enqueue(db, r.cat, site, "light", "test", evidence_id="nope")

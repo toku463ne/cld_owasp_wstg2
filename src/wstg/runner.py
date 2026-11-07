@@ -138,11 +138,22 @@ def job_items(db: dbmod.Database, job_id: int) -> list[dict]:
     return db.query("SELECT * FROM job_items WHERE job_id = ? ORDER BY seq", (job_id,))
 
 
-def enqueue(db: dbmod.Database, cat: catmod.Catalog, target: tmod.Target, mode: str, actor: str) -> int:
+def enqueue(db: dbmod.Database, cat: catmod.Catalog, target: tmod.Target, mode: str, actor: str, *,
+            evidence_id: str = "", force: bool = False) -> int:
+    """Queue a collection job: every automatic evidence of the mode, or with
+    `evidence_id` that one only (mode = its level). `force` collects it even when
+    a complete version exists (a new version is added; older ones are kept)."""
     problems = tmod.scope_problems(tmod.get_scope(db, target))
     if problems:
         raise RunError(f"set the scope record of {target.name} first: {'; '.join(problems)}")
-    evs = plan(cat, target, mode)
+    if evidence_id:
+        ev = cat.evidence.get(evidence_id)
+        if not ev or ev.kind != "auto" or ev.target_type != target.type:
+            raise RunError(f"{evidence_id} is not automatic evidence of {target.type} targets")
+        evs, mode = [ev], ev.level or "light"
+    else:
+        evs = plan(cat, target, mode)
+        force = False
     if not evs:
         raise RunError(f"no automatic evidence for {target.type} targets in {mode} mode")
     with db.tx() as conn:
@@ -151,12 +162,14 @@ def enqueue(db: dbmod.Database, cat: catmod.Catalog, target: tmod.Target, mode: 
             (target.id, *ACTIVE)).fetchone()
         if busy:
             raise RunError(f"job {busy[0]} for {target.name} is still active")
-        cur = conn.execute("INSERT INTO jobs (target_id, mode, status, created_at, created_by) VALUES (?,?,?,?,?)",
-                           (target.id, mode, "queued", dbmod.utcnow(), actor))
+        cur = conn.execute("INSERT INTO jobs (target_id, mode, status, created_at, created_by, evidence_id, force)"
+                           " VALUES (?,?,?,?,?,?,?)",
+                           (target.id, mode, "queued", dbmod.utcnow(), actor, evidence_id, int(force)))
         job_id = cur.lastrowid
         conn.executemany("INSERT INTO job_items (job_id, seq, evidence_id, status) VALUES (?,?,?,'pending')",
                          [(job_id, i, e.id) for i, e in enumerate(evs, 1)])
-        db.audit(conn, actor, "job.enqueue", target=target.name, job=job_id, mode=mode, items=len(evs))
+        db.audit(conn, actor, "job.enqueue", target=target.name, job=job_id, mode=mode, items=len(evs),
+                 evidence=evidence_id or None, force=force or None)
     return job_id
 
 
@@ -369,7 +382,7 @@ class Runner:
                 out = Outcome("failed", "no longer in the catalog")
             else:
                 latest = self.store.load(target.name, ev.id)
-                if latest:
+                if latest and not job["force"]:
                     out = Outcome("skipped", f"already collected (v{latest.version})", latest.version)
                 else:
                     self._set_item(job_id, item["seq"], "running", started=True)

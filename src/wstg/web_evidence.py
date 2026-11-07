@@ -69,6 +69,8 @@ def register(app: Flask, store: evmod.Store, cat: catmod.Catalog) -> None:
                                version=version, texts=texts, history=history,
                                is_latest=bool(version and latest and version.version == latest.version),
                                used_by=cat.tests_using(eid), failed=failed, failed_logs=failed_logs,
+                               latest_exists=latest is not None,
+                               job_active=ev.kind == "auto" and rmod.active_job(store.db, t) is not None,
                                attempt=rmod.last_attempt(store.db, t, eid) if ev.kind == "auto" else None)
 
     @app.post("/t/<name>/evidence/<eid>/images")

@@ -11,6 +11,13 @@
 {% if ev.pause_args %}<p class="muted small">With WSTG_PAUSE set, adds <code>{{ ev.pause_args | join(' ') }}</code> (seconds between requests).</p>{% endif %}
 {% if ev.direct %}<p class="muted small">Needs a direct connection to the target; this tool cannot use WSTG_HTTP_PROXY. With WSTG_DIRECT_SSH set, it runs on that jump host.</p>{% endif %}
 {% if version and version.meta.argv %}<p class="muted small">Ran{% if version.meta.via %} on <b>{{ version.meta.via }}</b>{% endif %}: <code>{{ version.meta.argv | join(' ') }}</code> · exit {{ version.meta.exit_code }} · {{ version.meta.duration_s }} s{% if version.meta.message %} · {{ version.meta.message }}{% endif %}</p>{% endif %}{% endif %}
+{% if can_write and ev.kind == 'auto' and ev.target_type == target.type %}
+<form method="post" class="inline" action="{{ url_for('auto_collect_one', name=target.name, eid=ev.id) }}">
+  <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="back" value="evidence">
+  {% if latest_exists %}<input type="hidden" name="force" value="1">{% endif %}
+  <button {{ 'disabled' if job_active }} {% if ev.heavy %}data-confirm="{{ ev.id }} is heavy: {{ ev.load_note }} Collect it now?"{% endif %}>{{ 'Collect again' if latest_exists else 'Collect' }}</button></form>
+{% if job_active %}<span class="muted small">A job is running for this target (<a href="{{ url_for('auto_tab', name=target.name) }}">Automatic evidence</a>).</span>{% endif %}
+{% endif %}
 <p class="muted">Used by:
   {% for tid in used_by %}<a href="{{ url_for('wstg_page', name=target.name, test_id=tid) }}">{{ tid }}</a> {% endfor %}</p>
 

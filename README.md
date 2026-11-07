@@ -89,6 +89,8 @@ curl -s --noproxy '*' --max-time 5 -o /dev/null -w '%{http_code}\n' http://127.0
    the allowed hosts and ports. Until then every command is refused.
 3. **Automatic evidence** tab: *Collect* in light mode first, full mode when heavy tools are agreed.
    Collecting again skips what is already collected.
+   Each row also has *Collect* (only that evidence) or *Collect again* (a new version; earlier ones
+   are kept), as does the evidence page.
 4. **WSTG index**: open a test, follow the steps, set each step's verdict, add screenshots and
    files on the evidence pages, and copy the AI prompt when you want a second opinion.
    *Reset test* clears every step verdict and the imported AI reviews of that test; evidence and
@@ -240,7 +242,7 @@ uv run wstg catalog-check [-v]            # validate the WSTG catalog (catalog/)
 uv run wstg tools-check [--strict]        # which tools of catalog/tools.yaml are installed
 uv run wstg tools-check --remote          # tools on the jump host of WSTG_DIRECT_SSH
 uv run wstg worker [--once]               # run queued automatic evidence jobs (systemd: wstg2-worker)
-uv run wstg collect TARGET [--mode light|full] [--run]   # queue (or with --run, run now) a collection
+uv run wstg collect TARGET [--mode light|full] [--evidence ID [--force]] [--run]   # queue (or with --run, run now) a collection
 uv run wstg backup [--dest DIR] [--keep 14]              # copy the database; rsync the evidence folder yourself
 ```
 
