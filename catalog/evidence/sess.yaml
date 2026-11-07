@@ -1,0 +1,93 @@
+# Evidence used by the Session Management (SESS) scenarios.
+# Schema: see the comments at the top of core.yaml.
+# Anonymous session cookies and their attributes come from session-token-samples
+# (catalog/evidence/cryp.yaml). Authenticated session behaviour (reissue at login,
+# logout, timeout, hijacking) needs a logged-in session, so it is captured by hand
+# with a test account; the per-role HAR (har-browse) holds the login responses.
+evidence:
+
+  - id: cookie-attr-tests
+    title: Authenticated session cookie attributes
+    target_type: fqdn
+    kind: manual
+    description: >-
+      The Set-Cookie response headers of the login (from the HAR, or
+      `curl -si -c cookies.txt --data '<login body>' {base_url}/<login>`), so each
+      authenticated session cookie's Secure, HttpOnly, SameSite, Domain, and Path can be
+      judged. Mark session and authentication cookies apart from CSRF or tracking cookies.
+      The headers hold the session value, so they stay inside evidence, never in a finding.
+
+  - id: session-reissue-tests
+    title: Session identifier reissue (fixation) tests
+    target_type: fqdn
+    kind: manual
+    description: >-
+      The session identifier value before login and after login (and after a privilege
+      change) with a test account, to check that it is reissued and the old one is
+      rejected. Include whether a session id can be injected through a URL or parameter.
+      Keep the identifier values inside evidence only.
+
+  - id: session-exposure-tests
+    title: Session token exposure tests
+    target_type: fqdn
+    kind: manual
+    description: >-
+      Evidence that the session token does or does not appear outside a cookie: in URL
+      query strings or redirect targets, in local/session storage (developer tools), in a
+      Referer sent to an external resource, or in an error page or stack trace produced on
+      purpose (invalid type, missing id, oversized value, broken JSON). Note where it
+      appears; keep the token value inside evidence only.
+
+  - id: csrf-tests
+    title: Cross-site request forgery tests
+    target_type: fqdn
+    kind: manual
+    description: >-
+      Per state-changing request (money transfer, setting change, delete): whether it
+      carries an anti-CSRF token, and the result of replaying it with the token removed,
+      with a fixed or guessed token, and with another user's token, plus whether SameSite
+      cookies or an Origin/Referer check protect it. A proof-of-concept HTML page is the
+      clearest reproduction; save it here.
+
+  - id: logout-tests
+    title: Logout invalidation tests
+    target_type: fqdn
+    kind: manual
+    description: >-
+      Evidence that logout invalidates the session server-side: the previous session
+      cookie replayed after logout and whether it is still accepted, whether logout clears
+      the cookie only on the client or also on the server, and whether the back button,
+      other tabs, or another device's session are invalidated. Note whether a clear logout
+      control exists at all.
+
+  - id: timeout-tests
+    title: Session timeout tests
+    target_type: fqdn
+    kind: manual
+    description: >-
+      The measured idle timeout and absolute timeout of an authenticated session (the
+      time after which the held session cookie is rejected server-side), whether the
+      expiry is enforced on the server rather than by the cookie's own expiry, and whether
+      the length is appropriate to the application's sensitivity.
+    load_note: Measuring a timeout means waiting (idle) and retrying; leave it running and come back. Record the retry times.
+
+  - id: session-puzzling-tests
+    title: Session puzzling tests
+    target_type: fqdn
+    kind: manual
+    description: >-
+      Evidence of session variables set in intermediate states (part-way through login,
+      password reset, or registration) and whether such a state can be used to reach a
+      screen it should not (for example a reset-in-progress state treated as
+      authenticated), by starting several flows in parallel and moving between them.
+
+  - id: hijacking-tests
+    title: Session hijacking (token portability) tests
+    target_type: fqdn
+    kind: manual
+    description: >-
+      Evidence of whether a valid session token, copied between the tester's own accounts
+      or environments, can be reused from another browser, IP, or user agent at the same
+      time (no binding), whether reuse triggers re-authentication or is short-lived, and
+      whether concurrent logins are detected or invalidated. Use the tester's own accounts
+      only, never another person's session.

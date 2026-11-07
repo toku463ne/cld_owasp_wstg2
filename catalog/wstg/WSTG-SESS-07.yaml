@@ -1,0 +1,40 @@
+id: WSTG-SESS-07
+overview: >-
+  Check that a session expires after a reasonable idle period and an absolute lifetime,
+  enforced on the server, so an unattended or long-lived session cannot be reused
+  indefinitely.
+pass: >-
+  An idle timeout and an absolute timeout are enforced server-side, with lengths
+  appropriate to the application's sensitivity; after expiry the token is rejected.
+fail: >-
+  There is no timeout, it is extremely long, or it is enforced only by the cookie's own
+  expiry on the client while the server still accepts the token.
+notes:
+  - Measuring a timeout means waiting; leave the session idle and retry, and record the times.
+  - A cookie expiry alone is a client control; the server must reject the token after the timeout.
+finding_kinds: [weak-session-timeout]
+steps:
+  - summary: Read the session cookie expiry from the samples
+    auto_run: true
+    evidence: [session-token-samples]
+    command: >-
+      grep -iE '^set-cookie:' {ev:session-token-samples}/stdout.txt
+      | grep -oiE '(max-age=[0-9]+|expires=[^;]+)' | sort -u | head
+      || echo "session cookie is a session cookie (no Max-Age/Expires) or no Set-Cookie in the samples"
+  - summary: Measure the idle and absolute timeouts server-side (manual)
+    evidence: [timeout-tests]
+    operation: >-
+      Log in with a test account and keep the session cookie. Leave it idle and retry an
+      authenticated request at intervals to find when the server rejects it (idle timeout).
+      Separately, keep using the session actively to find any absolute lifetime. Check that
+      expiry is decided by the server, not the cookie's own Max-Age. Record the times in
+      timeout-tests.
+    load_note: This requires waiting between retries; leave it running and come back. Note each retry time.
+  - summary: Judge the session timeout
+    evidence: [timeout-tests, session-token-samples]
+    ai_task: >-
+      From steps 1 and 2 decide whether timeouts are enforced and reasonable. Verdict: fail
+      when there is no idle or absolute timeout, it is extremely long for the application's
+      sensitivity, or it is enforced only by the client cookie while the server still
+      accepts the token; pass when both timeouts are enforced server-side with appropriate
+      lengths; "-" when timeout-tests is missing.

@@ -1,0 +1,37 @@
+id: WSTG-SESS-06
+overview: >-
+  Check that logging out invalidates the session on the server, not only by clearing the
+  cookie in the browser, so the previous token cannot be reused afterwards.
+pass: >-
+  After logout the previous session token is rejected by the server for every request,
+  and the session is also ended for the back button, other tabs, and other devices as
+  appropriate.
+fail: >-
+  The previous session token is still accepted after logout (the server did not
+  invalidate it), logout only clears the client cookie, or there is no clear logout.
+notes:
+  - After this test, log out to invalidate the token used; keep the token value inside evidence only.
+  - Record a missing or hard-to-find logout control as a finding of its own.
+finding_kinds: [weak-logout]
+steps:
+  - summary: Replay the session token after logout (manual)
+    evidence: [logout-tests]
+    operation: >-
+      Log in with a test account and keep the session cookie. Log out, then replay a
+      request to an authenticated page with the kept cookie. If it still succeeds, the
+      server did not invalidate the session. Record the request and response in
+      logout-tests.
+  - summary: Check client-only logout, back button, and other sessions (manual)
+    evidence: [logout-tests]
+    operation: >-
+      Check whether logout clears the cookie only on the client (server still accepts it),
+      whether the back button re-displays authenticated pages after logout (see also
+      WSTG-ATHN-06), and whether logout ends the session in other tabs or on another
+      device. Note whether a clear logout control exists. Add the results to logout-tests.
+  - summary: Judge logout functionality
+    evidence: [logout-tests]
+    ai_task: >-
+      From steps 1 and 2 decide whether logout invalidates the session server-side.
+      Verdict: fail when the previous token is still accepted after logout, logout only
+      clears the client cookie, or there is no clear logout; pass when the token is rejected
+      server-side after logout; "-" when logout-tests is missing.

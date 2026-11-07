@@ -1,0 +1,37 @@
+id: WSTG-SESS-08
+overview: >-
+  Check for session puzzling: whether the same session variable is set and read across
+  different flows (login, password reset, registration) so that a state created by one
+  flow is mistaken for another, granting access or identity it should not.
+pass: >-
+  Each flow keeps its own state; an intermediate state of one flow (for example a
+  reset-in-progress state) is never treated as another (for example authenticated).
+fail: >-
+  A session variable set part-way through one flow is reused by another so that an
+  intermediate state grants access, confirms identity, or skips a check it should not.
+notes:
+  - Start several flows in parallel and move between them; that is how puzzling is usually found.
+  - Use the tester's own test accounts only.
+finding_kinds: [session-puzzling]
+steps:
+  - summary: Identify intermediate-state variables in multi-step flows (manual)
+    evidence: [session-puzzling-tests]
+    operation: >-
+      Walk through each multi-step flow (login with a second factor, password reset,
+      registration with verification) and note the session variables or cookies set at the
+      intermediate steps (before completion). Record them in session-puzzling-tests.
+  - summary: Reuse an intermediate state in another flow (manual)
+    evidence: [session-puzzling-tests]
+    operation: >-
+      With an intermediate-state session (for example reset-in-progress, or part-way
+      through login), try to reach a screen or function that should need a completed flow
+      (an authenticated page, a confirmed identity). Start several flows in parallel and
+      move between them. Record whether any intermediate state grants unintended access in
+      session-puzzling-tests.
+  - summary: Judge session puzzling
+    evidence: [session-puzzling-tests]
+    ai_task: >-
+      From steps 1 and 2 decide whether a session variable is reused unsafely across flows.
+      Verdict: fail when an intermediate state of one flow is treated as another so it
+      grants access, confirms identity, or skips a check; pass when each flow keeps its own
+      state; "-" when session-puzzling-tests is missing.

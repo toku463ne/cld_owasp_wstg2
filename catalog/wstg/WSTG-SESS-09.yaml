@@ -1,0 +1,46 @@
+id: WSTG-SESS-09
+overview: >-
+  Check whether a session can be hijacked: whether a valid token, once obtained, can be
+  reused from another device or network with no additional binding or verification, and
+  whether the transport leaves it exposed to capture.
+pass: >-
+  A stolen token is of limited use: reuse from a new context triggers re-authentication
+  or device binding, the token is short-lived, and the transport is encrypted so capture
+  is hard; concurrent logins are detected.
+fail: >-
+  The same token works unchanged from another IP, browser, or user agent with full access
+  (no binding, long-lived), or the token can be captured over an unencrypted channel.
+notes:
+  - Test only between the tester's own accounts and environments; never use another person's session.
+  - Capture over an unencrypted channel is covered by WSTG-CRYP-01 and WSTG-SESS-02 (Secure); this test is about reuse once obtained.
+finding_kinds: [session-hijacking]
+steps:
+  - summary: Check whether the transport protects the token
+    auto_run: true
+    evidence: [http-redirect-chain, tls-versions-curl]
+    command: >-
+      head -5 {ev:http-redirect-chain}/stdout.txt 2>/dev/null;
+      grep -iE 'TLS1\.[0-3] [0-9]{3}' {ev:tls-versions-curl}/stdout.txt 2>/dev/null
+      || echo "no transport evidence; see WSTG-CRYP-01"
+  - summary: Reuse a valid token from another browser and network (manual)
+    evidence: [hijacking-tests]
+    operation: >-
+      With the tester's own test account, copy a valid session token to another browser
+      and (if possible) another IP or user agent, and use it at the same time as the
+      original. Note whether both work, whether reuse triggers re-authentication, and
+      whether the token is bound to an attribute (IP, User-Agent). Record it in
+      hijacking-tests.
+  - summary: Check short-lived tokens and concurrent-login handling (manual)
+    evidence: [hijacking-tests]
+    operation: >-
+      Check how long the copied token stays valid and whether a second simultaneous login
+      is detected or invalidates the first. Note how much a stolen token would allow. Add
+      the results to hijacking-tests.
+  - summary: Judge session hijacking
+    evidence: [hijacking-tests]
+    ai_task: >-
+      From steps 1 to 3 decide how reusable a stolen token is. Verdict: fail when the token
+      works unchanged from another IP, browser, or user agent with full access (no binding,
+      long-lived), or can be captured over an unencrypted channel; pass when reuse is
+      limited by binding, re-authentication, or short lifetime; "-" when hijacking-tests is
+      missing.

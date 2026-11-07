@@ -1,0 +1,45 @@
+id: WSTG-SESS-04
+overview: >-
+  Check that the session identifier is not exposed where it can leak: in URLs, browser
+  history, server logs, a Referer sent to third parties, local or session storage, or
+  error pages.
+pass: >-
+  The session token is carried only in a cookie and never appears in a URL, a redirect
+  target, local/session storage, a Referer to an external resource, or an error page.
+fail: >-
+  The token appears in a URL query or redirect, is stored in local/session storage, leaks
+  to an external site through the Referer, or is echoed in an error page or stack trace.
+notes:
+  - Even over TLS, a token in a URL remains in browser history and proxy logs; note that in the finding.
+  - Check Referer behaviour on pages that load external resources (CDN, analytics).
+finding_kinds: [session-token-exposed]
+steps:
+  - summary: Check for the session token in URLs and client storage
+    auto_run: true
+    evidence: [katana-crawl, site-assets]
+    command: >-
+      grep -oiE '[?&](sid|sessionid|session_id|phpsessid|jsessionid|aspsessionid|token|auth|access_token|jwt|cfid|cftoken)=[^&"'"'"'<> ]*'
+      {ev:katana-crawl}/katana.txt 2>/dev/null | sed -E 's/=.*/=<value>/' | sort -u | head;
+      grep -rhoiE '(localStorage|sessionStorage)\.(setItem|getItem)\([^)]*' {ev:site-assets}/site 2>/dev/null | sort -u | head
+  - summary: Check that error pages do not echo the session token
+    auto_run: true
+    evidence: [http-404]
+    command: >-
+      grep -ioE '(session|token|phpsessid|jsessionid|aspsessionid|csrf|auth)[^<>"'"'"' ]{0,40}'
+      {ev:http-404}/body.html 2>/dev/null | sort -u | head || echo "no session-like string in the 404 body"
+  - summary: Trigger errors and check the Referer and storage in the browser (manual)
+    evidence: [session-exposure-tests]
+    operation: >-
+      In the browser developer tools, confirm whether the session token is kept in local
+      or session storage. On a page that loads an external resource, check whether the
+      token leaks in the Referer. Deliberately cause errors (invalid type, missing id,
+      oversized value, broken JSON) and check the response body, stack trace, and debug
+      output for the token or internal variables. Record it in session-exposure-tests.
+  - summary: Judge session token exposure
+    evidence: [session-exposure-tests, katana-crawl]
+    ai_task: >-
+      From steps 1 to 3 decide whether the token is exposed outside a cookie. Verdict: fail
+      when it appears in a URL or redirect, in local/session storage, in a Referer to an
+      external site, or in an error page or stack trace; pass when it is cookie-only
+      everywhere observed; "-" when session-exposure-tests is missing and the crawl shows no
+      token in a URL.

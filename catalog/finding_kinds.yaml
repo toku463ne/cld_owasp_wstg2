@@ -189,3 +189,35 @@ kinds:
   - id: insecure-direct-object-reference
     title: Insecure direct object reference
     subject: "the reference and method, for example `GET /orders/:id`, `parameter id`"
+
+  # ---- session management --------------------------------------------------
+  - id: cookie-missing-httponly
+    title: Session cookie without the HttpOnly flag
+    subject: "the cookie name, for example `jsessionid`"
+  - id: cookie-weak-samesite
+    title: Session cookie with a weak or missing SameSite attribute
+    subject: "the cookie name, for example `sessionid`"
+  - id: cookie-scope-broad
+    title: Cookie scoped too broadly (Domain or Path)
+    subject: "the cookie name, for example `sessionid`"
+  - id: session-fixation
+    title: Session identifier not reissued at login (session fixation)
+    subject: "the session cookie name, for example `phpsessid`"
+  - id: session-token-exposed
+    title: Session token exposed outside a cookie (URL, storage, log, or error page)
+    subject: "where it appears, for example `url query`, `local storage`"
+  - id: csrf
+    title: State-changing request not protected against CSRF
+    subject: "the request and method, for example `POST /account/email`"
+  - id: weak-logout
+    title: Logout does not invalidate the session server-side
+    subject: "the application, for example `web session`"
+  - id: weak-session-timeout
+    title: Missing or excessive session timeout
+    subject: "the kind, for example `idle timeout`, `absolute timeout`"
+  - id: session-puzzling
+    title: Session variable reused across flows (session puzzling)
+    subject: "the flows and variable, for example `password reset to authenticated`"
+  - id: session-hijacking
+    title: Session token reusable from another device or network
+    subject: "the session token, for example `cookie sessionid`"

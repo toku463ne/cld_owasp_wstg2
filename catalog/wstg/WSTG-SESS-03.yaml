@@ -1,0 +1,37 @@
+id: WSTG-SESS-03
+overview: >-
+  Check for session fixation: whether the session identifier issued before login is still
+  valid after login, which would let an attacker fix a victim's session to a known
+  identifier and then take it over.
+pass: >-
+  The session identifier is reissued on successful authentication and the pre-login
+  identifier is rejected afterwards; an identifier cannot be injected through a URL or
+  parameter.
+fail: >-
+  The same identifier is valid before and after login (not reissued), or an
+  attacker-supplied identifier survives login so the session can be hijacked.
+notes:
+  - Check reissue on privilege change too, not only at login.
+  - Use the tester's own test account; record the pre-login and post-login identifiers inside evidence only.
+finding_kinds: [session-fixation]
+steps:
+  - summary: Record the session identifier before and after login (manual)
+    evidence: [session-reissue-tests]
+    operation: >-
+      Note the session cookie value issued before logging in (open the login page and read
+      the cookie). Log in with a test account and read the cookie again. If the value is
+      unchanged, the identifier is not reissued. Then replay the pre-login value after login
+      and see whether it is still accepted. Record both in session-reissue-tests.
+  - summary: Try to inject a chosen session identifier (manual)
+    evidence: [session-reissue-tests]
+    operation: >-
+      Try to set the session identifier through a URL parameter or a crafted cookie before
+      login, then log in and check whether that chosen value becomes an authenticated
+      session. Record the attempt and result in session-reissue-tests.
+  - summary: Judge session fixation
+    evidence: [session-reissue-tests]
+    ai_task: >-
+      From steps 1 and 2 decide whether the session is fixable. Verdict: fail when the
+      identifier is not reissued at login (the pre-login value stays valid) or an
+      attacker-supplied identifier survives login; pass when a new identifier is issued and
+      the old one is rejected; "-" when session-reissue-tests is missing.

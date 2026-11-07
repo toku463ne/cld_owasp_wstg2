@@ -1,0 +1,45 @@
+id: WSTG-SESS-01
+overview: >-
+  Analyse the session management schema: how the session identifier is generated, where
+  it is carried, and whether it is reissued. It must be unpredictable, kept in a cookie,
+  reissued on authentication, and managed on the server.
+pass: >-
+  The session identifier is long and unpredictable, carried only in a cookie, reissued at
+  login and privilege change, and invalidated server-side; it does not encode user data.
+fail: >-
+  The identifier is sequential, time-based, or an encoding of user data (predictable), is
+  carried in the URL or readable by JavaScript, or is not reissued at login.
+notes:
+  - The deep predictability analysis of the anonymous token (length, encoding, repeated blocks) is done in WSTG-CRYP-04; this test covers the schema around it.
+  - Session fixation (reissue at login) has its own test, WSTG-SESS-03; exposure in URLs has WSTG-SESS-04.
+finding_kinds: [predictable-token, session-token-exposed]
+steps:
+  - summary: List the anonymous session cookies issued and their attributes
+    auto_run: true
+    evidence: [session-token-samples]
+    command: >-
+      grep -iE '^set-cookie:' {ev:session-token-samples}/stdout.txt
+      | sed -E 's/(set-cookie: *[^=;]+=)[^;]*/\1<value>/I' | sort -u | head -40
+      || echo "no Set-Cookie header in the samples"
+  - summary: Check whether the session identifier appears in URLs or is readable by JavaScript
+    auto_run: true
+    evidence: [katana-crawl, site-assets]
+    command: >-
+      grep -oiE '[?&](sid|sessionid|session_id|phpsessid|jsessionid|aspsessionid|cfid|cftoken)=[^&"'"'"'<> ]*'
+      {ev:katana-crawl}/katana.txt 2>/dev/null | sed -E 's/=.*/=<value>/' | sort -u | head;
+      grep -rhoiE '(document\.cookie|localStorage|sessionStorage)' {ev:site-assets}/site 2>/dev/null | sort | uniq -c | sort -rn | head
+  - summary: Check predictability and reissue of the session identifier (manual)
+    evidence: [session-token-samples, har-browse, session-reissue-tests]
+    operation: >-
+      Review the anonymous token predictability from WSTG-CRYP-04 (length, character set,
+      shared or counting parts). From the HAR, confirm the identifier is issued in a cookie
+      and note whether it changes at login (detailed in WSTG-SESS-03). Check whether several
+      simultaneous logins each keep a valid session. Record it in session-reissue-tests.
+  - summary: Judge the session management schema
+    evidence: [session-token-samples, session-reissue-tests]
+    ai_task: >-
+      From steps 1 to 3 (and the WSTG-CRYP-04 result) decide whether the schema is sound.
+      Verdict: fail when the identifier is predictable, encodes user data, is carried in a
+      URL or readable by JavaScript, or is not reissued at login; pass when it is
+      unpredictable, cookie-only, and reissued; "-" when only the anonymous samples exist
+      and no logged-in evidence (session-reissue-tests) was captured.

@@ -1,0 +1,47 @@
+id: WSTG-SESS-05
+overview: >-
+  Check that state-changing requests are protected against cross-site request forgery:
+  by an unpredictable per-request or per-session token that the server verifies, and/or
+  by SameSite cookies with an Origin or Referer check.
+pass: >-
+  State-changing requests require a token the server verifies (unpredictable, bound to
+  the session), or are protected by SameSite cookies plus an Origin/Referer check; GET
+  does not change state.
+fail: >-
+  A state-changing request has no token or the token is not verified (removing or fixing
+  it still succeeds), a token works across users, state changes on GET, or there is no
+  Origin/Referer or SameSite protection.
+notes:
+  - A proof-of-concept HTML page that triggers the request from another origin is the clearest reproduction; save it in csrf-tests.
+  - Judge per request: the presence of a token field is not proof it is verified.
+finding_kinds: [csrf]
+steps:
+  - summary: Check whether forms carry an anti-CSRF token
+    auto_run: true
+    evidence: [katana-crawl, auth-pages]
+    command: >-
+      grep -rhoiE 'name=["'"'"']?(csrf|xsrf|_token|authenticity_token|__requestverificationtoken|anticsrf|_csrf)[^ "'"'"'>]*'
+      {ev:katana-crawl}/responses {ev:auth-pages}/pages 2>/dev/null | sort | uniq -c | sort -rn | head
+      || echo "no anti-CSRF token field seen in the collected forms (confirm per request)"
+  - summary: Replay state-changing requests with the token removed or altered (manual)
+    evidence: [csrf-tests]
+    operation: >-
+      For each state-changing request (setting change, delete, transfer), replay it with
+      the anti-CSRF token removed, set to a fixed or empty value, and replaced with another
+      test user's token. If any variant still succeeds, the token is not verified. Also try
+      performing the change with GET. Record each in csrf-tests.
+  - summary: Check SameSite and Origin/Referer protection, and build a PoC (manual)
+    evidence: [csrf-tests]
+    operation: >-
+      Check whether the session cookie's SameSite (from WSTG-SESS-02) and a server-side
+      Origin or Referer check block a cross-site request. Build a small PoC HTML page that
+      submits the state-changing request from another origin with the victim's cookies and
+      see whether it succeeds. Save the PoC and result in csrf-tests.
+  - summary: Judge CSRF protection
+    evidence: [csrf-tests]
+    ai_task: >-
+      From steps 2 and 3 decide whether state-changing requests are protected. Verdict: fail
+      when a request has no token or the token is not verified (removed/fixed/cross-user
+      still works), state changes on GET, or there is no SameSite or Origin/Referer
+      protection and a cross-site PoC succeeds; pass when a verified token or SameSite plus
+      Origin/Referer protects every state-changing request; "-" when csrf-tests is missing.

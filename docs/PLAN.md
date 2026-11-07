@@ -9,7 +9,7 @@ Last updated: 2026-11-08
 | # | Milestone | Status | Notes |
 |---|---|---|---|
 | M0 | Skeleton | **Done** (`5d9c082`) | 23 tests pass; CLI and waitress server checked by hand |
-| M1 | Catalog | **In progress** | Index (97), schema and validator, INFO + CONF + IDNT + CRYP + ATHN + ATHZ scenarios (43); SESS onwards pending |
+| M1 | Catalog | **In progress** | Index (97), schema and validator, INFO + CONF + IDNT + CRYP + ATHN + ATHZ + SESS scenarios (52); INPV onwards pending |
 | M2 | Targets and main page | **Done** | Targets, scope records and check, selector, tabs, WSTG index |
 | M3 | WSTG page | **Done** | Overview, criteria, steps, verdict/reset, commands, evidence (view, edit, collected date), findings, AI prompt |
 | M4 | Manual evidence | **Done** (browser paste to be checked on Kali) | Versioned store, capture box, upload, text, edit/remove as new versions |
@@ -93,6 +93,14 @@ Last updated: 2026-11-08
 - `tests/test_athz.py`: ATHZ-01 and ATHZ-04 candidate extraction against synthetic crawl output (file params vs. id= distinguished; numeric references vs. static assets), every ATHZ page renders. `catalog-check` clean (43 scenarios, 68 evidence); full suite 170 passed.
 - Not run against any host; the manual-step commands (traversal/IDOR curl, role replays) to be checked against a lab target on Kali.
 
+### M1 SESS delivered
+- `catalog/evidence/sess.yaml`: eight manual evidence for the logged-in behaviour that needs a test account (cookie-attr-tests, session-reissue-tests, session-exposure-tests, csrf-tests, logout-tests, timeout-tests, session-puzzling-tests, hijacking-tests), each keeping token values inside evidence. Anonymous cookies and their attributes are reused from `session-token-samples` (cryp.yaml); the login responses come from the per-role HAR (har-browse).
+- Scenarios WSTG-SESS-01 to 09 (`catalog/wstg/`): auto-run steps read only collected evidence — anonymous Set-Cookie list with the value masked (SESS-01), a perl check of Secure/HttpOnly/SameSite per anonymous cookie (SESS-02), session id in URLs / client storage / error bodies (SESS-01/04), anti-CSRF token fields in forms (SESS-05), cookie Max-Age/Expires (SESS-07), and transport evidence (SESS-09). All token values are masked in the output. The active, logged-in checks (reissue, logout, timeout, puzzling, hijacking, CSRF replay) are manual steps with concrete curl/operations and load notes; each test ends with an `ai_task` verdict. Cross-links: SESS-01↔CRYP-04 (predictability), SESS-02 (Secure)↔SESS-09, ATHN-06 (back button)↔SESS-06.
+- 10 finding kinds added (cookie-missing-httponly, cookie-weak-samesite, cookie-scope-broad, session-fixation, session-token-exposed, csrf, weak-logout, weak-session-timeout, session-puzzling, session-hijacking); SESS-01 reuses the existing predictable-token, SESS-02 reuses cookie-without-secure.
+- `tests/test_sess.py`: SESS-01/02/04 auto-run against synthetic cookie and crawl evidence (value always masked, missing attributes flagged per cookie, token in URL and error body found), every SESS page renders. `catalog-check` clean (52 scenarios, 76 evidence); full suite 182 passed.
+- Note: a step that references several evidence ids runs its auto-run command only when all are collected (analysis.run marks it "missing" otherwise); SESS reuses this as IDNT-04 does, relying on the light evidence being collected together.
+- Not run against any host; the manual-step commands to be checked against a lab target on Kali.
+
 ### M8 (pulled forward) delivered
 - `scripts/setup-kali.sh`: apt base packages, uv, data dirs (`/srv/wstg2/{evidence,db}`), config file and secret key generated once, `uv sync`, `check-config`, `migrate`, first admin, systemd user service `wstg2-web` (restarted on every run, lingering), nginx site rendered from `deploy/nginx/wstg2.conf.template` (port and allow list from the config), `nginx -t` with rollback, smoke test. Options `--no-packages`, `--no-nginx`, `--no-systemd`, `--dry-run`. Rerun after `git pull` to update a Kali host.
 - New config key `WSTG_WEB_PORT` (default 8083), read by the setup script only.
@@ -128,7 +136,7 @@ Last updated: 2026-11-08
 
 ### Open items carried forward
 - Check on Kali: katana `-sr -srd` (store responses) and the responses folder layout; gitleaks package and `detect --no-git --redact --report-format json` output fields (RuleID, File, StartLine, Match); the jump host (Ubuntu 24.04) with real whois/traceroute/nmap/sslscan; RDAP for the target's TLD; the proxy options of each tool (openssl, testssl, whatweb, nikto, ffuf, katana, subfinder, wafw00f) behind the real proxy; Kali package names in `catalog/tools.yaml` (katana, padbuster, theharvester); browser clipboard paste into the capture box, the worker with real tools against a lab target (tool options such as katana `-ct`), backup.
-- M1: the remaining categories (SESS, INPV, ERRH, BUSL, CLNT, APIT).
+- M1: the remaining categories (INPV, ERRH, BUSL, CLNT, APIT).
 - Check on Kali: the ATHN `login-http` and `alt-auth-endpoints` curl `--next` chains against a lab target, and the manual-step commands (force browsing, cache-header loop, enumeration curl).
 - Check on Kali: the CONF evidence against a lab target (content-ffuf and backup-ffuf run time, Nikto JSON layout read by `jq '.. | objects | select(has("msg"))'`).
 - M9: headless-browser HAR recording (needs a decision on adding Playwright and a browser), HAR analysis (cookies, headers, parameters) to replace manual Burp checks.
