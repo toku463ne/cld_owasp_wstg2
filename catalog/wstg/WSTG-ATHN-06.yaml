@@ -1,0 +1,49 @@
+id: WSTG-ATHN-06
+overview: >-
+  Check that authenticated, sensitive pages are not stored in the browser cache and
+  cannot be viewed after logout with the back button or from disk cache, which would leak
+  data on a shared device.
+pass: >-
+  Sensitive authenticated responses carry cache-control no-store (or at least no-cache,
+  must-revalidate, private) so they are not written to disk, and the page cannot be
+  re-displayed after logout.
+fail: >-
+  An authenticated sensitive page is cacheable (no no-store, or a positive max-age) and
+  its content can be re-displayed after logout with the back button or recovered from the
+  browser's disk cache.
+notes:
+  - The session cookie header captured for this test is the live session; it stays inside evidence, never in a finding, and the session is logged out after the test.
+  - Showing "logout then back button re-displays the page" on a real browser is the clearest evidence.
+finding_kinds: [sensitive-page-cached]
+steps:
+  - summary: List the authenticated sensitive pages and capture their session cookie (manual)
+    evidence: [cache-tests]
+    operation: >-
+      Log in with a test account and open the sensitive screens (my page, personal data,
+      payment, settings). Write each URL on its own line, and from the developer tools
+      Network tab copy the request Cookie header value for one of them. Save both into the
+      cache-tests evidence (the cookie header stays here only).
+  - summary: Check the cache-control headers of those pages (manual)
+    evidence: [cache-tests]
+    operation: >-
+      With the URLs in auth-urls.txt and the session cookie header in cookie-header.txt
+      from step 1, run per URL `ck=$(sed -E 's/^cookie: *//I' cookie-header.txt | tr -d
+      '\r\n'); while read -r u; do echo "== $u =="; curl -sI -b "$ck" "$u" | grep -iE
+      '^(cache-control|pragma|expires):'; done < auth-urls.txt | tee cache-headers.txt`.
+      A response without no-store (ideally), no-cache, or private, or with a positive
+      max-age, can be written to disk. Add cache-headers.txt to cache-tests.
+  - summary: Check re-display after logout and from disk cache (manual)
+    evidence: [cache-tests]
+    operation: >-
+      Open a sensitive page while authenticated, then log out and press the browser back
+      button: if the content is shown again, it was cached. In the developer tools Network
+      tab reload the response and see whether it is served "(from disk cache)". Screenshot
+      the result into cache-tests, then log out to invalidate the session.
+  - summary: Judge browser cache weaknesses
+    evidence: [cache-tests]
+    ai_task: >-
+      From steps 2 and 3 decide whether sensitive pages are cacheable. Verdict: fail when a
+      sensitive authenticated page lacks cache-control no-store (or no-cache/must-revalidate)
+      or has a positive max-age and its content can be re-displayed after logout or from
+      disk cache; pass when sensitive pages set no-store and cannot be re-displayed; "-"
+      when cache-tests is missing.

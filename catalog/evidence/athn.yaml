@@ -1,0 +1,154 @@
+# Evidence used by the Authentication (ATHN) scenarios.
+# Schema: see the comments at the top of core.yaml.
+# Most authentication checks need a test account and send login attempts, which can
+# lock accounts; those stay manual with concrete operations and load notes. Only
+# checks that send no credentials are automated here.
+evidence:
+
+  # ---- FQDN targets: light ---------------------------------------------------
+
+  - id: login-http
+    title: Plain-HTTP response of the login and credential pages
+    target_type: fqdn
+    kind: auto
+    level: light
+    description: >-
+      One GET over plain HTTP (port 80) per common login, password reset, and
+      registration path, headers only, without following redirects. stdout.txt has
+      "code content-type URL -> redirect" per path, so a 30x to an https:// location
+      (HTTP forced to HTTPS) can be told from a 200 that serves the form over plain HTTP,
+      where credentials could be typed and sent in the clear. No form is submitted.
+    argv: [curl, -sS, --max-time, "10",
+           -o, /dev/null, -w, "%{http_code} %{content_type} %{url_effective} -> %{redirect_url}\n", "http://{fqdn}/login",
+           --next, -sS, --max-time, "10", -o, /dev/null, -w, "%{http_code} %{content_type} %{url_effective} -> %{redirect_url}\n", "http://{fqdn}/signin",
+           --next, -sS, --max-time, "10", -o, /dev/null, -w, "%{http_code} %{content_type} %{url_effective} -> %{redirect_url}\n", "http://{fqdn}/account/login",
+           --next, -sS, --max-time, "10", -o, /dev/null, -w, "%{http_code} %{content_type} %{url_effective} -> %{redirect_url}\n", "http://{fqdn}/user/login",
+           --next, -sS, --max-time, "10", -o, /dev/null, -w, "%{http_code} %{content_type} %{url_effective} -> %{redirect_url}\n", "http://{fqdn}/auth/login",
+           --next, -sS, --max-time, "10", -o, /dev/null, -w, "%{http_code} %{content_type} %{url_effective} -> %{redirect_url}\n", "http://{fqdn}/wp-login.php",
+           --next, -sS, --max-time, "10", -o, /dev/null, -w, "%{http_code} %{content_type} %{url_effective} -> %{redirect_url}\n", "http://{fqdn}/register",
+           --next, -sS, --max-time, "10", -o, /dev/null, -w, "%{http_code} %{content_type} %{url_effective} -> %{redirect_url}\n", "http://{fqdn}/password/reset"]
+    timeout: 120
+
+  - id: alt-auth-endpoints
+    title: Presence of alternative or legacy authentication endpoints
+    target_type: fqdn
+    kind: auto
+    level: light
+    description: >-
+      One GET per common API, mobile, or legacy authentication endpoint. No credentials
+      are submitted. stdout.txt has "code size content-type URL" per path, so endpoints
+      that exist (any status other than 404 or 000) can be listed and compared by hand
+      against the main web login for lockout, MFA, and transport strength (WSTG-ATHN-10).
+    argv: [curl, -sS, -k, --max-time, "10",
+           -o, /dev/null, -w, "%{http_code} %{size_download} %{content_type} %{url_effective}\n", "{base_url}/api/login",
+           --next, -sS, -k, --max-time, "10", -o, /dev/null, -w, "%{http_code} %{size_download} %{content_type} %{url_effective}\n", "{base_url}/api/v1/login",
+           --next, -sS, -k, --max-time, "10", -o, /dev/null, -w, "%{http_code} %{size_download} %{content_type} %{url_effective}\n", "{base_url}/api/v2/login",
+           --next, -sS, -k, --max-time, "10", -o, /dev/null, -w, "%{http_code} %{size_download} %{content_type} %{url_effective}\n", "{base_url}/rest/login",
+           --next, -sS, -k, --max-time, "10", -o, /dev/null, -w, "%{http_code} %{size_download} %{content_type} %{url_effective}\n", "{base_url}/login.json",
+           --next, -sS, -k, --max-time, "10", -o, /dev/null, -w, "%{http_code} %{size_download} %{content_type} %{url_effective}\n", "{base_url}/oauth/token",
+           --next, -sS, -k, --max-time, "10", -o, /dev/null, -w, "%{http_code} %{size_download} %{content_type} %{url_effective}\n", "{base_url}/mobile/login",
+           --next, -sS, -k, --max-time, "10", -o, /dev/null, -w, "%{http_code} %{size_download} %{content_type} %{url_effective}\n", "{base_url}/graphql"]
+    timeout: 120
+
+  # ---- FQDN targets: manual --------------------------------------------------
+
+  - id: default-credential-tests
+    title: Default and well-known credential checks
+    target_type: fqdn
+    kind: manual
+    description: >-
+      One text item per login point (application, admin interface, and each component
+      found by whatweb / wappalyzer): the default or well-known user names and passwords
+      tried (from the product's documentation), and the result of each (a few by hand, a
+      dedicated test account, never a real user). Note any installer or setup page still
+      reachable without authentication. Write the successful combination as a summary
+      only; keep the actual credentials in evidence as a path reference, never in a
+      finding.
+
+  - id: lockout-tests
+    title: Account lockout and brute-force throttling checks
+    target_type: fqdn
+    kind: manual
+    description: >-
+      Notes and screenshots of the lockout test on a dedicated test account: how many
+      wrong passwords trigger a lockout, step-up delay, or CAPTCHA; the response
+      difference once triggered; how the account is released (time or administrator); and
+      whether the limit is per user name or per IP, and whether an API or other channel
+      skips it. Write "no limit observed" with the number of attempts made if nothing
+      triggers.
+
+  - id: auth-bypass-tests
+    title: Authentication-schema bypass checks
+    target_type: fqdn
+    kind: manual
+    description: >-
+      One text item or screenshot per attempt to reach protected functions without a
+      valid session: direct access to protected URLs (force browsing), tampering with a
+      cookie or parameter that marks the user as authenticated or privileged, replaying
+      or predicting a session identifier, and skipping a step of a multi-step login. Note
+      the request and the response, especially a redirect whose body still contains the
+      protected content.
+
+  - id: remember-me-tests
+    title: Remember-me and stored-password checks
+    target_type: fqdn
+    kind: manual
+    description: >-
+      Browser developer-tools evidence of the remember-me feature: whether the password
+      or a reversible form of it is stored in a cookie or local storage; whether the
+      remember-me token is predictable, long-lived, or still valid after logout and after
+      a password change; and whether sensitive form fields allow browser autocomplete.
+      Mask values of real tokens in screenshots; use a test account.
+
+  - id: cache-tests
+    title: Browser cache checks for authenticated pages
+    target_type: fqdn
+    kind: manual
+    description: >-
+      The authenticated, sensitive page URLs (one per line) seen with a test account and
+      the session cookie header for them (kept here, never in a finding), plus the output
+      of the WSTG-ATHN-06 step-2 command (cache-control, pragma, expires per URL) or
+      screenshots showing the page re-displayed from history or disk cache after logout.
+
+  - id: password-policy-tests
+    title: Password policy checks
+    target_type: fqdn
+    kind: manual
+    description: >-
+      One text item per value tried at registration or password change with a test
+      account: short, simple, dictionary, and known-breached passwords, plus a very long
+      passphrase to find any maximum-length limit. Record what was sent and whether it
+      was accepted (judged by the actual behaviour, not the on-screen rule text).
+
+  - id: security-question-tests
+    title: Security-question checks
+    target_type: fqdn
+    kind: manual
+    description: >-
+      Notes on the security-question feature: the questions offered (whether answerable
+      from public or social-media information), whether a free-text question can be set,
+      whether answer attempts are rate-limited, and whether the question alone (no second
+      factor) is enough to reset a password. Write "no security questions" as text when
+      the application has none.
+
+  - id: password-reset-tests
+    title: Password change and reset checks
+    target_type: fqdn
+    kind: manual
+    description: >-
+      One text item or screenshot per check of the change and reset flows with a test
+      account: whether a change requires the current password; whether the reset token is
+      random, short-lived, and single-use; whether the reset recipient can be changed to
+      another user's identifier; and whether existing sessions are invalidated after a
+      change or reset.
+
+  - id: alt-channel-tests
+    title: Alternative-channel authentication checks
+    target_type: fqdn
+    kind: manual
+    description: >-
+      For each alternative channel found (API and legacy endpoints from alt-auth-endpoints
+      and the crawl, mobile app, SSO, IVR): whether it enforces the same lockout, MFA, and
+      password strength as the main web login, whether sessions or tokens are shared so a
+      weaker channel can compromise a stronger one, and whether any legacy endpoint should
+      have been retired. Use a test account.

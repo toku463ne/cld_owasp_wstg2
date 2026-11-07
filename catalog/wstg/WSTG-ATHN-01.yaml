@@ -1,0 +1,46 @@
+id: WSTG-ATHN-01
+overview: >-
+  Check that credentials are always sent over an encrypted channel: the login page is
+  served over HTTPS, the form submits to an https:// target, and there is no fallback to
+  plain HTTP for the login or any later credential entry (password change, re-auth).
+pass: >-
+  The login page and every credential submission use HTTPS; plain HTTP to the login path
+  redirects to HTTPS before any form is shown, and no credential is sent in a URL query.
+fail: >-
+  Credentials are sent over HTTP, an HTTPS page posts the login form to an http:// action,
+  the login page is served over plain HTTP, or a user name or password appears in a URL
+  query string.
+notes:
+  - Use a dedicated test account; a HAR of the login holds the password, so it stays inside evidence and is never put in a finding or an AI chat.
+  - A redirect that still returns the form body in the same response means the form was served over HTTP; read the body, not only the status.
+finding_kinds: [credentials-over-http]
+steps:
+  - summary: Check whether plain HTTP to the login and credential paths redirects to HTTPS
+    auto_run: true
+    evidence: [login-http]
+    command: grep -vE '^(404|000) ' {ev:login-http}/stdout.txt || echo "none of the common login paths answered over HTTP"
+  - summary: Check the scheme of the login form action on the HTTPS page
+    auto_run: true
+    evidence: [auth-pages]
+    command: >-
+      grep -rhioE '<form[^>]*action=["'"'"']?[^ "'"'"'>]+' {ev:auth-pages}/pages 2>/dev/null | sort -u | head -40
+      || echo "no form action found in the collected login pages"
+  - summary: Capture the login submission and check its transport (manual)
+    evidence: [har-browse]
+    operation: >-
+      In the inspection browser open the login page, press F12, open Network, tick
+      "Preserve log" (Firefox: "Persist Logs"), then log in with the test account (solve
+      any CAPTCHA yourself). Right-click the login request (usually a POST) and save all
+      as HAR into the har-browse evidence. The protocol must be https, the method should
+      be POST, and no credential field may appear in the URL query. Repeat for password
+      change and any re-authentication screen.
+  - summary: Judge whether credentials are always encrypted in transit
+    evidence: [login-http, auth-pages, har-browse]
+    ai_task: >-
+      From steps 1 to 3 decide whether credentials are ever exposed: a login or credential
+      page served over plain HTTP without a redirect to HTTPS (step 1, status 200 over
+      http), a login form whose action is an http:// URL (step 2), or a login submission in
+      the HAR whose protocol is http or that carries a credential field name in the URL
+      query (step 3). Verdict: fail when any of these holds; pass when the login page, the
+      form action, and the submission are all HTTPS and no credential is in a URL; "-" when
+      the login-http and auth-pages evidence and the HAR are all missing.

@@ -1,0 +1,51 @@
+id: WSTG-ATHN-10
+overview: >-
+  Check that alternative authentication channels (API, mobile, SSO, legacy endpoints) do
+  not apply weaker controls than the main web login, and that a weaker channel cannot be
+  used to compromise a stronger one.
+pass: >-
+  Every channel enforces equivalent authentication strength: the same lockout, MFA, and
+  password policy; sessions or tokens are not shared in a way that lets a weak channel
+  undermine a strong one; and no obsolete endpoint remains.
+fail: >-
+  An API, mobile, or legacy endpoint has no lockout or MFA while the web login does,
+  accepts weaker credentials or plain HTTP, an old endpoint is still live, or a token from
+  a weak channel is accepted by a stronger one.
+notes:
+  - Use the alt-auth-endpoints evidence and the crawl to enumerate channels; probe for presence only, without submitting credentials, until the control comparison is done by hand.
+  - Reuse the recon results (subdomains, crawl) to find mobile or legacy hosts.
+finding_kinds: [weaker-alternative-channel]
+steps:
+  - summary: List alternative and legacy authentication endpoints that exist
+    auto_run: true
+    evidence: [alt-auth-endpoints]
+    command: grep -vE '^(404|000) ' {ev:alt-auth-endpoints}/stdout.txt || echo "no alternative authentication endpoint answered"
+  - summary: Find more channels in the crawl (API versions, mobile, oauth)
+    auto_run: true
+    evidence: [katana-crawl]
+    command: >-
+      grep -oiE '/[^ "'"'"'<>]*(api|rest|graphql|oauth|token|mobile|v[0-9]+)[^ "'"'"'<>]*(login|auth|token|session)?'
+      {ev:katana-crawl}/katana.txt 2>/dev/null | sort -u | head -40 || echo "no crawl collected"
+  - summary: Compare the controls of each channel against the web login (manual)
+    evidence: [alt-channel-tests]
+    operation: >-
+      For each channel from steps 1 and 2 (and any mobile or SSO flow), check with a test
+      account whether it enforces the same lockout (WSTG-ATHN-03), MFA, and password
+      strength as the web login, and whether it accepts plain HTTP. Note which controls are
+      missing on which channel in alt-channel-tests.
+    load_note: Login attempts on alternative channels can also lock the account; use a dedicated test account and few attempts.
+  - summary: Check token and session sharing across channels (manual)
+    evidence: [alt-channel-tests]
+    operation: >-
+      Check whether a session or token issued by one channel is accepted by another, so a
+      weaker channel could be used to obtain access usable on a stronger one, and whether
+      any legacy endpoint found should have been retired. Add the results to
+      alt-channel-tests.
+  - summary: Judge alternative-channel authentication
+    evidence: [alt-channel-tests, alt-auth-endpoints]
+    ai_task: >-
+      From steps 3 and 4 decide whether any channel is weaker. Verdict: fail when an API,
+      mobile, or legacy channel lacks a control the web login has (lockout, MFA, password
+      strength, HTTPS), a retired endpoint is still live, or a token from a weak channel is
+      accepted by a stronger one; pass when all channels are equivalent and isolated; "-"
+      when alt-channel-tests is missing.

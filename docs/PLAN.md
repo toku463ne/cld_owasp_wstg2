@@ -4,12 +4,12 @@ Requirements: [`VISION.md`](../VISION.md). Working rules: [`CLAUDE.md`](../CLAUD
 
 ## Progress
 
-Last updated: 2026-11-07
+Last updated: 2026-11-08
 
 | # | Milestone | Status | Notes |
 |---|---|---|---|
 | M0 | Skeleton | **Done** (`5d9c082`) | 23 tests pass; CLI and waitress server checked by hand |
-| M1 | Catalog | **In progress** | Index (97), schema and validator, INFO + CONF + IDNT + CRYP scenarios (29); ATHN onwards pending |
+| M1 | Catalog | **In progress** | Index (97), schema and validator, INFO + CONF + IDNT + CRYP + ATHN scenarios (39); ATHZ onwards pending |
 | M2 | Targets and main page | **Done** | Targets, scope records and check, selector, tabs, WSTG index |
 | M3 | WSTG page | **Done** | Overview, criteria, steps, verdict/reset, commands, evidence (view, edit, collected date), findings, AI prompt |
 | M4 | Manual evidence | **Done** (browser paste to be checked on Kali) | Versioned store, capture box, upload, text, edit/remove as new versions |
@@ -79,6 +79,13 @@ Last updated: 2026-11-07
 - IDNT (`catalog/evidence/idnt.yaml`): `auth-pages` (light; 20 login, registration, reset paths plus WordPress REST users and ?author=1, with redirect targets and bodies; ATHN will reuse it); manual `role-definitions`, `role-matrix` (input for ATHZ), `registration-tests`, `provisioning-process`, `enum-tests`. Auto-run: paths per role from the HAR captions (perl, ids normalized to :id, static files dropped; stays out of the prompt), registration and user management links in the crawl, form fields, public user lists, e-mail addresses and naming patterns in pages. AI tasks draft the role matrix and judge each test. 5 finding kinds. Manual on purpose: everything that needs logged-in accounts or the owner (role definitions, registration abuse, disabling an account, enumeration comparisons through forms with CSRF tokens; a curl comparison command is given for simple forms).
 - Open: the remaining categories, and checking tool options on Kali (e.g. katana `-ct`). Commands were not run against any host.
 
+### M1 ATHN delivered
+- `catalog/evidence/athn.yaml`: two light auto evidence that send no credentials — `login-http` (one plain-HTTP GET per common login/reset/registration path, headers only, "code content-type URL -> redirect" per path, to tell an HTTPS redirect from a form served over HTTP) and `alt-auth-endpoints` (one GET per common API/mobile/legacy login endpoint, presence only, for the ATHN-10 channel comparison); nine manual evidence for the parts that need a test account and send login attempts (default credentials, lockout, bypass, remember-me, cache, password policy, security question, reset, alternative channels), each with the exact capture and the load note.
+- Scenarios WSTG-ATHN-01 to 10 (`catalog/wstg/`): auto-run steps read only collected evidence (HTTP-login redirect and form-action scheme for ATHN-01; product fingerprints and installer paths for ATHN-02; CAPTCHA markers for ATHN-03; protected/role paths from the crawl for ATHN-04; autocomplete and password-field attributes for ATHN-05/07; security-question markers for ATHN-08; change/reset entry points for ATHN-09; answering endpoints for ATHN-10). Everything that submits credentials, locks accounts, or needs a logged-in session stays a manual step with a concrete curl/operation and a load note; each test ends with an `ai_task` verdict step.
+- 10 finding kinds added to `catalog/finding_kinds.yaml` (credentials-over-http, default-credentials, weak-lockout, authentication-bypass, remember-password-weakness, sensitive-page-cached, weak-password-policy, weak-security-question, weak-password-reset, weaker-alternative-channel).
+- `tests/test_athn.py`: ATHN-01 and ATHN-10 auto-run against synthetic evidence (HTTP form served without redirect flagged, dead endpoints dropped), every ATHN page renders. `catalog-check` clean (39 scenarios, 64 evidence); full suite 164 passed.
+- Not run against any host; `login-http` and `alt-auth-endpoints` argv (curl `--next` chains) and the manual-step commands still to be checked against a lab target on Kali.
+
 ### M8 (pulled forward) delivered
 - `scripts/setup-kali.sh`: apt base packages, uv, data dirs (`/srv/wstg2/{evidence,db}`), config file and secret key generated once, `uv sync`, `check-config`, `migrate`, first admin, systemd user service `wstg2-web` (restarted on every run, lingering), nginx site rendered from `deploy/nginx/wstg2.conf.template` (port and allow list from the config), `nginx -t` with rollback, smoke test. Options `--no-packages`, `--no-nginx`, `--no-systemd`, `--dry-run`. Rerun after `git pull` to update a Kali host.
 - New config key `WSTG_WEB_PORT` (default 8083), read by the setup script only.
@@ -114,7 +121,8 @@ Last updated: 2026-11-07
 
 ### Open items carried forward
 - Check on Kali: katana `-sr -srd` (store responses) and the responses folder layout; gitleaks package and `detect --no-git --redact --report-format json` output fields (RuleID, File, StartLine, Match); the jump host (Ubuntu 24.04) with real whois/traceroute/nmap/sslscan; RDAP for the target's TLD; the proxy options of each tool (openssl, testssl, whatweb, nikto, ffuf, katana, subfinder, wafw00f) behind the real proxy; Kali package names in `catalog/tools.yaml` (katana, padbuster, theharvester); browser clipboard paste into the capture box, the worker with real tools against a lab target (tool options such as katana `-ct`), backup.
-- M1: the remaining categories (ATHN, ATHZ, SESS, INPV, ERRH, BUSL, CLNT, APIT).
+- M1: the remaining categories (ATHZ, SESS, INPV, ERRH, BUSL, CLNT, APIT).
+- Check on Kali: the ATHN `login-http` and `alt-auth-endpoints` curl `--next` chains against a lab target, and the manual-step commands (force browsing, cache-header loop, enumeration curl).
 - Check on Kali: the CONF evidence against a lab target (content-ffuf and backup-ffuf run time, Nikto JSON layout read by `jq '.. | objects | select(has("msg"))'`).
 - M9: headless-browser HAR recording (needs a decision on adding Playwright and a browser), HAR analysis (cookies, headers, parameters) to replace manual Burp checks.
 - Backup frequency is the owner's decision; `--backup-timer` installs a daily one only when asked. Evidence is copied with rsync (versions never change).

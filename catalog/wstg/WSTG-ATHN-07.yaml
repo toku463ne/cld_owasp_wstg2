@@ -1,0 +1,39 @@
+id: WSTG-ATHN-07
+overview: >-
+  Check that the password policy enforces enough length and resistance to guessing,
+  judged by what the application actually accepts at registration and password change,
+  not by the on-screen rule text.
+pass: >-
+  A minimum length (about 12 characters) is enforced, common and breached passwords are
+  rejected, and the maximum length is not so short that passphrases are blocked.
+fail: >-
+  Short (4 to 6 character) or dictionary passwords are accepted, length is not required
+  (only character-class rules), or the maximum length is too short for a passphrase.
+notes:
+  - Current NIST SP 800-63B favours length over forced complexity and recommends checking against breached-password lists.
+  - Judge by the actual behaviour: a value that the screen text forbids but the server accepts is a fail.
+finding_kinds: [weak-password-policy]
+steps:
+  - summary: Read any client-side password rules on the registration and change forms
+    auto_run: true
+    evidence: [auth-pages]
+    command: >-
+      grep -rhioE '<input[^>]*type=["'"'"']?password[^>]*>' {ev:auth-pages}/pages 2>/dev/null
+      | grep -oiE '(minlength|maxlength|pattern|required)=["'"'"']?[^ "'"'"'>]*' | sort | uniq -c | sort -rn
+      | head -40 || echo "no password field attributes found (client rules may be in JavaScript)"
+  - summary: Try weak and over-long passwords and see which are accepted (manual)
+    evidence: [password-policy-tests]
+    operation: >-
+      With a test account, at registration or password change submit short values (1234),
+      a dictionary word (password), a known-breached password, and a very long passphrase.
+      Record for each what was sent and whether the server accepted it (the actual result,
+      not the on-screen message) in password-policy-tests.
+    load_note: Password change or registration may notify the account owner; use a dedicated test account.
+  - summary: Judge the password policy
+    evidence: [password-policy-tests]
+    ai_task: >-
+      From step 2 (and the client rules in step 1) decide whether the policy is weak.
+      Verdict: fail when a short or dictionary or breached password was accepted, length is
+      not enforced, or the maximum length blocks a reasonable passphrase; pass when a
+      sufficient minimum length is enforced and weak and breached passwords are rejected;
+      "-" when password-policy-tests is missing.

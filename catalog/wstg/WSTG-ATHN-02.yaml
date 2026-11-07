@@ -1,0 +1,47 @@
+id: WSTG-ATHN-02
+overview: >-
+  Check for default or well-known credentials on the application and the components it
+  runs on (web server, framework, admin consoles), and for installer or setup pages left
+  reachable. This confirms product defaults; it is not a brute-force test.
+pass: >-
+  No default or well-known credentials are accepted, and no installer or setup page is
+  reachable without authentication.
+fail: >-
+  A default or well-known credential (for example the product's documented admin account)
+  logs in, a product default account is still active, or an installer or setup page is
+  reachable without authentication.
+notes:
+  - Confirm product defaults only; try a few by hand with a test account and learn the lockout threshold first (WSTG-ATHN-03) so the real account is not locked out.
+  - Keep the working credential in evidence as a path reference; put only a summary in the finding.
+finding_kinds: [default-credentials]
+steps:
+  - summary: Identify the products and components that have known default accounts
+    auto_run: true
+    evidence: [whatweb, default-content]
+    command: >-
+      grep -rhioE '(wordpress|joomla|drupal|tomcat|jenkins|grafana|phpmyadmin|jboss|weblogic|gitlab|apache|nginx|iis)[^",]{0,30}'
+      {ev:whatweb}/stdout.txt {ev:default-content}/stdout.txt 2>/dev/null | sort | uniq -c | sort -rn | head -40
+      || echo "no product fingerprints collected"
+  - summary: Check for installer or setup pages reachable without authentication
+    auto_run: true
+    evidence: [admin-paths, default-content]
+    command: >-
+      grep -riE 'install|setup|wizard|configuration' {ev:admin-paths}/stdout.txt {ev:default-content}/stdout.txt 2>/dev/null
+      | grep -vE '^(404|000) ' | head -40 || echo "no installer or setup path answered"
+  - summary: Try the documented default credentials for each product (manual)
+    evidence: [default-credential-tests]
+    operation: >-
+      For the application login and each component identified in step 1, look up the
+      product's documented default user names and passwords and try a few by hand with a
+      dedicated test account at the login point. Also try common administrative names.
+      Record each attempt and its result in default-credential-tests; keep any working
+      credential as a path reference only.
+    load_note: Trying several credentials in a row can lock the account. Learn the lockout threshold first (WSTG-ATHN-03) and use a dedicated test account.
+  - summary: Judge default credentials
+    evidence: [default-credential-tests, admin-paths]
+    ai_task: >-
+      From steps 2 and 3 decide whether any default credential works or an unauthenticated
+      installer/setup page is reachable. Verdict: fail when a default or well-known
+      credential logs in, a product default account is active, or an installer/setup page
+      is reachable without authentication; pass when none is; "-" when
+      default-credential-tests is missing.

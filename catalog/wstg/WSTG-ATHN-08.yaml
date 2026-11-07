@@ -1,0 +1,47 @@
+id: WSTG-ATHN-08
+overview: >-
+  Check that security questions, where used, are not a weak authentication factor: the
+  questions are not answerable from public information, answers are rate-limited, and the
+  question alone cannot reset a password.
+pass: >-
+  Security questions are not used as a sole authentication factor; where present, the
+  questions are not guessable from public or social-media information and answer attempts
+  are rate-limited.
+fail: >-
+  A password can be reset using only a security question whose answer is discoverable
+  from public information (home town, mother's maiden name), a weak free-text question can
+  be set, or answer attempts are not limited.
+notes:
+  - Many applications have no security questions; when so, write "no security questions" in the evidence and mark the test accordingly.
+  - Repeated answer attempts can lock the account or abuse the reset flow; use a test account and few attempts.
+finding_kinds: [weak-security-question]
+steps:
+  - summary: Find whether a security-question feature exists in the crawl and reset pages
+    auto_run: true
+    evidence: [katana-crawl, auth-pages]
+    command: >-
+      grep -rhioE 'security.?question|secret.?question|challenge.?question|mother|maiden|pet|first.?school'
+      {ev:katana-crawl}/katana.txt {ev:auth-pages}/pages 2>/dev/null | sort -u | head -20
+      || echo "no sign of a security-question feature (confirm by hand)"
+  - summary: Review the questions and whether they alone reset a password (manual)
+    evidence: [security-question-tests]
+    operation: >-
+      If the application offers security questions, list the ones available and judge
+      whether each is answerable from public or social-media information. Check whether a
+      free-text question can be set, and whether answering the question alone (no second
+      factor) completes a password reset. Record it in security-question-tests; if there
+      are none, write "no security questions".
+  - summary: Check rate limiting on answer attempts (manual)
+    evidence: [security-question-tests]
+    operation: >-
+      With a test account, submit a few wrong answers and check for a limit, delay, or
+      lockout on the answer step. Note the behaviour in security-question-tests.
+    load_note: Repeated wrong answers can lock the account or abuse the reset flow; use a dedicated test account and few attempts.
+  - summary: Judge the security-question strength
+    evidence: [security-question-tests]
+    ai_task: >-
+      From steps 2 and 3 decide whether security questions are a weak factor. Verdict: fail
+      when a guessable question alone can reset a password, a weak free-text question can be
+      set, or answers are not rate-limited; pass when questions are not a sole factor and
+      are not publicly guessable, or the application has none; "-" when
+      security-question-tests is missing.

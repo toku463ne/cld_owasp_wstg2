@@ -1,0 +1,48 @@
+id: WSTG-ATHN-03
+overview: >-
+  Check that a lockout, step-up delay, or CAPTCHA stops repeated failed logins from
+  enabling a practical brute-force attack, while the mechanism itself does not create an
+  easy denial of service.
+pass: >-
+  After a small number of failed attempts the account locks, slows down, or requires a
+  CAPTCHA, so high-rate guessing is not practical, and there is a sensible release path
+  (time-based or administrator).
+fail: >-
+  Failed attempts are not limited and fast guessing is possible, or (the opposite) a
+  trivially triggered lockout keyed on something an attacker controls lets them lock out
+  other users at will.
+notes:
+  - This test deliberately locks an account. Use a dedicated test account only, never a real or shared one, and start with a few attempts.
+  - Record the release condition (time or administrator) and whether the limit is per user name or per IP; a CAPTCHA that cannot be automated is also a valid control to record.
+finding_kinds: [weak-lockout]
+steps:
+  - summary: Note the login points to test and any protection already visible
+    auto_run: true
+    evidence: [auth-pages]
+    command: >-
+      grep -rhioE 'captcha|recaptcha|hcaptcha|g-recaptcha|turnstile' {ev:auth-pages}/pages 2>/dev/null | sort -u
+      | head; grep -vE '^(404|000) ' {ev:auth-pages}/stdout.txt | grep -iE 'login|sign' | head
+  - summary: Send a few wrong passwords and find the lockout or throttling threshold (manual)
+    evidence: [lockout-tests]
+    operation: >-
+      With a dedicated test account, send wrong passwords one at a time through the login
+      form (or with a single curl per attempt) and watch for a lockout, a growing delay,
+      or a CAPTCHA. Note how many attempts trigger it and how the response changes. Stop
+      as soon as the behaviour changes. Record it all in lockout-tests.
+    load_note: Intentional lockout. Dedicated test account only; start with a few attempts; do not script high-rate guessing.
+  - summary: Check the release condition and whether the limit can be skipped (manual)
+    evidence: [lockout-tests, alt-auth-endpoints]
+    operation: >-
+      After a lockout, check how the account is released (time passing or an administrator)
+      and the response while locked. Check whether the limit is keyed on the user name or
+      the IP, and whether an API or alternative login endpoint (alt-auth-endpoints) applies
+      no limit. Add the results to lockout-tests.
+  - summary: Judge the lockout mechanism
+    evidence: [lockout-tests]
+    ai_task: >-
+      From steps 2 and 3 decide whether brute force is practical. Verdict: fail when failed
+      attempts are not limited (no lockout, delay, or CAPTCHA within a small count) so fast
+      guessing is possible, or when an alternative channel skips the limit; note separately
+      if the lockout is so easily triggered on an attacker-controlled key that it enables
+      denial of service; pass when a limit applies and has a sensible release; "-" when
+      lockout-tests is missing.

@@ -1,0 +1,46 @@
+id: WSTG-ATHN-04
+overview: >-
+  Check whether the authentication schema can be bypassed to reach protected functions
+  without valid credentials: direct access to protected URLs, tampering with a cookie or
+  parameter, predicting or replaying a session, or skipping a step of a multi-step login.
+pass: >-
+  Every protected function requires a valid authenticated session; unauthenticated
+  requests to protected URLs are refused, and no parameter or session change grants access.
+fail: >-
+  A protected function can be reached without authenticating: by requesting its URL
+  directly, by changing a cookie or parameter (for example a role or "authenticated"
+  flag), by predicting or replaying a session identifier, or by skipping a login step.
+notes:
+  - Watch for a redirect to the login page whose body still contains the protected content; read the body, not only the status code.
+  - Use the role paths from WSTG-IDNT-01 as the list of protected URLs to request while unauthenticated.
+finding_kinds: [authentication-bypass]
+steps:
+  - summary: List protected URLs and functions seen for authenticated roles
+    auto_run: true
+    evidence: [katana-crawl]
+    command: >-
+      grep -oiE '/(admin|account|dashboard|profile|settings|manage|console|internal|api)[^ "'"'"'<>]*'
+      {ev:katana-crawl}/katana.txt 2>/dev/null | sort -u | head -60 || echo "no crawl collected"
+  - summary: Request the protected URLs without a session (force browsing) (manual)
+    evidence: [auth-bypass-tests]
+    operation: >-
+      For each protected URL (step 1 and the role paths from WSTG-IDNT-01), send a request
+      with no session cookie, for example `curl -sk -i {base_url}/admin`, and check the
+      status and the body. A 200 with the protected content, or a 30x whose body still
+      contains it, is a bypass. Save the request and response in auth-bypass-tests.
+  - summary: Try cookie, parameter, and session tampering (manual)
+    evidence: [auth-bypass-tests]
+    operation: >-
+      With the inspection browser's developer tools, change a cookie or parameter that
+      marks the user as authenticated or privileged (for example a role or an is-admin
+      flag) and retry a protected function. Try replaying or predicting a session
+      identifier, and skipping an intermediate step of a multi-step login by going
+      straight to the final page. Record each attempt and result in auth-bypass-tests.
+  - summary: Judge authentication bypass
+    evidence: [auth-bypass-tests]
+    ai_task: >-
+      From steps 2 and 3 decide whether any protected function was reached without a valid
+      session. Verdict: fail when force browsing, a cookie or parameter change, a session
+      prediction or replay, or a skipped step gave access to protected content (including a
+      redirect whose body still contained it); pass when every attempt was refused; "-"
+      when auth-bypass-tests is missing.

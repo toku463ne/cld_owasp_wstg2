@@ -1,0 +1,47 @@
+id: WSTG-ATHN-05
+overview: >-
+  Check that a remember-me or stored-password feature does not expose credentials: the
+  password is never stored in a recoverable form, the remember-me token is random,
+  time-limited, and invalidated on logout and password change, and sensitive fields do
+  not allow browser autocomplete of credentials.
+pass: >-
+  The remember-me token is random with an expiry and is invalidated by logout and
+  password change; no password or reversible form of it is stored on the client; and
+  password fields set autocomplete off.
+fail: >-
+  A password or a reversible form of it is stored in a cookie or local storage, the
+  remember-me token is predictable or never expires (still valid after logout or a
+  password change), or the original password can be recovered from the token.
+notes:
+  - Use a test account and mask real token values in screenshots.
+  - Always test logout and password change: a token that survives either is a finding.
+finding_kinds: [remember-password-weakness]
+steps:
+  - summary: Check the autocomplete attribute on the login and password fields
+    auto_run: true
+    evidence: [auth-pages]
+    command: >-
+      grep -rhioE '<input[^>]*type=["'"'"']?password[^>]*>|<input[^>]*(autocomplete|name=["'"'"']?(user|email|login))[^>]*>'
+      {ev:auth-pages}/pages 2>/dev/null | sort -u | head -40 || echo "no input fields found in the collected login pages"
+  - summary: Inspect what remember-me stores on the client (manual)
+    evidence: [remember-me-tests]
+    operation: >-
+      Log in with the test account and the remember-me option on. In the developer tools
+      Storage tab inspect the cookies and local storage for the password or a reversible
+      encoding of it (base64, hex). Note the remember-me token's value, length, character
+      set, and expiry. Record it in remember-me-tests (values masked).
+  - summary: Check token lifetime after logout and password change (manual)
+    evidence: [remember-me-tests]
+    operation: >-
+      Keep the remember-me token, log out, and try to reuse it; then change the password
+      and try to reuse it again. A token still accepted after either is a finding. Note
+      whether the token looks predictable (counter, timestamp, user id) and whether the
+      original password can be derived from it. Add the results to remember-me-tests.
+  - summary: Judge the remember-password feature
+    evidence: [remember-me-tests]
+    ai_task: >-
+      From steps 2 and 3 decide whether the feature exposes credentials. Verdict: fail when
+      a password or reversible form is stored on the client, the token is predictable or
+      never expires, or it survives logout or a password change; pass when the token is
+      random, expires, and is invalidated and no password is stored; "-" when
+      remember-me-tests is missing.

@@ -140,3 +140,35 @@ kinds:
   - id: weak-cryptography
     title: Weak algorithm, mode, key, or random source
     subject: "what is weak, for example `password storage md5`, `ecb mode cookie auth`, `hardcoded key`"
+
+  # ---- authentication ------------------------------------------------------
+  - id: credentials-over-http
+    title: Credentials transported over an unencrypted channel
+    subject: "the login URL without query, for example `www.example.com/login`"
+  - id: default-credentials
+    title: Default or well-known credentials accepted
+    subject: "the login point and account, for example `admin interface admin`"
+  - id: weak-lockout
+    title: Weak or missing brute-force lockout
+    subject: "the login point, for example `web login`, `api /api/login`"
+  - id: authentication-bypass
+    title: Authentication can be bypassed
+    subject: "the protected function and method, for example `force browsing /admin`, `parameter isAdmin`"
+  - id: remember-password-weakness
+    title: Insecure remember-password feature
+    subject: "what is stored or weak, for example `password in local storage`, `token never expires`"
+  - id: sensitive-page-cached
+    title: Sensitive page cacheable by the browser
+    subject: "the page URL without query, for example `www.example.com/account`"
+  - id: weak-password-policy
+    title: Weak password policy
+    subject: "the function, for example `registration`, `password change`"
+  - id: weak-security-question
+    title: Weak security question or answer
+    subject: "the function, for example `password reset`"
+  - id: weak-password-reset
+    title: Weak password change or reset function
+    subject: "what is weak, for example `reset token reusable`, `change without current password`"
+  - id: weaker-alternative-channel
+    title: Weaker authentication in an alternative channel
+    subject: "the channel or endpoint, for example `api /api/v1/login`, `mobile`"

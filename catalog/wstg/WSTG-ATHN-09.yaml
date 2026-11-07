@@ -1,0 +1,48 @@
+id: WSTG-ATHN-09
+overview: >-
+  Check the password change and reset functions for weaknesses that let someone change
+  another user's password: a change that does not require the current password, a reset
+  token that is predictable or reusable, a reset whose recipient can be redirected, or
+  sessions that survive a change or reset.
+pass: >-
+  A change requires the current password, the reset token is random, short-lived, and
+  single-use, the reset recipient cannot be changed to another identity, and existing
+  sessions are invalidated after a change or reset.
+fail: >-
+  A password can be changed without the current password, the reset token is guessable,
+  long-lived, or reusable, the reset can be sent to or completed for another user's
+  identifier, or old sessions stay valid afterwards.
+notes:
+  - Use test accounts (and a second test account to check redirecting a reset to another identity).
+  - A reset link captured here may grant account access; keep it inside evidence, never in a finding.
+finding_kinds: [weak-password-reset]
+steps:
+  - summary: Locate the password change and reset entry points
+    auto_run: true
+    evidence: [auth-pages, katana-crawl]
+    command: >-
+      grep -vE '^(404|000) ' {ev:auth-pages}/stdout.txt | grep -iE 'password|reset|forgot|recover' | head;
+      grep -oiE '/[^ "'"'"'<>]*(password|reset|forgot|recover)[^ "'"'"'<>]*' {ev:katana-crawl}/katana.txt 2>/dev/null | sort -u | head -30
+  - summary: Check the change flow and reset token (manual)
+    evidence: [password-reset-tests]
+    operation: >-
+      With a test account, check whether a password change requires the current password.
+      Request a reset and inspect the token: its length and character set (predictable?),
+      whether it still works after its first use or after a long delay, and whether an
+      already-used link can be replayed. Record each in password-reset-tests.
+  - summary: Try redirecting the reset and check session invalidation (manual)
+    evidence: [password-reset-tests]
+    operation: >-
+      Using the developer tools, change the identifier (email or user id) in the reset
+      request to a second test account and see whether the reset is sent or applied to that
+      other identity. After a successful change or reset, check whether a session opened
+      before it is still valid. Add the results to password-reset-tests.
+  - summary: Judge the change and reset functions
+    evidence: [password-reset-tests]
+    ai_task: >-
+      From steps 2 and 3 decide whether the change or reset flow is weak. Verdict: fail when
+      a change needs no current password, the reset token is guessable, long-lived, or
+      reusable, the reset can target another user's identifier, or old sessions survive the
+      change; pass when the current password is required, the token is random, short-lived,
+      and single-use, the recipient is fixed, and sessions are invalidated; "-" when
+      password-reset-tests is missing.
