@@ -23,8 +23,12 @@
 </section>
 
 <section class="findings-box">
-  <h3>Findings</h3>
-  <p class="muted">No findings yet. Creating findings comes in milestone M6.</p>
+  <div class="step-head"><h3>Findings</h3><span class="sp"></span>
+    {% if can_write %}<a class="btn" href="{{ url_for('finding_new', name=target.name, test=test.id) }}">Create finding</a>{% endif %}</div>
+  {% for f in findings %}
+  <p><a href="{{ url_for('finding_page', name=target.name, fid=f.id) }}">{{ f.title }}</a> · {{ f.status }} ·
+    {% if f.cvss %}<span class="sev sev-{{ f.cvss.severity | lower }}">{{ f.cvss.score }} {{ f.cvss.severity }}</span>{% else %}<span class="muted">not rated</span>{% endif %}</p>
+  {% else %}<p class="muted">No findings for this test.</p>{% endfor %}
 </section>
 
 <h3>Steps</h3>

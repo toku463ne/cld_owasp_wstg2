@@ -14,7 +14,7 @@ Last updated: 2026-11-07
 | M3 | WSTG page | **In progress** | Overview, criteria, steps, verdict/reset, rendered commands, AI prompt (basic); evidence view/edit with M4/M5 |
 | M4 | Manual evidence | **Done** (browser paste to be checked on Kali) | Versioned store, capture box, upload, text, edit/remove as new versions |
 | M5 | Automatic evidence | **Done** (real tools to be checked on Kali) | Jobs, worker, light/full, resume, scope check, cancel, proxy |
-| M6 | Findings | Not started | |
+| M6 | Findings | **Done** | List, create from WSTG page, detail/edit, status and dates, CVSS 3.1 |
 | M7 | AI prompt | Not started | |
 | M8 | Deployment | **Partly done** (setup script, checked on Kali) | `scripts/setup-kali.sh`, nginx :8083, `wstg2-web` user service; worker unit and backup pending |
 | M9 | More automation | Not started | |
@@ -28,6 +28,11 @@ Last updated: 2026-11-07
 - Main page shell (target selector + `+`, four tabs, all placeholders); admin user page.
 - CLI: `check-config`, `migrate`, `user-add`, `user-passwd`, `user-disable`, `user-list`, `serve`.
 - Fixed during smoke test: waitress dropped nginx's `X-Forwarded-For` by default, which would have made every client look like 127.0.0.1.
+
+### M6 delivered
+- Migration `0005_findings`: title, status (open / in progress / closed), summary, impact, reproduction, CVSS vector and rationale, created / updated / closed dates. No severity column.
+- `src/wstg/cvss.py`: CVSS v3.1 base score per the FIRST specification (Roundup from Appendix A), checked against calculator values; severity always computed from the vector. `/api/cvss` serves it to the page, so the formula exists once.
+- `src/wstg/findings.py` + `web_findings.py`: findings tab (link, source WSTG, status, score and severity, updated; highest score first), create from a WSTG page, detail / edit (admin), closed date set on close and cleared on reopen, audit log with the previous values of changed fields. WSTG page lists the test's findings with a "Create finding" button. Metric selects build the vector and show the score live.
 
 ### M5 delivered
 - Migration `0004_jobs`: `jobs` (queued / running / cancelling / done / cancelled / interrupted, heartbeat) and `job_items` (pending / running / skipped / complete / failed / refused / cancelled).

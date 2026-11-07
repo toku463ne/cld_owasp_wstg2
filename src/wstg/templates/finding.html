@@ -1,0 +1,38 @@
+{% extends "target_base.html" %}
+{% block title %}{{ finding.title if finding else 'New finding' }} · {{ target.name }}{% endblock %}
+{% block content %}
+<div class="wstg-head">
+  <h2>{% if finding %}Finding {{ finding.id }}{% else %}New finding{% endif %}</h2>
+  <span class="muted">from <a href="{{ url_for('wstg_page', name=target.name, test_id=test.id) }}">{{ test.id }} {{ test.title }}</a></span>
+</div>
+{% if finding %}
+<p class="muted">Created {{ finding.created_at }} by {{ finding.created_by }} · updated {{ finding.updated_at }} by {{ finding.updated_by }}{% if finding.closed_at %} · closed {{ finding.closed_at }}{% endif %}</p>
+{% endif %}
+<form method="post" class="stack finding" action="{{ url_for('finding_page', name=target.name, fid=finding.id) if finding else url_for('finding_new', name=target.name, test=test.id) }}">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <fieldset {{ 'disabled' if not can_write }}>
+  <p><label>Title <input name="title" value="{{ data.title }}" required maxlength="300" size="80"></label></p>
+  <p><label>Status <select name="status">{% for s in statuses %}<option value="{{ s }}" {{ 'selected' if data.status == s }}>{{ s }}</option>{% endfor %}</select></label></p>
+  <p><label>Summary <textarea name="summary" rows="4">{{ data.summary }}</textarea></label></p>
+  <p><label>Impact <textarea name="impact" rows="4">{{ data.impact }}</textarea></label></p>
+  <p><label>Reproduction steps <textarea name="reproduction" rows="6">{{ data.reproduction }}</textarea></label></p>
+
+  <h3>CVSS 3.1</h3>
+  <div class="cvss" data-api="{{ url_for('api_cvss') }}">
+    <p><label>Vector <input name="cvss_vector" value="{{ data.cvss_vector }}" size="50" placeholder="CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N"></label>
+      <span class="cvss-score">{% if score %}<span class="sev sev-{{ score.severity | lower }}">{{ score.score }} {{ score.severity }}</span>{% endif %}</span></p>
+    <div class="cvss-metrics">
+      {% for key, name, options in metrics %}
+      <label>{{ name }} ({{ key }})
+        <select data-metric="{{ key }}">
+          <option value="">-</option>
+          {% for v, label, help in options %}<option value="{{ v }}" title="{{ help }}">{{ label }}</option>{% endfor %}
+        </select></label>
+      {% endfor %}
+    </div>
+  </div>
+  <p><label>CVSS rationale (why each metric has its value) <textarea name="cvss_rationale" rows="5">{{ data.cvss_rationale }}</textarea></label></p>
+  {% if can_write %}<p><button>{{ 'Save' if finding else 'Create finding' }}</button></p>{% endif %}
+  </fieldset>
+</form>
+{% endblock %}

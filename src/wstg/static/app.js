@@ -45,3 +45,38 @@ document.addEventListener("DOMContentLoaded", function () {
     });
   });
 });
+
+// CVSS: the metric selects build the vector; the score comes from the server
+// (/api/cvss), so the formula exists only once.
+document.addEventListener("DOMContentLoaded", function () {
+  document.querySelectorAll(".cvss[data-api]").forEach(function (box) {
+    var input = box.querySelector("input[name=cvss_vector]"), out = box.querySelector(".cvss-score");
+    var selects = box.querySelectorAll("select[data-metric]");
+    function fromVector() {
+      var parts = {};
+      (input.value || "").split("/").forEach(function (p) { var kv = p.split(":"); if (kv.length === 2) parts[kv[0]] = kv[1]; });
+      selects.forEach(function (s) { s.value = parts[s.dataset.metric] || ""; });
+    }
+    function show() {
+      if (!input.value) { out.textContent = ""; return; }
+      fetch(box.dataset.api + "?vector=" + encodeURIComponent(input.value), {credentials: "same-origin"})
+        .then(function (r) { return r.json(); })
+        .then(function (j) {
+          out.innerHTML = "";
+          var span = document.createElement("span");
+          if (j.error) { span.className = "muted"; span.textContent = j.error; }
+          else { span.className = "sev sev-" + j.severity.toLowerCase(); span.textContent = j.score + " " + j.severity; }
+          out.appendChild(span);
+        });
+    }
+    selects.forEach(function (s) {
+      s.addEventListener("change", function () {
+        var v = "CVSS:3.1";
+        selects.forEach(function (x) { if (x.value) v += "/" + x.dataset.metric + ":" + x.value; });
+        input.value = v; show();
+      });
+    });
+    input.addEventListener("change", function () { fromVector(); show(); });
+    fromVector();
+  });
+});

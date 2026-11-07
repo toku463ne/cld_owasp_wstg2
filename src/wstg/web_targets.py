@@ -14,6 +14,7 @@ from markupsafe import Markup, escape
 from . import catalog as catmod
 from . import db as dbmod
 from . import evidence as evmod
+from . import findings as fmod
 from . import runner as rmod
 from . import targets as tmod
 from . import users
@@ -134,12 +135,6 @@ def register(app: Flask, cfg: Config, db: dbmod.Database, cat: catmod.Catalog, s
         return render_template("wstg_index.html", tab="index", rows=rows, counts=counts,
                                scope_problems=scope_problems)
 
-    @app.get("/t/<name>/findings")
-    @login_required
-    def findings_tab(name: str):
-        load_target(name)
-        return render_template("tab_placeholder.html", tab="findings", what="Findings", milestone="M6")
-
     @app.get("/t/<name>/manual")
     @login_required
     def manual_tab(name: str):
@@ -228,7 +223,8 @@ def register(app: Flask, cfg: Config, db: dbmod.Database, cat: catmod.Catalog, s
         has_ev = any(e.id in have for e in cat.evidence_for(test_id))
         st_value = tmod.status(len(steps), vs, has_ev) if sc else "-"
         return render_template("wstg_page.html", tab="index", test=test, scenario=sc, steps=steps,
-                               status=st_value, applicable=t.type in test.target_types)
+                               status=st_value, applicable=t.type in test.target_types,
+                               findings=fmod.list_for(db, t, test_id))
 
     @app.post("/t/<name>/wstg/<test_id>/steps/<int:n>")
     @admin_required
