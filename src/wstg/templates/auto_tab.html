@@ -1,4 +1,5 @@
 {% extends "target_base.html" %}
+{% from "_macros.html" import test_links %}
 {% block head_extra %}{% if active %}<meta http-equiv="refresh" content="5">{% endif %}{% endblock %}
 {% block content %}
 {% if scope_problems %}
@@ -46,7 +47,7 @@
 
 <h3>Automatic evidence for {{ target.type }} targets</h3>
 <table>
-  <tr><th>Evidence</th><th>Level</th><th>Command</th><th>Collected</th><th>Used by</th></tr>
+  <tr><th>Evidence</th><th>Level</th><th>Command</th><th>Collected</th><th class="col-used">Used by</th></tr>
   {% for e in evidence %}
   <tr>
     <td><a href="{{ url_for('evidence_page', name=target.name, eid=e.id) }}"><b>{{ e.title }}</b></a><br><code class="muted">{{ e.id }}</code></td>
@@ -55,7 +56,7 @@
     <td class="nowrap">{% if have.get(e.id) %}{{ have[e.id].created_at }}<br><span class="muted">v{{ have[e.id].version }}</span>
       {% elif failed.get(e.id) %}<span class="status s-fail">failed</span><br><span class="muted small">{{ failed[e.id].summary }}</span>
       {% else %}<span class="muted">not collected</span>{% endif %}</td>
-    <td>{% for tid in cat.tests_using(e.id) %}<a href="{{ url_for('wstg_page', name=target.name, test_id=tid) }}">{{ tid }}</a> {% endfor %}</td>
+    <td>{{ test_links(cat.tests_using(e.id), target) }}</td>
   </tr>
   {% endfor %}
 </table>

@@ -1,14 +1,15 @@
 {% extends "target_base.html" %}
+{% from "_macros.html" import test_links %}
 {% block content %}
 <p class="muted">Evidence captured by the tester: screenshots, uploaded files, and text. Each evidence ID holds several items; every change is saved as a new version.</p>
 <table>
-  <tr><th>Evidence</th><th>Used by</th><th>Collected</th></tr>
+  <tr><th>Evidence</th><th class="col-used">Used by</th><th>Collected</th></tr>
   {% for r in rows %}
   <tr>
     <td><a href="{{ url_for('evidence_page', name=r.owner, eid=r.ev.id) }}"><b>{{ r.ev.title }}</b></a> <code class="muted">{{ r.ev.id }}</code>
       {% if r.owner != target.name %}<span class="chip">from {{ r.owner }}</span>{% endif %}
       <div class="muted small">{{ r.ev.description }}</div></td>
-    <td>{% for tid in r.used_by %}<a href="{{ url_for('wstg_page', name=target.name, test_id=tid) }}">{{ tid }}</a> {% endfor %}</td>
+    <td>{{ test_links(r.used_by, target) }}</td>
     <td class="nowrap">{% if r.row %}{{ r.row.created_at }}<br><span class="muted">v{{ r.row.version }} · {{ r.row.item_count }} item(s)</span>{% else %}<span class="muted">not collected</span>{% endif %}</td>
   </tr>
   {% endfor %}

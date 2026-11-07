@@ -95,3 +95,7 @@ tr.current td { background: var(--th); }
 form.finding textarea { max-width: 900px; }
 @media (max-width: 700px) { .cvss-metrics { grid-template-columns: 1fr 1fr; } }
 form.stack label > textarea, form.stack label > input[size] { display: block; margin-top: 2px; }
+th.col-used { width: 9em; }
+details.used-by summary { cursor: pointer; white-space: nowrap; color: var(--link); }
+details.used-by a { display: block; }
+td code { overflow-wrap: anywhere; }

@@ -1,4 +1,5 @@
 {% extends "target_base.html" %}
+{% from "_macros.html" import test_links %}
 {% block title %}{{ test.id }} · {{ target.name }}{% endblock %}
 {% block content %}
 <div class="wstg-head">
@@ -53,7 +54,7 @@
   {% if s.operation %}<p class="operation">{{ s.operation | ticks }}</p>{% endif %}
   {% if s.evidence %}
   <table class="evidence">
-    <tr><th>Evidence</th><th>Kind</th><th>Collected</th><th>Shared with</th></tr>
+    <tr><th>Evidence</th><th>Kind</th><th>Collected</th><th class="col-used">Shared with</th></tr>
     {% for e in s.evidence %}
     <tr>
       <td>{% if e.owner %}<a href="{{ url_for('evidence_page', name=e.owner, eid=e.ev.id) }}"><b>{{ e.ev.title }}</b></a>{% else %}<b>{{ e.ev.title }}</b>{% endif %} <code class="muted">{{ e.ev.id }}</code>
@@ -61,7 +62,7 @@
         {% if e.ev.kind == 'auto' %}<br><code class="muted small">{{ e.ev.argv | join(' ') }}</code>{% else %}<br><span class="muted">{{ e.ev.description }}</span>{% endif %}</td>
       <td class="nowrap">{{ e.ev.kind }}{% if e.ev.level %} · {{ e.ev.level }}{% endif %}{% if e.ev.heavy %} <span class="chip warn">heavy</span>{% endif %}</td>
       <td class="nowrap">{% if not e.owner %}<span class="muted">no parent domain</span>{% elif e.row %}{{ e.row.created_at }}<br><span class="muted">v{{ e.row.version }} · {{ e.row.item_count }} item(s)</span>{% else %}<span class="muted">not collected</span>{% endif %}</td>
-      <td>{% for tid in e.used_by %}<a href="{{ url_for('wstg_page', name=target.name, test_id=tid) }}">{{ tid }}</a> {% endfor %}</td>
+      <td>{{ test_links(e.used_by, target) }}</td>
     </tr>
     {% endfor %}
   </table>

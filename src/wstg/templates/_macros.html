@@ -1,0 +1,8 @@
+{# A list of WSTG test links that never widens a table: one short line, expands on click. #}
+{% macro test_links(ids, target) -%}
+{%- if ids -%}
+<details class="used-by"><summary>{{ ids | length }} test{{ 's' if ids | length != 1 }}</summary>
+  {%- for tid in ids %}<a class="nowrap" href="{{ url_for('wstg_page', name=target.name, test_id=tid) }}">{{ tid }}</a>{% endfor -%}
+</details>
+{%- else -%}<span class="muted">-</span>{%- endif -%}
+{%- endmacro %}
