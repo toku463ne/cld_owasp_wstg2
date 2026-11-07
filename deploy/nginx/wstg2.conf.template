@@ -1,5 +1,5 @@
 # WSTG Runner: nginx site. Rendered by scripts/setup-kali.sh into
-# /etc/nginx/sites-available/wstg.conf. Do not edit the rendered file by hand;
+# /etc/nginx/sites-available/wstg2.conf. Do not edit the rendered file by hand;
 # change the config file (WSTG_CONFIG) or this template and run the script again.
 #
 # Placeholders (at sign + NAME + at sign): WEB_PORT, APP_PORT, ALLOW_RULES.
@@ -18,8 +18,8 @@ server {
     client_max_body_size 50m;
     server_tokens off;
 
-    access_log /var/log/nginx/wstg.access.log;
-    error_log  /var/log/nginx/wstg.error.log;
+    access_log /var/log/nginx/wstg2.access.log;
+    error_log  /var/log/nginx/wstg2.error.log;
 
     location / {
         proxy_pass http://127.0.0.1:@APP_PORT@;

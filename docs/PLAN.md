@@ -16,7 +16,7 @@ Last updated: 2026-11-07
 | M5 | Automatic evidence | Not started | |
 | M6 | Findings | Not started | |
 | M7 | AI prompt | Not started | |
-| M8 | Deployment | **Partly done** (setup script) | `scripts/setup-kali.sh`, nginx :8083, `wstg-web` user service; worker unit and backup pending |
+| M8 | Deployment | **Partly done** (setup script) | `scripts/setup-kali.sh`, nginx :8083, `wstg2-web` user service; worker unit and backup pending |
 | M9 | More automation | Not started | |
 
 ### M0 delivered
@@ -30,7 +30,7 @@ Last updated: 2026-11-07
 - Fixed during smoke test: waitress dropped nginx's `X-Forwarded-For` by default, which would have made every client look like 127.0.0.1.
 
 ### M8 (pulled forward) delivered
-- `scripts/setup-kali.sh`: apt base packages, uv, data dirs (`/srv/wstg/{evidence,db}`), config file and secret key generated once, `uv sync`, `check-config`, `migrate`, first admin, systemd user service `wstg-web` (restarted on every run, lingering), nginx site rendered from `deploy/nginx/wstg.conf.template` (port and allow list from the config), `nginx -t` with rollback, smoke test. Options `--no-packages`, `--no-nginx`, `--no-systemd`, `--dry-run`. Rerun after `git pull` to update a Kali host.
+- `scripts/setup-kali.sh`: apt base packages, uv, data dirs (`/srv/wstg2/{evidence,db}`), config file and secret key generated once, `uv sync`, `check-config`, `migrate`, first admin, systemd user service `wstg2-web` (restarted on every run, lingering), nginx site rendered from `deploy/nginx/wstg2.conf.template` (port and allow list from the config), `nginx -t` with rollback, smoke test. Options `--no-packages`, `--no-nginx`, `--no-systemd`, `--dry-run`. Rerun after `git pull` to update a Kali host.
 - New config key `WSTG_WEB_PORT` (default 8083), read by the setup script only.
 - `README.md` with setup, update, configuration, and uninstall steps.
 - Checked on WSL (not Kali yet): dry run, real run into a scratch directory (`--no-nginx --no-systemd`), rerun keeps config/secret/users, rendered nginx site passes `nginx -t`. The nginx and systemd parts still need a check on Kali.
@@ -105,3 +105,4 @@ M0–M3 give a minimal tool where tests can be viewed and judged. M4–M6 make i
 | Evidence edits | Keep the original; each edit is a new version |
 | Burp history | Replace with Python HTTP client, curl, headless browser HAR, HAR import |
 | Scope records | Required; every command is checked |
+| Host names (config, data, service, nginx site) | `wstg2` prefix (`~/.config/wstg2/wstg2.env`, `/srv/wstg2`, `wstg2-web`, `wstg2.conf`) so the predecessor mine.wstg (`wstg`) can run on the same Kali host |

@@ -12,9 +12,9 @@ Requirements: [`VISION.md`](VISION.md).
 ```
 Browser (192.168.0.0/16) --HTTP :8083--> nginx --> 127.0.0.1:5083 wstg serve (Flask + waitress)
                                                         |
-                                 config  ~/.config/wstg/wstg.env, secret_key   (mode 600)
-                                 data    /srv/wstg/evidence/<target>/...
-                                         /srv/wstg/db/wstg.sqlite3
+                                 config  ~/.config/wstg2/wstg2.env, secret_key   (mode 600)
+                                 data    /srv/wstg2/evidence/<target>/...
+                                         /srv/wstg2/db/wstg2.sqlite3
 ```
 
 The config file, evidence, and database live **outside the repository**. The app refuses
@@ -25,19 +25,19 @@ to start if any of them resolves inside it.
 Run as the normal user that will own the evidence (not root; `sudo` is used where needed).
 
 ```bash
-git clone <this repository> ~/wstg && cd ~/wstg
+git clone <this repository> ~/cld_owasp_wstg2 && cd ~/cld_owasp_wstg2
 scripts/setup-kali.sh
 ```
 
 The script is safe to run again. It:
 
 1. installs base packages (`git curl openssl python3 pipx sqlite3 nginx`) and `uv`,
-2. creates `/srv/wstg/evidence` and `/srv/wstg/db` (mode 700),
-3. writes `~/.config/wstg/wstg.env` and a random `secret_key` if missing (existing ones are kept),
+2. creates `/srv/wstg2/evidence` and `/srv/wstg2/db` (mode 700),
+3. writes `~/.config/wstg2/wstg2.env` and a random `secret_key` if missing (existing ones are kept),
 4. runs `uv sync`, `wstg check-config`, `wstg migrate`,
 5. asks for the first admin password if no user exists (12+ characters),
-6. installs and restarts the systemd **user** service `wstg-web` (with lingering),
-7. renders `deploy/nginx/wstg.conf.template` into `/etc/nginx/sites-available/wstg.conf`
+6. installs and restarts the systemd **user** service `wstg2-web` (with lingering),
+7. renders `deploy/nginx/wstg2.conf.template` into `/etc/nginx/sites-available/wstg2.conf`
    (port and allowed networks from the config file), checks it with `nginx -t`, reloads nginx,
 8. checks `http://127.0.0.1:5083/login` and `http://127.0.0.1:8083/login`.
 
@@ -47,8 +47,8 @@ Options:
 
 | Option | Effect |
 |---|---|
-| `--data-dir DIR` | data root (default `/srv/wstg`) |
-| `--config FILE` | config file (default `~/.config/wstg/wstg.env`) |
+| `--data-dir DIR` | data root (default `/srv/wstg2`) |
+| `--config FILE` | config file (default `~/.config/wstg2/wstg2.env`) |
 | `--admin NAME` | first admin user name (default `admin`) |
 | `--no-packages` | skip apt |
 | `--no-nginx` | skip the nginx site |
@@ -61,16 +61,16 @@ Without a terminal (for example over a non-interactive SSH command), set
 ## Updating a Kali host during development
 
 ```bash
-cd ~/wstg
+cd ~/cld_owasp_wstg2
 git pull
-scripts/setup-kali.sh --no-packages     # sync deps, migrate, restart wstg-web, re-render nginx
+scripts/setup-kali.sh --no-packages     # sync deps, migrate, restart wstg2-web, re-render nginx
 ```
 
 Check it:
 
 ```bash
-systemctl --user status wstg-web
-journalctl --user -u wstg-web -f
+systemctl --user status wstg2-web
+journalctl --user -u wstg2-web -f
 curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8083/login   # expect 200
 ```
 
@@ -78,7 +78,7 @@ curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8083/login   # expect 
 
 `WSTG_CONFIG` names a KEY=VALUE file outside the repository. Keys are documented in
 [`src/wstg/config.py`](src/wstg/config.py); an example is in
-[`docs/examples/wstg.env.example`](docs/examples/wstg.env.example).
+[`docs/examples/wstg2.env.example`](docs/examples/wstg2.env.example).
 
 | Key | Default | Meaning |
 |---|---|---|
@@ -95,7 +95,7 @@ to re-render the nginx site.
 ## Commands
 
 ```bash
-export WSTG_CONFIG=~/.config/wstg/wstg.env
+export WSTG_CONFIG=~/.config/wstg2/wstg2.env
 
 uv run wstg check-config                  # show settings; fails if data paths are inside the repo
 uv run wstg migrate                       # create data dirs, apply migrations (backs up the DB first)
@@ -118,8 +118,8 @@ open `http://127.0.0.1:5083/` directly:
 
 ```bash
 scripts/setup-kali.sh --no-packages --no-nginx --no-systemd \
-  --data-dir ~/wstg-dev --config ~/.config/wstg-dev/wstg.env
-WSTG_CONFIG=~/.config/wstg-dev/wstg.env uv run wstg serve --dev
+  --data-dir ~/wstg2-dev --config ~/.config/wstg2-dev/wstg2.env
+WSTG_CONFIG=~/.config/wstg2-dev/wstg2.env uv run wstg serve --dev
 ```
 
 Rules for contributors (and for Claude Code) are in [`CLAUDE.md`](CLAUDE.md). In short:
@@ -129,7 +129,7 @@ development, and use `example.com` / documentation IP ranges in code and tests.
 ## Uninstall
 
 ```bash
-systemctl --user disable --now wstg-web && rm ~/.config/systemd/user/wstg-web.service
-sudo rm /etc/nginx/sites-enabled/wstg.conf /etc/nginx/sites-available/wstg.conf && sudo systemctl reload nginx
-# Data and config are kept: /srv/wstg, ~/.config/wstg
+systemctl --user disable --now wstg2-web && rm ~/.config/systemd/user/wstg2-web.service
+sudo rm /etc/nginx/sites-enabled/wstg2.conf /etc/nginx/sites-available/wstg2.conf && sudo systemctl reload nginx
+# Data and config are kept: /srv/wstg2, ~/.config/wstg2
 ```

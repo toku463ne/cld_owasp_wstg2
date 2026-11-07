@@ -56,7 +56,7 @@ Rules:
 
 Implementation plan and milestones: [`docs/PLAN.md`](docs/PLAN.md).
 - Prefer automation over manual evidence (e.g. extract what Burp history would show automatically when possible).
-- Evidence lives **outside the repository** (path set by configuration, e.g. `/srv/wstg/evidence`). The app refuses to start if the evidence directory resolves inside the repo.
+- Evidence lives **outside the repository** (path set by configuration, e.g. `/srv/wstg2/evidence`). The app refuses to start if the evidence directory resolves inside the repo.
 - Folder layout, one folder per target:
   ```
   <evidence dir>/
@@ -96,10 +96,10 @@ Implementation plan and milestones: [`docs/PLAN.md`](docs/PLAN.md).
 ## Commands
 
 Settings come from a KEY=VALUE file outside the repo named by `WSTG_CONFIG`
-(example: `docs/examples/wstg.env.example`; keys are listed in `src/wstg/config.py`).
+(example: `docs/examples/wstg2.env.example`; keys are listed in `src/wstg/config.py`).
 
 ```bash
-export WSTG_CONFIG=~/.config/wstg/wstg.env
+export WSTG_CONFIG=~/.config/wstg2/wstg2.env
 
 scripts/setup-kali.sh [--no-packages] [--dry-run]   # set up / update a Kali host (see README.md)
 
@@ -117,5 +117,5 @@ uv run pytest -q                          # tests (temporary directories only)
 
 Code layout: `src/wstg/` (`config.py`, `db.py` + `migrations/NNNN_*.sql`, `users.py`,
 `web.py` + `templates/` + `static/`, `cli.py`), tests in `tests/`, setup in
-`scripts/setup-kali.sh` + `deploy/nginx/wstg.conf.template`.
+`scripts/setup-kali.sh` + `deploy/nginx/wstg2.conf.template`.
 Schema changes: add a new numbered migration; never edit an applied one.
