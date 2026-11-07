@@ -16,11 +16,13 @@ notes:
   - Behind a proxy, theHarvester ignores http_proxy/https_proxy; pass the proxy explicitly (theHarvester -p) or it returns zero results. The automatic subfinder run gets -proxy from WSTG_HTTP_PROXY.
 steps:
   - summary: Identify the organization, registrant, and name servers as the starting point
+    auto_run: true
     evidence: [dns-whois, dns-rdap, dns-records]
     command: >-
       jq '{ldhName, status, registrar: [.entities[]? | select(.roles | index("registrar")) | .vcardArray[1][]? | select(.[0] == "fn") | .[3]],
       events: [.events[]? | "\(.eventAction) \(.eventDate)"], nameservers: [.nameservers[]?.ldhName]}' {ev:dns-rdap}/rdap.json
   - summary: List subdomains and host names from Certificate Transparency and passive sources
+    auto_run: true
     evidence: [ct-crtsh, subdomains-subfinder]
     command: jq -r '.[].name_value' {ev:ct-crtsh}/crtsh.json | sort -u
   - summary: Collect exposed e-mail addresses and hosts with theHarvester
@@ -46,5 +48,6 @@ steps:
       Capture the result page.
     evidence: [search-dorks]
   - summary: Check archived pages for content that was removed from the live site
+    auto_run: true
     evidence: [wayback-urls]
     command: grep -iE '\.(bak|old|sql|conf|env|zip|tar|gz|log)(\?|$)|/(admin|backup|test|debug)/' {ev:wayback-urls}/wayback.txt

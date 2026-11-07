@@ -15,7 +15,7 @@ from . import catalog as catmod
 from . import db as dbmod
 from . import evidence as evmod
 from . import findings as fmod
-from . import ai_review
+from . import ai_review, analysis
 from . import prompt
 from . import runner as rmod
 from . import targets as tmod
@@ -224,10 +224,13 @@ def register(app: Flask, cfg: Config, db: dbmod.Database, cat: catmod.Catalog, s
         steps = []
         have = collected(t)
         vs = tmod.verdicts(db, t, test_id).get(test_id, {})
+        cache_dir = tmod.evidence_dir(cfg, t.name) / ".analysis"
         for i, st in enumerate(sc.steps if sc else (), 1):
+            command = catmod.render(st.command, values, ev_paths)
             steps.append({
                 "n": i, "step": st, "verdict": vs.get(i, "-"),
-                "command": catmod.render(st.command, values, ev_paths),
+                "auto": analysis.run(cache_dir, st.command, command, ev_paths) if st.auto_run else None,
+                "command": command,
                 "operation": catmod.render(st.operation, values, ev_paths),
                 "evidence": [{"ev": cat.evidence[eid], "owner": tmod.evidence_owner(t, cat.evidence[eid].target_type),
                               "row": have.get(eid),

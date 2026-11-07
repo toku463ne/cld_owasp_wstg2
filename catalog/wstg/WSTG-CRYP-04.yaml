@@ -28,14 +28,43 @@ steps:
       {ev:har-browse}/*.har | sort -u;
       v='VALUE'; printf '%s' "$v" | tr '_-' '/+' | base64 -d 2>/dev/null | xxd | head
   - summary: Check tokens and session identifiers for predictability
-    evidence: [har-browse]
+    auto_run: true
+    evidence: [session-token-samples, har-browse]
     command: >-
-      jq -r '.log.entries[].response.headers[]? | select(.name|ascii_downcase=="set-cookie")
-      | .value' {ev:har-browse}/*.har | grep -oiE '(sessionid|token|csrf)=[^;]+' | sort
+      grep -i '^set-cookie' {ev:session-token-samples}/stdout.txt | sed -E 's/^[^:]*: *//; s/;.*//' | sort
+    operation: >-
+      The command lists the cookies of ten anonymous responses. For logged-in tokens, run
+      `jq -r '.log.entries[].response.headers[]? | select(.name|ascii_downcase=="set-cookie") | .value' HAR | grep -oiE '(sessionid|token|csrf)=[^;]+' | sort`
+      on the HAR files.
+    ai_task: >-
+      Compare the values of each cookie name across the ten anonymous responses in the command
+      output: length, character set, parts shared by all values, parts that count up or
+      follow the time, and the estimated randomness in bits. Fail when a value is
+      sequential, time-based, or has less than 64 bits of randomness; pass when the values
+      look random and long enough; "-" when the responses set no session cookie.
   - summary: Look for ECB mode by detecting repeated 16-byte blocks inside a decoded value
+    auto_run: true
+    evidence: [http-root-https, session-token-samples]
     command: >-
-      v='VALUE'; printf '%s' "$v" | tr '_-' '/+' | base64 -d 2>/dev/null | xxd -p -c 16
-      | sort | uniq -d
+      perl -MMIME::Base64 -e 'my %seen; while (<>) { my @kv; push @kv, [$1, $2] if
+      /^set-cookie:\s*([^=;\s]+)=([^;\s]*)/i; while (/<input\b[^>]*>/gi) { my $t = $&; next
+      unless $t =~ /type="?hidden/i; my ($n) = $t =~ /name="([^"]*)"/i; my ($v) = $t =~
+      /value="([^"]*)"/i; push @kv, [$n // "?", $v] if defined $v; } for (@kv) { my ($n, $v) =
+      @$_; next if length($v) < 16 || $seen{"$n=$v"}++; (my $u = $v) =~ s/%([0-9a-fA-F]{2})/chr
+      hex $1/ge; my ($kind, $raw); if ($u =~ /^(?:[0-9a-fA-F]{2})+$/) { ($kind, $raw) = ("hex",
+      pack("H*", $u)) } elsif ($u =~ m{^[A-Za-z0-9+/_-]+=*$}) { (my $b = $u) =~ tr{-_}{+/};
+      ($kind, $raw) = ("base64", decode_base64($b)) } else { ($kind, $raw) = ("text", $u) } my
+      $l = length $raw; my $printable = ($raw =~ tr/\x20-\x7e//) / ($l || 1); my (%blk, $rep);
+      $rep = 0; for (my $i = 0; $i + 16 <= $l; $i += 16) { $rep++ if $blk{substr($raw, $i,
+      16)}++ } printf
+      "%s\t%s\tchars=%d\tdecoded=%d\t%s\treadable=%d%%\trepeated-16-byte-blocks=%d\n", $n,
+      $kind, length $v, $l, ($l && $l % 16 == 0 ? "multiple of 16" : $l && $l % 8 == 0 ?
+      "multiple of 8" : "-"), 100 * $printable, $rep; } }' {ev:http-root-https}/stdout.txt
+      {ev:http-root-https}/body.html {ev:session-token-samples}/stdout.txt
+    operation: >-
+      The command reports repeated 16-byte blocks per anonymous cookie and hidden field
+      (repeated-16-byte-blocks above 0 suggests ECB). For logged-in values from the HAR, run
+      `v='VALUE'; printf '%s' "$v" | tr '_-' '/+' | base64 -d | xxd -p -c 16 | sort | uniq -d`.
   - summary: Review password storage and KDF with the developers or source
     operation: >-
       Confirm the hashing algorithm, salt, and work factor used for passwords. Cleartext,

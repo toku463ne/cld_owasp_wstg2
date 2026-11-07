@@ -16,16 +16,19 @@ notes:
   - Scripts that need a login are not in site-assets; fetch them from the logged-in HAR.
 steps:
   - summary: List products and versions WhatWeb recognized
+    auto_run: true
     evidence: [whatweb]
     command: >-
       grep '^{' {ev:whatweb}/whatweb.json | sed 's/,[[:space:]]*$//'
       | jq -rR 'fromjson? | .plugins // {} | to_entries[] | "\(.key) \(.value.version // [] | join(","))"' | sort -u
   - summary: Infer the platform from headers, cookie names, and the error page
+    auto_run: true
     evidence: [http-root-https, http-404]
     command: >-
       grep -ihE '^(server|x-powered-by|x-aspnet(mvc)?-version|x-generator|x-drupal-[a-z-]+|set-cookie):'
       {ev:http-root-https}/stdout.txt {ev:http-404}/stdout.txt; grep -oiE '<meta name="generator"[^>]*>' {ev:http-root-https}/body.html
   - summary: Check framework and CMS marker paths
+    auto_run: true
     evidence: [framework-paths, http-404]
     command: grep -vE '^(404|000) ' {ev:framework-paths}/stdout.txt
   - summary: Confirm the technology stack with Wappalyzer in the browser

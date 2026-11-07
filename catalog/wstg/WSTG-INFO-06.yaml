@@ -19,11 +19,13 @@ steps:
     operation: Follow the capture instructions of the HAR evidence; visit every menu, form, and wizard step once.
     evidence: [har-browse]
   - summary: List requests (method, URL, body type) from the HAR files and the crawl
+    auto_run: true
     evidence: [har-browse, katana-crawl]
     command: >-
       jq -r '.log.entries[].request | [.method, (.url | sub("\\?.*"; "")), (.postData.mimeType // "-")] | @tsv'
       {ev:har-browse}/*.har | sort -u; grep -c . {ev:katana-crawl}/katana.txt
   - summary: List parameter, JSON field, cookie, and custom header names
+    auto_run: true
     evidence: [har-browse]
     command: >-
       jq -r '.log.entries[].request | (.queryString[]?.name | "query " + .), (.postData.params[]?.name | "form " + .),
@@ -31,11 +33,13 @@ steps:
       (select((.postData.mimeType // "") | test("json")) | .postData.text | fromjson? | paths(scalars) | map(tostring) | "json " + join("."))'
       {ev:har-browse}/*.har | sort | uniq -c | sort -rn
   - summary: Add query parameters seen in the crawl and the web archive
+    auto_run: true
     evidence: [katana-crawl, wayback-urls]
     command: >-
       { cat {ev:katana-crawl}/katana.txt; grep -F '://{fqdn}' {ev:wayback-urls}/wayback.txt; } | grep -F '?'
-      | sed -E 's/^[^?]*\?//' | tr '&' '\n' | cut -d= -f1 | sort | uniq -c | sort -rn
+      | sed -E 's/^[^?]*\?//' | sed 's/&/\n/g' | cut -d= -f1 | sort | uniq -c | sort -rn
   - summary: Find forms, hidden fields, and file uploads on the collected pages
+    auto_run: true
     evidence: [site-assets]
     command: grep -rhoiE '<form[^>]*>|<input[^>]*type=.?(hidden|file)[^>]*>' {ev:site-assets}/site | sort -u
   - summary: Replay logged-in GET requests without cookies to find entry points open without login
@@ -45,5 +49,12 @@ steps:
       | grep -F '{base_url}' | sort -u | while read -r u; do echo "$(curl -sk -m 10 -o /dev/null -w '%{http_code} %{size_download}' "$u") $u"; done
     load_note: One GET per unique URL in the HAR. Run it only on the logged-in HAR and skip logout or other state-changing GET URLs.
   - summary: Write the entry point inventory
-    operation: Combine the lists above into one table (method, URL, parameters and location, login required) and save it as text.
-    evidence: [entry-points]
+    operation: Combine the lists above into one table (method, URL, parameters and location, login required) and save it as text. The AI review drafts the table; check it and save it.
+    evidence: [entry-points, har-browse, katana-crawl, site-assets]
+    ai_task: >-
+      Draft the entry point inventory from the HAR summary, the crawl, the web archive, and the
+      forms in the evidence: one row per method and URL path with its parameter names and
+      where they are sent (query, form body, JSON, cookie, header), and whether a login is
+      needed. Mark file uploads and state-changing requests. Verdict "-" (this step records
+      an inventory; it has no pass or fail of its own) unless the entry-points evidence is
+      saved, then pass.

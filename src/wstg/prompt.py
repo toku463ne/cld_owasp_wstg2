@@ -7,7 +7,9 @@ block that `ai_review.py` imports back.
 
 Excerpts: text items and small text files are included (each cut at
 PER_FILE chars, the whole prompt at TOTAL chars). Images are listed by
-caption. HAR files are not included: they hold cookies and tokens.
+caption. HAR files are summarized without values (cookies and tokens removed),
+and the output of auto-run commands that read HAR files is left out for the
+same reason. Outputs of other auto-run commands (`auto_run: true`) are included.
 """
 
 from __future__ import annotations
@@ -22,6 +24,60 @@ TOTAL = 60000
 TEXT_SUFFIXES = (".txt", ".json", ".xml", ".html", ".htm", ".csv", ".md", ".log", ".js", ".tsv", ".yaml")
 
 
+HAR_LINES = 400
+
+
+def har_summary(path, budget: list[int]) -> list[str]:
+    """One line per distinct request: method, URL with parameter names only, status,
+    response type, request cookie names, and Set-Cookie names with their flags.
+    No header, cookie, parameter, or body values (they hold credentials)."""
+    try:
+        entries = json.loads(path.read_text(errors="replace"))["log"]["entries"]
+    except (OSError, ValueError, KeyError, TypeError):
+        return ["(not a readable HAR file)"]
+    seen, out = set(), []
+    for e in entries:
+        try:
+            req, res = e.get("request") or {}, e.get("response") or {}
+            url = str(req.get("url", ""))
+            base, _, query = url.partition("?")
+            names = [p.split("=", 1)[0] for p in query.split("&") if p] if query else []
+            line = f"{req.get('method', '?')} {base}" + (f"?{'&'.join(n + '=…' for n in names)}" if names else "")
+            line += f" -> {res.get('status', '?')} {(res.get('content') or {}).get('mimeType', '') or ''}".rstrip()
+            post = req.get("postData") or {}
+            if post:
+                pn = [p.get("name", "") for p in post.get("params") or []]
+                if not pn and "json" in (post.get("mimeType") or ""):
+                    try:
+                        body = json.loads(post.get("text") or "")
+                        pn = sorted(body) if isinstance(body, dict) else []
+                    except ValueError:
+                        pass
+                line += f" | body {post.get('mimeType', '')} fields: {', '.join(pn) or '-'}"
+            ck = [c.get("name", "") for c in req.get("cookies") or []]
+            if ck:
+                line += f" | cookies: {', '.join(ck)}"
+            sc = []
+            for h in res.get("headers") or []:
+                if str(h.get("name", "")).lower() == "set-cookie":
+                    parts = [x.strip() for x in str(h.get("value", "")).split(";")]
+                    flags = [x for x in parts[1:] if x.split("=")[0].lower() in ("secure", "httponly", "samesite", "path", "domain")]
+                    sc.append(parts[0].split("=", 1)[0] + (f" ({'; '.join(flags)})" if flags else " (no flags)"))
+            if sc:
+                line += f" | set-cookie: {', '.join(sc)}"
+        except AttributeError:
+            continue
+        if line in seen:
+            continue
+        seen.add(line)
+        if len(out) >= HAR_LINES or budget[0] <= 0:
+            out.append(f"[... more requests not included]")
+            break
+        budget[0] -= len(line)
+        out.append(line)
+    return out or ["(no requests)"]
+
+
 def _excerpt(version: evmod.Version, budget: list[int]) -> list[str]:
     out = []
     for it in version.items:
@@ -30,7 +86,9 @@ def _excerpt(version: evmod.Version, budget: list[int]) -> list[str]:
             out.append(f"   - screenshot: {label} (not included; attach the image if needed)")
             continue
         if it.file.lower().endswith(".har"):
-            out.append(f"   - HAR file {it.name or it.file} (not included: holds cookies and tokens)")
+            out.append(f"   - HAR file {it.name or it.file}: summary without values (cookies, tokens,"
+                       " and parameter values removed):")
+            out += ["     " + ln for ln in har_summary(version.path / it.file, budget)]
             continue
         if it.type == "file" and not it.file.lower().endswith(TEXT_SUFFIXES):
             out.append(f"   - file {it.name or it.file}, {it.size} bytes (binary, not included)")
@@ -73,6 +131,21 @@ def build(*, test: catmod.Test, scenario: catmod.Scenario, target, steps: list[d
             lines.append(f"   Command: {s['command']}")
         if s["operation"]:
             lines.append(f"   Operation: {s['operation']}")
+        auto = s.get("auto")
+        if auto is not None:
+            if auto.status == "missing":
+                lines.append(f"   Command output: {auto.note}")
+            elif ".har" in s["step"].command:
+                lines.append("   Command output: not included (it reads HAR files, which hold cookies and tokens;"
+                             " see the HAR summary below)")
+            elif budget[0] > 0:
+                cut = min(PER_FILE, budget[0])
+                text = auto.output or "(no output)"
+                budget[0] -= min(len(text), cut)
+                more = f"\n     [... {len(text) - cut} more characters not included]" if len(text) > cut else ""
+                lines.append(f"   Command output (run by the tool {auto.ran_at}, exit {auto.exit_code}"
+                             f"{'; ' + auto.note if auto.note else ''}):")
+                lines.append("\n".join("     " + ln for ln in text[:cut].splitlines()) + more)
         if s["step"].ai_task:
             lines.append(f"   YOUR TASK for this step: {s['step'].ai_task}")
         for e in s["evidence"]:

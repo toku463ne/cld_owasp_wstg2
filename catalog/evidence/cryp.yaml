@@ -86,3 +86,31 @@ evidence:
       password storage algorithm and its parameters, encryption algorithms and modes,
       key length and key storage, IV/nonce generation, and the random source used for
       tokens. Name the source of each answer (document, interview, code path).
+
+  - id: tls-versions-curl
+    title: Accepted TLS versions (curl, one handshake per version)
+    target_type: fqdn
+    kind: auto
+    level: light
+    description: >-
+      One HTTPS request to {fqdn}:{port} per TLS version (1.0 to 1.3), each limited to that
+      version, with old ciphers allowed for 1.0 and 1.1 (SECLEVEL=0). stdout.txt has one
+      line per version: "TLS1.2 200" means accepted (any HTTP status), "000" means the
+      handshake was refused (the reason is in stderr.txt). Works through WSTG_HTTP_PROXY.
+    argv: ["curl", "-sS", "-k", "-o", "/dev/null", "--max-time", "10", "--ciphers", "DEFAULT@SECLEVEL=0", "-w", "TLS1.0 %{http_code}\\n", "--tlsv1.0", "--tls-max", "1.0", "https://{fqdn}:{port}/", "--next", "-sS", "-k", "-o", "/dev/null", "--max-time", "10", "--ciphers", "DEFAULT@SECLEVEL=0", "-w", "TLS1.1 %{http_code}\\n", "--tlsv1.1", "--tls-max", "1.1", "https://{fqdn}:{port}/", "--next", "-sS", "-k", "-o", "/dev/null", "--max-time", "10", "--ciphers", "DEFAULT@SECLEVEL=0", "-w", "TLS1.2 %{http_code}\\n", "--tlsv1.2", "--tls-max", "1.2", "https://{fqdn}:{port}/", "--next", "-sS", "-k", "-o", "/dev/null", "--max-time", "10", "-w", "TLS1.3 %{http_code}\\n", "--tlsv1.3", "--tls-max", "1.3", "https://{fqdn}:{port}/"]
+    ok_exit_codes: [0, 35]
+    timeout: 60
+
+  - id: session-token-samples
+    title: Ten anonymous session cookies
+    target_type: fqdn
+    kind: auto
+    level: light
+    description: >-
+      Response headers of ten GET {base_url}/ requests without cookies, so every response
+      can set a fresh anonymous session cookie. Used to compare cookie values for
+      predictability (length, character set, shared or counting parts). Only anonymous,
+      pre-login cookies; logged-in tokens come from the HAR.
+    argv: ["curl", "-sS", "-k", "--max-time", "10", "-D", "-", "-o", "/dev/null", "{base_url}/", "--next", "-sS", "-k", "--max-time", "10", "-D", "-", "-o", "/dev/null", "{base_url}/", "--next", "-sS", "-k", "--max-time", "10", "-D", "-", "-o", "/dev/null", "{base_url}/", "--next", "-sS", "-k", "--max-time", "10", "-D", "-", "-o", "/dev/null", "{base_url}/", "--next", "-sS", "-k", "--max-time", "10", "-D", "-", "-o", "/dev/null", "{base_url}/", "--next", "-sS", "-k", "--max-time", "10", "-D", "-", "-o", "/dev/null", "{base_url}/", "--next", "-sS", "-k", "--max-time", "10", "-D", "-", "-o", "/dev/null", "{base_url}/", "--next", "-sS", "-k", "--max-time", "10", "-D", "-", "-o", "/dev/null", "{base_url}/", "--next", "-sS", "-k", "--max-time", "10", "-D", "-", "-o", "/dev/null", "{base_url}/", "--next", "-sS", "-k", "--max-time", "10", "-D", "-", "-o", "/dev/null", "{base_url}/"]
+    timeout: 90
+    load_note: Ten GET requests to the top page.

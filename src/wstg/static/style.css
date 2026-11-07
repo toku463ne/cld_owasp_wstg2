@@ -102,3 +102,5 @@ details.used-by a { display: block; }
 td code { overflow-wrap: anywhere; }
 .ai-note { font-size: 13px; border-left: 3px solid var(--link); padding: 2px 8px; margin: 6px 0; }
 .ai-box textarea { width: 100%; box-sizing: border-box; font-family: ui-monospace, monospace; font-size: 12px; }
+.auto-out { margin: 6px 0; } .auto-out summary { cursor: pointer; color: var(--muted, #666); font-size: .9em; }
+.auto-out pre { max-height: 22em; overflow: auto; }

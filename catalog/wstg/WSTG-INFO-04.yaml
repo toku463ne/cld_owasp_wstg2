@@ -16,15 +16,17 @@ notes:
   - nmap and ffuf ignore http_proxy/https_proxy. Behind a proxy, use the curl loop in step 4 for web ports, and add -x to ffuf.
 steps:
   - summary: "Domain: list subdomains from Certificate Transparency and passive sources"
+    auto_run: true
     evidence: [ct-crtsh, subdomains-subfinder, dns-records]
     command: >-
       { jq -r '.[].name_value' {ev:ct-crtsh}/crtsh.json; cat {ev:subdomains-subfinder}/subfinder.txt; }
-      | tr 'A-Z' 'a-z' | sed 's/^\*\.//' | sort -u > hosts-all.txt; wc -l hosts-all.txt
+      | tr 'A-Z' 'a-z' | sed 's/^\*\.//' | sort -u | tee hosts-all.txt
   - summary: "Domain: resolve each name and group the names by address"
     command: >-
       while read -r h; do for a in $(dig +short A "$h" | grep -E '^[0-9.]+$'); do echo "$a $h"; done; done
       < hosts-all.txt | sort | tee hosts-by-ip.txt
   - summary: "Domain: find hosts and paths only the web archive still knows"
+    auto_run: true
     evidence: [wayback-urls]
     command: sed -E 's#^[a-z]+://([^/:]+).*#\1#' {ev:wayback-urls}/wayback.txt | sort | uniq -c | sort -rn | head -50
   - summary: "FQDN: find open web and administrative ports on the server"
@@ -35,6 +37,7 @@ steps:
       echo "$p $s $(curl -sk -m 5 -o /dev/null -w '%{http_code}' "$s://{fqdn}:$p/")"; done; done | grep -v ' 000$'
     load_note: The curl loop is the proxy-friendly alternative to nmap (28 requests). Admin ports such as 2375 (Docker) and 9200 (Elasticsearch) may trigger IDS alerts.
   - summary: "FQDN: find virtual hosts on the same server by Host header brute force"
+    auto_run: true
     evidence: [vhost-ffuf]
     command: jq -r '.results[] | [.status, .length, .host] | @tsv' {ev:vhost-ffuf}/ffuf-vhost.json
   - summary: Identify the purpose of each host and port found
@@ -46,7 +49,14 @@ steps:
       run the command. Use titles, Server headers, realms, and names such as dev, stg, test,
       old, admin, jenkins, grafana, or phpmyadmin to decide the purpose of each, and record
       them in the inventory.
-    evidence: [app-inventory]
+    evidence: [app-inventory, ports-web-common, vhost-ffuf, whatweb]
+    ai_task: >-
+      Draft the inventory from the evidence of all steps: one row per host or host:port with
+      the likely purpose (production site, staging, admin console, API, mail, monitoring...),
+      the evidence for it (title, Server header, realm, name), and whether it should be
+      reachable from the Internet. Mark rows that need confirmation. Fail when a staging,
+      test, or administrative host or port is open to the Internet; pass when every host
+      found has a public purpose.
   - summary: Scan all ports from outside the target's network
     operation: >-
       From a host on the Internet, run `nmap -sV -Pn -p- --open -oN nmap-allports.txt {fqdn}`

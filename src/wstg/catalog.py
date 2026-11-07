@@ -8,7 +8,15 @@ Layout (YAML, in the repository, English):
     catalog/tools.yaml             tools the commands need, and how to install them
 
 Evidence is defined once and referenced by ID from scenario steps, so several
-tests share the same collected evidence. `load()` parses and validates
+tests share the same collected evidence. Scenario steps have a summary and any of
+`command` (shown to the tester), `operation`, `evidence`, `load_note`, and:
+
+    auto_run: true   the tool runs the command itself and shows its output (only
+                     local analysis of collected evidence; see analysis.check)
+    ai_task: text    the step is judged by the AI review; the text goes into the
+                     AI prompt as the task for that step
+
+`load()` parses and validates
 everything; `CatalogError` lists every problem found, not just the first.
 
 Placeholders in commands and text, filled in per target:
@@ -135,6 +143,7 @@ class Step:
     evidence: tuple[str, ...] = ()
     load_note: str = ""
     ai_task: str = ""                 # judged by the AI review: instruction added to the AI prompt
+    auto_run: bool = False            # the tool runs the command itself (local analysis only)
 
 
 @dataclass(frozen=True)
@@ -332,7 +341,7 @@ def _check_evidence(ev: Evidence, problems: list[str]) -> None:
 
 
 SCENARIO_KEYS = {"id", "overview", "pass", "fail", "notes", "steps"}
-STEP_KEYS = {"summary", "command", "operation", "evidence", "load_note", "ai_task"}
+STEP_KEYS = {"summary", "command", "operation", "evidence", "load_note", "ai_task", "auto_run"}
 
 
 def _load_scenarios(dir_: Path, tests: dict[str, Test], evidence: dict[str, Evidence],
@@ -359,7 +368,15 @@ def _load_scenarios(dir_: Path, tests: dict[str, Test], evidence: dict[str, Evid
                 continue
             st = Step(summary=_str(s["summary"]), command=_str(s.get("command")),
                       operation=_str(s.get("operation")), evidence=_strs(s.get("evidence")),
-                      load_note=_str(s.get("load_note")), ai_task=_str(s.get("ai_task")))
+                      load_note=_str(s.get("load_note")), ai_task=_str(s.get("ai_task")),
+                      auto_run=s.get("auto_run") is True)
+            if s.get("auto_run") not in (None, True, False):
+                problems.append(f"{sw}: auto_run must be true or false")
+            if st.auto_run:
+                from . import analysis   # analysis imports this module
+                if not st.command:
+                    problems.append(f"{sw}: auto_run needs a command")
+                problems.extend(f"{sw}: auto_run: {p}" for p in analysis.check(st.command))
             if not (st.command or st.operation or st.evidence or st.ai_task):
                 problems.append(f"{sw}: needs a command, an operation, evidence, or an AI task")
             for eid in st.evidence:

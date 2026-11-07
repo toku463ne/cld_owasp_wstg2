@@ -123,7 +123,7 @@ def test_ai_prompt_includes_evidence_excerpts(admin_client, store, site):
     page = admin_client.get("/t/www.example.com/wstg/WSTG-CRYP-03").get_data(as_text=True)
     prompt = page[page.index('id="ai-prompt"'):]
     assert "flows: login, search" in prompt
-    assert "HAR file walk.har (not included" in prompt and "&#34;entries&#34;: []" not in prompt
+    assert "HAR file walk.har: summary without values" in prompt and "&#34;entries&#34;: []" not in prompt
     assert "NOT COLLECTED" in prompt
 
 

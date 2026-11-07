@@ -20,6 +20,7 @@ steps:
       cancel, back, and error branches of multi-step flows. Save a HAR per role.
     evidence: [har-browse]
   - summary: Compare crawled URLs with the walkthrough to find paths the menus do not show
+    auto_run: true
     evidence: [har-browse, katana-crawl]
     command: >-
       jq -r '.log.entries[].request.url' {ev:har-browse}/*.har | sed 's/[?#].*//' | sort -u > walk.txt;
@@ -38,5 +39,12 @@ steps:
   - summary: Draw the flow map and mark untested areas
     operation: >-
       Draw each business flow (normal path, branches, cancel/back, role per step) and list
-      the areas not covered by later tests with the reason.
-    evidence: [workflow-map]
+      the areas not covered by later tests with the reason. The AI review drafts the map;
+      check it with the walkthrough and save it.
+    evidence: [workflow-map, har-browse, katana-crawl]
+    ai_task: >-
+      Draft the business flows seen in the HAR summary and the crawl (for example sign-up,
+      login, password reset, search, purchase, profile edit): for each flow, the requests in
+      order, branches, and the role that can use it. Then list functions that appear in the
+      crawl but not in the walkthrough, and areas that later tests cannot cover. Verdict "-"
+      unless the workflow-map evidence is saved, then pass.

@@ -17,9 +17,11 @@ notes:
   - Single-line grep misses multi-line comments and comments added by JavaScript; the perl command and the browser review cover them.
 steps:
   - summary: Extract HTML comments from the top page and its downloaded files
+    auto_run: true
     evidence: [site-assets, http-root-https]
     command: perl -0777 -ne 'print "== $ARGV\n$&\n" while /<!--.*?-->/gs' {ev:http-root-https}/body.html $(grep -rlI '<!--' {ev:site-assets}/site)
   - summary: Search the page and scripts for secrets, internal hosts, and debug notes
+    auto_run: true
     evidence: [site-assets]
     command: >-
       grep -rnaioE '.{0,40}(passw(or)?d|api[_-]?key|secret|token|bearer|authorization|BEGIN [A-Z ]*PRIVATE KEY|AKIA[0-9A-Z]{16}|AIza[0-9A-Za-z_-]{35}|(10|172\.(1[6-9]|2[0-9]|3[01])|192\.168)\.[0-9]+\.[0-9]+|[a-z0-9.-]+\.(local|internal|corp|lan)\b|todo|fixme|debug).{0,40}'
@@ -31,6 +33,7 @@ steps:
       find {ev:site-assets}/site -name '*.js' | sed "s#^{ev:site-assets}/site#{base_url}#; s/\$/.map/"
       | while read -r u; do echo "$(curl -sk -m 10 -o /dev/null -w '%{http_code}' "$u") $u"; done
   - summary: Read page metadata (meta tags, generator comments, inline configuration objects)
+    auto_run: true
     evidence: [http-root-https]
     command: grep -oiE '<meta[^>]+>|window\.[A-Za-z_]*(config|env|settings)[A-Za-z_]*\s*=' {ev:http-root-https}/body.html
   - summary: Review the source of the login page and each main screen in the browser

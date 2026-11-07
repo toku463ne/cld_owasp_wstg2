@@ -16,6 +16,7 @@ notes:
   - traceroute uses UDP and is often filtered; `sudo traceroute -T -p {port} {fqdn}` (TCP) gets further through firewalls.
 steps:
   - summary: Look for proxy, cache, CDN, and load balancer markers in response headers
+    auto_run: true
     evidence: [http-root-https, http-root-http, http-404]
     command: >-
       grep -iHE '^(server|via|x-cache[a-z-]*|x-served-by|x-varnish|age|cf-ray|cf-cache-status|x-amz-cf-[a-z]+|x-azure-ref|x-akamai[a-z-]*|x-backend[a-z-]*|x-upstream[a-z-]*|set-cookie):'
@@ -38,5 +39,13 @@ steps:
   - summary: Draw the architecture and confirm it with the system owner
     operation: >-
       Draw the components from the steps above, note the evidence for each, and mark
-      which ones the system owner confirmed.
-    evidence: [architecture-map]
+      which ones the system owner confirmed. The AI review drafts the architecture; confirm
+      it with the system owner and save it.
+    evidence: [architecture-map, http-root-https, dns-fqdn, wafw00f, traceroute, ports-web-common]
+    ai_task: >-
+      Draft the architecture from the evidence of all steps: CDN, WAF, load balancer, reverse
+      proxy, web server, application server, and other components, each with the evidence
+      that shows it (header, DNS name, address owner, WAF result, hop, port). List what
+      cannot be seen from outside and needs the system owner. Fail when an internal
+      component (database, cache, management console, message broker) is reachable from
+      outside; otherwise "-" until the owner confirmed the architecture-map evidence.

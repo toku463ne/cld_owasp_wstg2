@@ -91,6 +91,9 @@ curl -s --noproxy '*' --max-time 5 -o /dev/null -w '%{http_code}\n' http://127.0
    Collecting again skips what is already collected.
 4. **WSTG index**: open a test, follow the steps, set each step's verdict, add screenshots and
    files on the evidence pages, and copy the AI prompt when you want a second opinion.
+   Analysis commands that only read collected evidence run by themselves; their output is shown
+   under the step. Steps marked *Judged by the AI review* (known CVEs, inventories, drafts) are
+   answered by the AI prompt.
 5. **AI review**: paste the AI chat's whole answer into *Import an AI answer* on the WSTG page. The
    JSON block at its end sets the step verdicts: a pass is refused when the step's evidence is
    missing or failed, "-" changes nothing, and verdicts you set yourself are kept unless

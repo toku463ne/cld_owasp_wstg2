@@ -25,22 +25,26 @@ notes:
   - A local curl or openssl refusing TLS 1.0/1.1 may be the client's own policy; testssl and sslscan are authoritative.
 steps:
   - summary: Run the full TLS scan and list every finding above severity OK/INFO
+    auto_run: true
     evidence: [tls-testssl]
     command: >-
       jq -r '.[] | select(.severity | test("LOW|MEDIUM|HIGH|CRITICAL")) | [.severity, .id, .finding] | @tsv'
       {ev:tls-testssl}/testssl.json
   - summary: Check that SSLv2, SSLv3, TLS 1.0, and TLS 1.1 are not offered
+    auto_run: true
     evidence: [tls-sslscan, tls-testssl]
     command: >-
       grep -E '(SSLv2|SSLv3|TLSv1\.0|TLSv1\.1) +enabled' {ev:tls-sslscan}/stdout.txt;
       jq -r '.[] | select(.id | test("^(SSLv2|SSLv3|TLS1|TLS1_1)$")) | [.id, .finding] | @tsv'
       {ev:tls-testssl}/testssl.json
   - summary: Check that no weak cipher suite is accepted and DH parameters are 2048 bits or more
+    auto_run: true
     evidence: [tls-sslscan]
     command: >-
       grep -E '^(Preferred|Accepted)' {ev:tls-sslscan}/stdout.txt
       | grep -Ei 'NULL|anon|ADH|AECDH|EXP|RC4|3DES|DES-CBC|MD5|IDEA|SEED|DHE [0-9]{3} bits'
   - summary: Check certificate validity, chain, host name match, key size, and signature algorithm
+    auto_run: true
     evidence: [tls-cert-chain]
     command: >-
       f={ev:tls-cert-chain}/stdout.txt;
@@ -49,17 +53,15 @@ steps:
       openssl x509 -in $f -noout -checkend 2592000 || echo 'expires within 30 days';
       grep -E 'Verify return code|Certificate chain' $f
   - summary: Check known TLS vulnerabilities (Heartbleed, ROBOT, POODLE, DROWN, renegotiation)
+    auto_run: true
     evidence: [tls-testssl]
     command: >-
       jq -r '.[] | select(.id | test("heartbleed|CCS|ticketbleed|ROBOT|renego|CRIME|POODLE|fallback_SCSV|SWEET32|FREAK|DROWN|LOGJAM|BEAST"))
       | [.id, .severity, .finding, .cve // ""] | @tsv' {ev:tls-testssl}/testssl.json
   - summary: Cross-check accepted TLS versions with curl
-    command: >-
-      for v in 1.0 1.1 1.2 1.3; do curl -sk -o /dev/null -m 10 --tlsv$v --tls-max $v
-      --ciphers 'DEFAULT@SECLEVEL=0' {base_url}/; rc=$?; case $rc in 0) echo "TLS$v: accepted";;
-      35) echo "TLS$v: refused (handshake failure)";; *) echo "TLS$v: unknown (curl exit $rc)";;
-      esac; done
+    evidence: [tls-versions-curl]
   - summary: Check that plain HTTP redirects to HTTPS on the same host, also for deep paths
+    auto_run: true
     evidence: [http-root-http, http-redirect-chain]
     command: grep -iE '^(HTTP/|location:)|^final=' {ev:http-root-http}/stdout.txt {ev:http-redirect-chain}/stdout.txt
   - summary: Scan the other TLS ports in scope (mail, API, admin)
