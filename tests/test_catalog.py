@@ -52,6 +52,8 @@ TOOLS = "tools:\n" + "".join(f"  - {{name: {n}}}\n" for n in ("whois", "dig", "c
 
 def make(tmp_path, evidence: str, scenarios: dict[str, str], tools: str = TOOLS):
     (tmp_path / "tools.yaml").write_text(tools)
+    (tmp_path / "finding_kinds.yaml").write_text(
+        "kinds:\n  - {id: version-disclosure, title: Version disclosed, subject: the product}\n")
     (tmp_path / "evidence").mkdir()
     (tmp_path / "wstg").mkdir()
     (tmp_path / "wstg_index.yaml").write_text(INDEX)
@@ -85,6 +87,7 @@ def test_minimal_catalog_loads(tmp_path):
         overview: o
         pass: p
         fail: f
+        finding_kinds: [version-disclosure]
         steps:
           - summary: headers
             evidence: [http-root, dns-whois]
@@ -92,6 +95,22 @@ def test_minimal_catalog_loads(tmp_path):
         """})
     c = catalog.load(root)
     assert [e.id for e in c.evidence_for("WSTG-INFO-02")] == ["http-root", "dns-whois"]
+    assert c.scenarios["WSTG-INFO-02"].finding_kinds == ("version-disclosure",)
+    assert c.finding_kinds["version-disclosure"].subject == "the product"
+
+
+def test_unknown_finding_kind_is_refused(tmp_path):
+    p = problems_for(tmp_path, GOOD_EVIDENCE, {"WSTG-INFO-02": """\
+        id: WSTG-INFO-02
+        overview: o
+        pass: p
+        fail: f
+        finding_kinds: [no-such-kind]
+        steps:
+          - summary: headers
+            evidence: [http-root]
+        """})
+    assert "unknown finding kind 'no-such-kind'" in p
 
 
 def problems_for(tmp_path, evidence, scenarios=None):

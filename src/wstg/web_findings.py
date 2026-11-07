@@ -23,7 +23,21 @@ def register(app: Flask, db: dbmod.Database, cat: catmod.Catalog) -> None:
         return t
 
     def form_data() -> dict:
-        return {k: request.form.get(k, "") for k in (*fmod.TEXT_FIELDS, "status", "cvss_vector")}
+        return {k: request.form.get(k, "") for k in (*fmod.TEXT_FIELDS, "status", "cvss_vector", "kind", "subject")}
+
+    def kinds_for(test_id: str) -> list:
+        """The test's kinds first, then the others (a finding may use any kind)."""
+        sc = cat.scenarios.get(test_id)
+        own = [cat.finding_kinds[k] for k in (sc.finding_kinds if sc else ()) if k in cat.finding_kinds]
+        return own + [k for k in cat.finding_kinds.values() if k not in own]
+
+    def fail(e: fmod.FindingError, t) -> None:
+        if e.existing is not None:
+            flash(f"Not saved: finding {e.existing} already covers this kind and subject. Open it with the link below "
+                  "and add to it instead.")
+            g.duplicate = url_for("finding_page", name=t.name, fid=e.existing)
+        else:
+            flash(str(e))
 
     @app.get("/t/<name>/findings")
     @login_required
@@ -43,12 +57,13 @@ def register(app: Flask, db: dbmod.Database, cat: catmod.Catalog) -> None:
         if request.method == "POST":
             data = form_data()
             try:
-                fid = fmod.create(db, t, test_id, data, g.user["username"])
+                fid = fmod.create(db, t, test_id, data, g.user["username"], kinds=cat.finding_kinds)
                 flash("Finding created.")
                 return redirect(url_for("finding_page", name=t.name, fid=fid))
             except fmod.FindingError as e:
-                flash(str(e))
+                fail(e, t)
         return render_template("finding.html", tab="findings", finding=None, data=data, test=test,
+                               kinds=kinds_for(test_id),
                                metrics=cvss.METRICS, statuses=fmod.STATUSES,
                                score=cvss.try_score(data.get("cvss_vector")))
 
@@ -65,12 +80,12 @@ def register(app: Flask, db: dbmod.Database, cat: catmod.Catalog) -> None:
                 abort(403)
             data = form_data()
             try:
-                fmod.update(db, t, fid, data, g.user["username"])
+                fmod.update(db, t, fid, data, g.user["username"], kinds=cat.finding_kinds)
                 flash("Saved.")
                 return redirect(url_for("finding_page", name=t.name, fid=fid))
             except fmod.FindingError as e:
-                flash(str(e))
-        return render_template("finding.html", tab="findings", finding=f, data=data,
+                fail(e, t)
+        return render_template("finding.html", tab="findings", finding=f, data=data, kinds=kinds_for(f["test_id"]),
                                test=cat.tests.get(f["test_id"]), metrics=cvss.METRICS,
                                statuses=fmod.STATUSES, score=cvss.try_score(data.get("cvss_vector")))
 

@@ -106,7 +106,10 @@ def _excerpt(version: evmod.Version, budget: list[int]) -> list[str]:
 
 
 def build(*, test: catmod.Test, scenario: catmod.Scenario, target, steps: list[dict],
-          store: evmod.Store, findings: list[dict]) -> str:
+          store: evmod.Store, findings: list[dict], kinds: list | None = None,
+          all_tests: bool = False) -> str:
+    """`findings`: existing findings to show (this test's, or with all_tests the
+    whole target's, for an AI agent). `kinds`: the scenario's finding kinds."""
     budget = [TOTAL]
     lines = [
         "You are reviewing the result of an OWASP WSTG v4.2 test. Decide pass or fail for each step and",
@@ -162,19 +165,29 @@ def build(*, test: catmod.Test, scenario: catmod.Scenario, target, steps: list[d
             if version.meta.get("argv"):
                 lines.append(f"     command: {' '.join(version.meta['argv'])} (exit {version.meta.get('exit_code')})")
             lines += _excerpt(version, budget)
+    where = "on this target (all tests)" if all_tests else "for this test"
     if findings:
-        lines += ["", "Findings already recorded for this test:"]
+        lines += ["", f"Findings already recorded {where}:"]
         for f in findings:
             sc = f"{f['cvss']['score']} {f['cvss']['severity']} {f['cvss_vector']}" if f["cvss"] else "not rated"
-            lines.append(f"- {f['title']} [{f['status']}] {sc}")
+            key = f" kind={f['kind']} subject={f['subject']!r}" if f.get("kind") else ""
+            lines.append(f"- #{f['id']} [{f['test_id']}] {f['title']} [{f['status']}] {sc}{key}")
+    else:
+        lines += ["", f"Findings already recorded {where}: none"]
+    if kinds:
+        lines += ["", "Finding kinds for this test (use one per finding, or \"other\"; write the subject exactly",
+                  "as described, so the same problem always gets the same kind and subject):"]
+        lines += [f"- {k.id}: {k.title}. Subject: {k.subject}" for k in kinds]
     lines += ["", "Answer with: a verdict per step, an overall verdict, and for each fail the observed problem,",
               "its impact, reproduction steps, and a CVSS 3.1 vector with a short rationale per metric.",
               "",
               "End the answer with this JSON block, filled in (it is imported back into the test tool).",
               "One entry per step. verdict is \"pass\", \"fail\", or \"-\" when the evidence is missing, failed,",
               "or not enough to decide. reason: one or two sentences citing the evidence.",
-              "findings: one entry per distinct problem (empty list when there is none). Do not repeat",
-              "a finding already recorded above. steps: the step numbers that show it. cvss_vector: a full",
+              "findings: one entry per distinct problem (empty list when there is none). kind and subject:",
+              "from the finding kinds above. same_as: the number (#id) of a finding already recorded above",
+              "that describes the same problem, even with other words or from another test; such an entry",
+              "is not created again. Otherwise null. steps: the step numbers that show it. cvss_vector: a full",
               "CVSS 3.1 vector (CVSS:3.1/AV:../AC:../PR:../UI:../S:../C:../I:../A:..); cvss_rationale: one",
               "line per metric. reproduction: exact commands or operations, citing the evidence.",
               "```json",
@@ -182,7 +195,8 @@ def build(*, test: catmod.Test, scenario: catmod.Scenario, target, steps: list[d
                   "test": test.id, "target": target.name, "overall": "pass | fail | -",
                   "summary": "one paragraph",
                   "steps": [{"step": s["n"], "verdict": "pass | fail | -", "reason": "..."} for s in steps],
-                  "findings": [{"title": "...", "steps": [1], "summary": "...", "impact": "...",
+                  "findings": [{"title": "...", "kind": (kinds[0].id if kinds else "other"),
+                                "subject": "...", "same_as": None, "steps": [1], "summary": "...", "impact": "...",
                                 "reproduction": "...", "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N",
                                 "cvss_rationale": "..."}]}},
                   indent=2),

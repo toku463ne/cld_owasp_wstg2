@@ -12,6 +12,13 @@
   <input type="hidden" name="csrf" value="{{ csrf }}">
   <fieldset {{ 'disabled' if not can_write }}>
   <p><label>Title <input name="title" value="{{ data.title }}" required maxlength="300" size="80"></label></p>
+  {% if g.duplicate %}<p class="warnbox">Duplicate: <a href="{{ g.duplicate }}">open the existing finding</a>.</p>{% endif %}
+  <p><label>Kind <select name="kind">
+      <option value="">- (no kind: checked by title only)</option>
+      {% for k in kinds %}<option value="{{ k.id }}" title="Subject: {{ k.subject }}" {{ 'selected' if data.kind == k.id }}>{{ k.id }}: {{ k.title }}</option>{% endfor %}
+    </select></label>
+    <label>Subject <input name="subject" value="{{ data.subject }}" maxlength="300" size="40" placeholder="what or where, as the kind describes"></label></p>
+  <p class="muted small">A target has one finding per kind and subject, whichever WSTG test finds it. Subjects are compared in lower case.</p>
   <p><label>Status <select name="status">{% for s in statuses %}<option value="{{ s }}" {{ 'selected' if data.status == s }}>{{ s }}</option>{% endfor %}</select></label></p>
   <p><label>Summary <textarea name="summary" rows="4">{{ data.summary }}</textarea></label></p>
   <p><label>Impact <textarea name="impact" rows="4">{{ data.impact }}</textarea></label></p>

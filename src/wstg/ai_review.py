@@ -22,8 +22,10 @@ these rules:
   them apart, and every import is stored with its per-step outcome.
 
 Proposed findings are kept with the review. `create_finding()` turns one into a
-finding (created by "ai:<user>"); a finding with the same title on the same test
-is never created twice. `apply(create_findings=True)` creates all of them.
+finding (created by "ai:<user>") unless it duplicates an existing one: the AI's
+"same_as" (an existing finding id), the same kind and subject anywhere on the
+target, or the same title on the same test. `apply(create_findings=True)`
+creates all of them.
 """
 
 from __future__ import annotations
@@ -97,7 +99,9 @@ def _verdict(v, where: str) -> str:
     return v
 
 
-def parse(text: str, *, test_id: str, target_name: str, step_count: int) -> Review:
+def parse(text: str, *, test_id: str, target_name: str, step_count: int,
+          kinds: tuple[str, ...] | None = None) -> Review:
+    """`kinds`: finding kinds the scenario allows (None = any)."""
     text = (text or "").strip()
     if not text:
         raise ReviewError("paste the AI answer first")
@@ -130,10 +134,10 @@ def parse(text: str, *, test_id: str, target_name: str, step_count: int) -> Revi
     return Review(test=test_id, target=target_name, overall=_verdict(d.get("overall"), "overall"),
                   summary=str(d.get("summary") or "").strip()[:MAX_REASON],
                   steps=[steps[n] for n in sorted(steps)],
-                  findings=_findings(d.get("findings"), step_count))
+                  findings=_findings(d.get("findings"), step_count, kinds))
 
 
-def _findings(raw, step_count: int) -> list[dict]:
+def _findings(raw, step_count: int, kinds=None) -> list[dict]:
     if raw in (None, ""):
         return []
     if not isinstance(raw, list):
@@ -148,6 +152,21 @@ def _findings(raw, step_count: int) -> list[dict]:
         if not title:
             raise ReviewError(f"findings[{i}] has no title")
         item = {"title": title[:300], "note": ""}
+        kind = str(f.get("kind") or "").strip().lower()
+        if kind in ("", "none", "other"):
+            kind = ""
+        elif kinds is not None and kind not in kinds:
+            item["note"] = f"kind {kind[:60]!r} is not one of this test's kinds; checked by title only. "
+            kind = ""
+        item["kind"] = kind
+        item["subject"] = fmod.normalize_subject(str(f.get("subject") or ""))[:300] if kind else ""
+        if kind and not item["subject"]:
+            item["kind"], item["note"] = "", "kind without a subject; checked by title only. "
+        same = f.get("same_as")
+        try:
+            item["same_as"] = int(str(same).lstrip("#")) if same not in (None, "", "null") else None
+        except ValueError:
+            item["same_as"] = None
         for k in FINDING_TEXT:
             item[k] = str(f.get(k) or "").strip()[:fmod.MAX_TEXT]
         st = f.get("steps") or []
@@ -157,21 +176,29 @@ def _findings(raw, step_count: int) -> list[dict]:
         try:
             item["cvss_vector"] = cvss.normalize(vector) if vector else ""
         except cvss.CvssError as e:
-            item["cvss_vector"], item["note"] = "", f"CVSS vector dropped ({e}): {vector[:120]}"
+            item["cvss_vector"] = ""
+            item["note"] += f"CVSS vector dropped ({e}): {vector[:120]}"
+        item["note"] = item["note"].strip()
         out.append(item)
     return out
 
 
-def _existing_finding(db: dbmod.Database, target: tmod.Target, test_id: str, title: str) -> int | None:
+def match_finding(db: dbmod.Database, target: tmod.Target, test_id: str, f: dict) -> tuple[int | None, str]:
+    """The existing finding a proposal duplicates, and why: the AI's same_as, the
+    same kind and subject on the target (any test), or the same title on the test."""
+    if f.get("same_as") and fmod.get(db, target, f["same_as"]):
+        return f["same_as"], "same_as"
+    if (fid := fmod.find_by_key(db, target, f.get("kind", ""), f.get("subject", ""))) is not None:
+        return fid, "kind and subject"
     row = db.one("SELECT id FROM findings WHERE target_id = ? AND test_id = ? AND lower(title) = lower(?)",
-                 (target.id, test_id, title))
-    return row["id"] if row else None
+                 (target.id, test_id, f["title"]))
+    return (row["id"], "title") if row else (None, "")
 
 
 def create_finding(db: dbmod.Database, target: tmod.Target, review_id: int, index: int, actor: str
                    ) -> tuple[int, bool]:
     """Create finding `index` of an imported review. Returns (finding id, created);
-    created is False when a finding with that title already exists for the test."""
+    created is False when the proposal duplicates an existing finding (match_finding)."""
     row = db.one("SELECT * FROM ai_reviews WHERE id = ? AND target_id = ?", (review_id, target.id))
     if not row:
         raise ReviewError("no such AI review")
@@ -179,13 +206,20 @@ def create_finding(db: dbmod.Database, target: tmod.Target, review_id: int, inde
     if not 0 <= index < len(props):
         raise ReviewError("no such proposed finding")
     f = props[index]
-    if (fid := _existing_finding(db, target, row["test_id"], f["title"])) is not None:
+    fid, _ = match_finding(db, target, row["test_id"], f)
+    if fid is not None:
         return fid, False
-    data = {k: f.get(k, "") for k in ("title", "summary", "impact", "reproduction", "cvss_vector", "cvss_rationale")}
+    data = {k: f.get(k, "") for k in ("title", "summary", "impact", "reproduction", "cvss_vector",
+                                      "cvss_rationale", "kind", "subject")}
     if f.get("note"):
         data["cvss_rationale"] = (data["cvss_rationale"] + "\n\n" + f["note"]).strip()
     data["status"] = "open"
-    return fmod.create(db, target, row["test_id"], data, AI_PREFIX + actor), True
+    try:
+        return fmod.create(db, target, row["test_id"], data, AI_PREFIX + actor), True
+    except fmod.FindingError as e:
+        if e.existing is not None:       # created meanwhile
+            return e.existing, False
+        raise
 
 
 def missing_evidence(store: evmod.Store, cat: catmod.Catalog, target: tmod.Target, step: catmod.Step) -> list[str]:
@@ -248,10 +282,10 @@ def latest(db: dbmod.Database, target: tmod.Target, test_id: str) -> dict | None
     review = json.loads(row["review"])
     results = {r["step"]: r for r in json.loads(row["results"])}
     reasons = {s["step"]: s["reason"] for s in review["steps"]}
-    proposals = [dict(f, index=i, finding=_existing_finding(db, target, test_id, f["title"]))
-                 for i, f in enumerate(review.get("findings") or [])]
-    for p in proposals:
-        p["cvss"] = cvss.try_score(p["cvss_vector"])
+    proposals = []
+    for i, f in enumerate(review.get("findings") or []):
+        fid, why = match_finding(db, target, test_id, f)
+        proposals.append(dict(f, index=i, finding=fid, match=why, cvss=cvss.try_score(f["cvss_vector"])))
     return {"id": row["id"], "created_at": row["created_at"], "created_by": row["created_by"],
             "overall": review["overall"], "summary": review["summary"], "findings": proposals,
             "answer": row["answer"],

@@ -14,6 +14,7 @@ notes:
   - "Domain targets: only passive sources (CT logs, passive DNS, archives). FQDN targets: ports and virtual hosts of the server itself."
   - If every port shows filtered or no response, the scan did not reach the target; do not judge from it.
   - nmap and ffuf ignore http_proxy/https_proxy. Behind a proxy, use the curl loop in step 4 for web ports, and add -x to ffuf.
+finding_kinds: [non-public-service-exposed, internal-component-exposed]
 steps:
   - summary: "Domain: list subdomains from Certificate Transparency and passive sources"
     auto_run: true

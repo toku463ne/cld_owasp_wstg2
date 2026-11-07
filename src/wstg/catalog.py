@@ -154,6 +154,14 @@ class Scenario:
     fail_criteria: str
     steps: tuple[Step, ...]
     notes: tuple[str, ...] = ()
+    finding_kinds: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class FindingKind:
+    id: str
+    title: str
+    subject: str
 
 
 @dataclass
@@ -163,6 +171,7 @@ class Catalog:
     evidence: dict[str, Evidence]
     scenarios: dict[str, Scenario] = field(default_factory=dict)
     tools: dict[str, Tool] = field(default_factory=dict)
+    finding_kinds: dict[str, FindingKind] = field(default_factory=dict)
 
     def evidence_for(self, test_id: str) -> list[Evidence]:
         """Evidence the scenario of a test uses, in step order, without duplicates."""
@@ -340,12 +349,12 @@ def _check_evidence(ev: Evidence, problems: list[str]) -> None:
             problems.append(f"{w}: file '{f}' must be a relative path inside {{out}}")
 
 
-SCENARIO_KEYS = {"id", "overview", "pass", "fail", "notes", "steps"}
+SCENARIO_KEYS = {"id", "overview", "pass", "fail", "notes", "steps", "finding_kinds"}
 STEP_KEYS = {"summary", "command", "operation", "evidence", "load_note", "ai_task", "auto_run"}
 
 
 def _load_scenarios(dir_: Path, tests: dict[str, Test], evidence: dict[str, Evidence],
-                    problems: list[str]) -> dict[str, Scenario]:
+                    problems: list[str], kinds: dict[str, FindingKind] | None = None) -> dict[str, Scenario]:
     out: dict[str, Scenario] = {}
     for path in sorted(dir_.glob("*.yaml")):
         d = _read_yaml(path, problems)
@@ -396,8 +405,13 @@ def _load_scenarios(dir_: Path, tests: dict[str, Test], evidence: dict[str, Evid
             steps.append(st)
         if not steps:
             problems.append(f"{where}: no steps")
+        fk = _strs(d.get("finding_kinds"))
+        for k in fk:
+            if kinds is not None and k not in kinds:
+                problems.append(f"{where}: unknown finding kind '{k}' (see finding_kinds.yaml)")
         out[tid] = Scenario(id=tid, overview=_str(d["overview"]), pass_criteria=_str(d["pass"]),
-                            fail_criteria=_str(d["fail"]), steps=tuple(steps), notes=_strs(d.get("notes")))
+                            fail_criteria=_str(d["fail"]), steps=tuple(steps), notes=_strs(d.get("notes")),
+                            finding_kinds=fk)
     return out
 
 
@@ -406,7 +420,8 @@ def load(root: Path | None = None) -> Catalog:
     problems: list[str] = []
     version, tests = _load_index(root / "wstg_index.yaml", problems)
     evidence = _load_evidence(root / "evidence", problems)
-    scenarios = _load_scenarios(root / "wstg", tests, evidence, problems)
+    kinds = _load_finding_kinds(root / "finding_kinds.yaml", problems)
+    scenarios = _load_scenarios(root / "wstg", tests, evidence, problems, kinds)
     tools = _load_tools(root / "tools.yaml", problems)
     if tools is not None:
         for ev in evidence.values():
@@ -415,7 +430,29 @@ def load(root: Path | None = None) -> Catalog:
     if problems:
         raise CatalogError(problems)
     return Catalog(wstg_version=version, tests=tests, evidence=evidence, scenarios=scenarios,
-                   tools=tools or {})
+                   tools=tools or {}, finding_kinds=kinds or {})
+
+
+KIND_ID_RE = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
+
+
+def _load_finding_kinds(path: Path, problems: list[str]) -> dict[str, FindingKind] | None:
+    if not path.exists():
+        problems.append("finding_kinds.yaml is missing")
+        return None
+    data = _read_yaml(path, problems) or {}
+    out: dict[str, FindingKind] = {}
+    for i, k in enumerate(data.get("kinds") or []):
+        where = f"finding_kinds.yaml[{i}]"
+        if not _keys(where, k, {"id", "title", "subject"}, {"id", "title", "subject"}, problems):
+            continue
+        kind = FindingKind(id=_str(k["id"]), title=_str(k["title"]), subject=_str(k["subject"]))
+        if not KIND_ID_RE.match(kind.id) or kind.id == "other":
+            problems.append(f"{where}: bad id {kind.id!r}")
+        if kind.id in out:
+            problems.append(f"{where}: duplicate kind {kind.id}")
+        out[kind.id] = kind
+    return out
 
 
 def _load_tools(path: Path, problems: list[str]) -> dict[str, Tool] | None:

@@ -232,7 +232,8 @@ def register(app: Flask, cfg: Config, db: dbmod.Database, cat: catmod.Catalog, s
             abort(404)
         answer = request.form.get("answer", "")
         try:
-            review = ai_review.parse(answer, test_id=test_id, target_name=t.name, step_count=len(sc.steps))
+            review = ai_review.parse(answer, test_id=test_id, target_name=t.name, step_count=len(sc.steps),
+                                     kinds=sc.finding_kinds or tuple(cat.finding_kinds))
         except ai_review.ReviewError as e:
             flash(f"AI answer not imported: {e}")
             return redirect(url_for("wstg_page", name=t.name, test_id=test_id) + "#ai-review")

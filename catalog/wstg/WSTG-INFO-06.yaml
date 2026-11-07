@@ -14,6 +14,7 @@ notes:
   - Coverage is the goal. A crawl without login misses most of the application; the logged-in HAR is required.
   - A missing HAR or crawl is not a pass; the inventory is incomplete until both walkthroughs exist.
   - "When replaying requests without cookies, use GET only: replaying POST/PUT/DELETE can change data."
+finding_kinds: [unauthenticated-endpoint]
 steps:
   - summary: Walk through the application in the browser, anonymous and logged in, and save HAR files
     operation: Follow the capture instructions of the HAR evidence; visit every menu, form, and wizard step once.

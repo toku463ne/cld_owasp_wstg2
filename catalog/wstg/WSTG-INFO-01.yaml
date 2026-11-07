@@ -14,6 +14,7 @@ notes:
   - '"No results" and "collection failed" are different. Check stderr.txt and the HTTP code of each source before judging; a failed source is collected again, not passed.'
   - Recommend removal requests (for example Google Search Console) for exposed content, including cached copies.
   - Behind a proxy, theHarvester ignores http_proxy/https_proxy; pass the proxy explicitly (theHarvester -p) or it returns zero results. The automatic subfinder run gets -proxy from WSTG_HTTP_PROXY.
+finding_kinds: [sensitive-file-exposed, directory-listing, non-public-service-exposed]
 steps:
   - summary: Identify the organization, registrant, and name servers as the starting point
     auto_run: true

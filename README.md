@@ -99,7 +99,11 @@ curl -s --noproxy '*' --max-time 5 -o /dev/null -w '%{http_code}\n' http://127.0
    missing or failed, "-" changes nothing, and verdicts you set yourself are kept unless
    *Overwrite verdicts set by a tester* is ticked. Each step shows the AI's verdict and reason.
    Findings the AI proposes are listed there with a *Create finding* button (or tick *Also create
-   the findings the AI proposes*); a title that already exists for the test is not created again.
+   the findings the AI proposes*). Duplicates are not created: each finding has a **kind**
+   (`catalog/finding_kinds.yaml`) and a **subject**, and a target has one finding per kind and
+   subject across all tests; the AI can also point to an existing finding (`same_as`). Without a
+   kind, the same title on the same test counts as a duplicate. The AI chat prompt lists the
+   findings of that test; prompts saved for an AI agent list all findings of the target.
 6. **AI review in bulk (AI agent)**: *Save all AI prompts* on the WSTG index tab (or
    `uv run wstg ai-prompts TARGET`) writes `<evidence>/<target>/_ai/prompts/WSTG-*.md` and a
    README.md for the agent. The agent, or you from an AI chat, writes each answer to
@@ -134,8 +138,11 @@ For every file prompts/WSTG-XXXX-NN.md in those folders:
 6. Write answers/WSTG-XXXX-NN.json: only the filled-in JSON object of the template,
    {"wstg_review": {...}}, as valid UTF-8 JSON (no code fences, no comments, no other
    text). Keep "test" and "target" exactly as given and one entry per step. Put each
-   distinct problem in "findings" with a full CVSS 3.1 vector, without repeating
-   findings the prompt lists as already recorded; use [] when there is none.
+   distinct problem in "findings" with a full CVSS 3.1 vector; use [] when there is none.
+   Give each finding a "kind" from the prompt's list and a "subject" written exactly as
+   the kind describes. When a finding listed as already recorded (any test) is the
+   same problem, set "same_as" to its number instead of describing it again.
+   Within one run, use the same kind and subject when two tests show the same problem.
 7. Write nothing else and change, move, or delete no other file.
 
 At the end, print a table: target, test, overall verdict, number of findings, and the

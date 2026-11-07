@@ -15,6 +15,7 @@ notes:
   - Keyword hits are often only variable names (for example `password` in a form label). Check each hit; record real secrets by evidence path, do not copy them into the finding.
   - Public keys meant for browsers (map or analytics keys restricted by referrer) are low risk; check the restriction before reporting.
   - Single-line grep misses multi-line comments and comments added by JavaScript; the perl command and the browser review cover them.
+finding_kinds: [client-code-information-leak, secret-in-client-code, public-source-map]
 steps:
   - summary: Extract HTML comments from the top page and its downloaded files
     auto_run: true

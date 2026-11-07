@@ -48,11 +48,11 @@
   <table>
     <tr><th>Title</th><th>Steps</th><th>CVSS</th><th></th></tr>
     {% for f in ai.findings %}
-    <tr><td><b>{{ f.title }}</b>{% if f.summary %}<br><span class="muted small">{{ f.summary | truncate(300) }}</span>{% endif %}
+    <tr><td><b>{{ f.title }}</b>{% if f.kind %} <code class="muted small">{{ f.kind }}: {{ f.subject }}</code>{% endif %}{% if f.summary %}<br><span class="muted small">{{ f.summary | truncate(300) }}</span>{% endif %}
         {% if f.note %}<br><span class="muted small">{{ f.note }}</span>{% endif %}</td>
       <td class="nowrap">{{ f.steps | join(', ') }}</td>
       <td class="nowrap">{% if f.cvss %}<span class="sev sev-{{ f.cvss.severity | lower }}">{{ f.cvss.score }} {{ f.cvss.severity }}</span>{% else %}<span class="muted">not rated</span>{% endif %}</td>
-      <td class="nowrap">{% if f.finding %}<a href="{{ url_for('finding_page', name=target.name, fid=f.finding) }}">created</a>
+      <td class="nowrap">{% if f.finding %}<a href="{{ url_for('finding_page', name=target.name, fid=f.finding) }}">finding {{ f.finding }}</a><br><span class="muted small">{{ {'same_as': 'the AI says it is the same', 'kind and subject': 'same kind and subject', 'title': 'same title'}[f.match] }}</span>
         {% elif can_write %}<form method="post" class="inline" action="{{ url_for('wstg_ai_finding', name=target.name, test_id=test.id, review_id=ai.id, index=f.index) }}">
           <input type="hidden" name="csrf" value="{{ csrf }}"><button>Create finding</button></form>{% endif %}</td></tr>
     {% endfor %}

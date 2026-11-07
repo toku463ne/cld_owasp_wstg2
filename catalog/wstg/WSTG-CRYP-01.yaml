@@ -23,6 +23,7 @@ notes:
   - HSTS is judged in WSTG-CONF-07.
   - Behind a proxy, add `--proxy=auto` to testssl. If a corporate proxy inspects TLS, results describe the proxy; check the certificate issuer.
   - A local curl or openssl refusing TLS 1.0/1.1 may be the client's own policy; testssl and sslscan are authoritative.
+finding_kinds: [tls-weak-protocol, tls-weak-cipher, tls-certificate-problem, tls-known-vulnerability, no-https-redirect]
 steps:
   - summary: Run the full TLS scan and list every finding above severity OK/INFO
     auto_run: true

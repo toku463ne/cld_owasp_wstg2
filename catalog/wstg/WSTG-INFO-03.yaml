@@ -14,6 +14,7 @@ notes:
   - Disallow only asks crawlers not to index a path; it is not access control. Say so in the finding.
   - Many servers return 200 with a soft 404 page for missing files. Compare the size and content with the default 404 response (http-404) before treating a 200 as reachable.
   - A missing security.txt is not a failure of this test; mention it as a recommendation (RFC 9116).
+finding_kinds: [metafile-information-leak, unprotected-path, sensitive-file-exposed]
 steps:
   - summary: Fetch robots.txt, sitemap.xml, security.txt, and other /.well-known files
     auto_run: true

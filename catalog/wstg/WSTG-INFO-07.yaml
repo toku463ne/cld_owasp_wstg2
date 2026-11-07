@@ -13,6 +13,7 @@ fail: >-
 notes:
   - A crawler cannot follow multi-step forms, wizards, or JavaScript-only navigation; the manual walkthrough fills those gaps.
   - This test mostly produces the map for later tests; report a failure only for a concrete unprotected path.
+finding_kinds: [hidden-function, unprotected-path]
 steps:
   - summary: Walk through every function logged in, for each role, and save the HAR
     operation: >-

@@ -14,6 +14,7 @@ notes:
   - Retire.js downloads its vulnerability database from GitHub at run time; behind a proxy or without Internet access the update fails. It scans local files only, so it sends nothing to the target. Use --exitwith 0 so a finding does not stop a batch.
   - Known CVEs of framework and CMS versions are judged by the AI review (step "List known vulnerabilities of framework and CMS versions"); check each CVE ID in NVD before writing the finding.
   - Scripts that need a login are not in site-assets; fetch them from the logged-in HAR.
+finding_kinds: [version-disclosure, vulnerable-component]
 steps:
   - summary: List products and versions WhatWeb recognized
     auto_run: true

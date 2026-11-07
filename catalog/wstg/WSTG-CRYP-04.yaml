@@ -19,6 +19,7 @@ notes:
   - Base64, hex, and URL-encoding are not encryption. Decode suspicious values first; if they decode to readable data, they are unprotected.
   - A decoded length that is a multiple of 16 with no readable structure suggests a block cipher; feed such values to WSTG-CRYP-02.
   - Identical ciphertext blocks within one value are a sign of ECB mode.
+finding_kinds: [reversible-encoding, predictable-token, weak-cryptography]
 steps:
   - summary: Collect tokens and stored/transmitted values and try to decode them as Base64, hex, or URL-encoding
     evidence: [http-root-https, har-browse]

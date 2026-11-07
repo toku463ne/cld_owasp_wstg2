@@ -19,6 +19,7 @@ notes:
   - This test relies on a HAR of the real flows. Without it only the unauthenticated root can be judged, which is not a pass for the whole site.
   - A login page served over HTTPS that submits to an HTTP action still sends the password in clear; check the form action, not just the page URL.
   - Where ATHN-01 overlaps, describe the difference by channel (this test is about the transport; ATHN-01 is about the credential handling).
+finding_kinds: [cleartext-sensitive-data, mixed-content, cookie-without-secure, sensitive-data-in-url, no-https-redirect]
 steps:
   - summary: Capture the main authenticated flows as a HAR
     evidence: [har-browse]

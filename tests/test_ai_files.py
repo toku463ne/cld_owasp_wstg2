@@ -107,7 +107,7 @@ def test_web_bulk_and_create_finding(admin_client, guest_client, cfg, db, env):
     fs = fmod.list_for(db, t, "WSTG-INFO-02")
     assert [f["title"] for f in fs] == ["Server version disclosed"] and fs[0]["cvss"]["severity"]
     page = admin_client.get("/t/www.example.com/wstg/WSTG-INFO-02").get_data(as_text=True)
-    assert f'/findings/{fs[0]["id"]}">created</a>' in page
+    assert f'/findings/{fs[0]["id"]}">finding {fs[0]["id"]}</a>' in page
     assert admin_client.post(f"/t/www.example.com/wstg/WSTG-INFO-02/ai-review/{rid}/findings/9",
                              data={"csrf": tok}).status_code == 302          # flashes "no such"
 

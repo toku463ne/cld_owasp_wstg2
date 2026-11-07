@@ -51,6 +51,9 @@ For each prompt file `prompts/WSTG-XXXX-NN.md`:
    JSON object the prompt asks for, `{{"wstg_review": {{...}}}}`, filled in, as valid
    JSON without code fences or other text. Keep "test" and "target" as given; one
    entry per step; "findings" with full CVSS 3.1 vectors, or [] when there is none.
+   Give each finding a "kind" and a "subject" as the prompt describes; when a finding
+   already recorded (the prompt lists all tests) is the same problem, set "same_as"
+   to its number. Use the same kind and subject for the same problem in all answers.
 5. Do not change anything else in the evidence folders.
 
 Then import the answers: the "Import AI answers" button on the WSTG index tab, or
@@ -115,8 +118,11 @@ def build_prompt(cfg: Config, db: dbmod.Database, cat: catmod.Catalog, store: ev
                  for_file: bool = False) -> str:
     test, sc = cat.tests[test_id], cat.scenarios[test_id]
     steps = steps_for(cfg, db, cat, store, t, test_id) if steps is None else steps
+    # An AI chat sees the findings of this test only; an agent (prompt file) sees all of them.
     text = prompt.build(test=test, scenario=sc, target=t, steps=steps, store=store,
-                        findings=fmod.list_for(db, t, test_id))
+                        findings=fmod.list_for(db, t, None if for_file else test_id),
+                        kinds=[cat.finding_kinds[k] for k in sc.finding_kinds if k in cat.finding_kinds],
+                        all_tests=for_file)
     if not for_file:
         return text
     lines = ["", "Evidence folders on this host (latest complete version; do not read *.har files):"]
@@ -191,7 +197,8 @@ def import_answers(cfg: Config, db: dbmod.Database, cat: catmod.Catalog, store: 
             res.update(status="skipped", message="already imported")
             continue
         try:
-            review = ai_review.parse(text, test_id=tid, target_name=t.name, step_count=len(sc.steps))
+            review = ai_review.parse(text, test_id=tid, target_name=t.name, step_count=len(sc.steps),
+                                     kinds=sc.finding_kinds or tuple(cat.finding_kinds))
         except ai_review.ReviewError as e:
             res["message"] = str(e)
             continue

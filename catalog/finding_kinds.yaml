@@ -1,0 +1,99 @@
+# Kinds of findings. A finding with a kind and a subject has the key
+# (kind, normalized subject); a target never has two findings with the same key,
+# whichever WSTG test they come from. Scenarios list the kinds they can produce
+# (`finding_kinds:` in catalog/wstg/WSTG-*.yaml); the AI prompt shows them and the
+# AI answers with a kind and a subject per finding, so the same problem found
+# again (in another answer or another test) maps to the same key.
+#
+# Keys:
+#   id       lower-case words joined by '-'
+#   title    short name
+#   subject  what the subject is, and how to write it (it is compared after
+#            lower-casing and collapsing spaces, so write it the same way every time)
+#
+# "other" is always allowed: such findings have no key and are only checked by title.
+kinds:
+  # ---- information gathering ----------------------------------------------
+  - id: version-disclosure
+    title: Product version disclosed
+    subject: "the product, as `vendor product` in CPE style, for example `apache http_server`, `php php`, `microsoft asp.net` (not the version; one finding per product)"
+  - id: vulnerable-component
+    title: Component with known vulnerabilities
+    subject: "the product and version, as `vendor product version` in CPE style, for example `apache http_server 2.4.49`, `jquery jquery 1.12.4`"
+  - id: sensitive-file-exposed
+    title: Sensitive file or page publicly reachable or indexed
+    subject: "the URL without query, for example `https://www.example.com/backup.zip`"
+  - id: directory-listing
+    title: Directory listing enabled
+    subject: "the folder URL, for example `https://www.example.com/uploads/`"
+  - id: metafile-information-leak
+    title: Internal details in metafiles
+    subject: "the file name, for example `robots.txt`, `sitemap.xml`, `security.txt`, `crossdomain.xml`"
+  - id: unprotected-path
+    title: Path opens without authentication
+    subject: "the path, for example `/admin/`"
+  - id: non-public-service-exposed
+    title: Non-public host or service reachable from the Internet
+    subject: "`host:port`, for example `dev.example.com:8080`"
+  - id: client-code-information-leak
+    title: Comments, debug notes, or internal details in client code
+    subject: "the file or page path, for example `/js/app.js`"
+  - id: secret-in-client-code
+    title: Secret or credential in client code
+    subject: "the file path and the secret's name, for example `/js/app.js api-key`"
+  - id: public-source-map
+    title: JavaScript source map publicly reachable
+    subject: "the script path, for example `/js/app.js`"
+  - id: unauthenticated-endpoint
+    title: Endpoint answers without login
+    subject: "the method and path, for example `get /api/users`"
+  - id: hidden-function
+    title: Unlinked function reachable
+    subject: "the path, for example `/old/admin.php`"
+  - id: infrastructure-information-leak
+    title: Internal infrastructure details in responses
+    subject: "the header or source, for example `x-backend-server header`"
+  - id: internal-component-exposed
+    title: Internal component reachable from outside
+    subject: "`host:port` or the URL, for example `www.example.com:9200`"
+
+  # ---- cryptography --------------------------------------------------------
+  - id: tls-weak-protocol
+    title: Obsolete TLS or SSL protocol accepted
+    subject: "`host:port protocol`, for example `www.example.com:443 tlsv1.0` (one finding per protocol)"
+  - id: tls-weak-cipher
+    title: Weak cipher suites or DH parameters accepted
+    subject: "`host:port`, for example `www.example.com:443` (all weak suites in one finding)"
+  - id: tls-certificate-problem
+    title: Certificate problem
+    subject: "`host:port problem`, for example `www.example.com:443 expired`, `www.example.com:443 hostname mismatch`"
+  - id: tls-known-vulnerability
+    title: Known TLS vulnerability
+    subject: "`host:port name`, for example `www.example.com:443 heartbleed`"
+  - id: no-https-redirect
+    title: Plain HTTP not redirected to HTTPS
+    subject: "the host, for example `www.example.com`"
+  - id: cleartext-sensitive-data
+    title: Sensitive data sent over plain HTTP
+    subject: "the URL without query, for example `http://www.example.com/login`"
+  - id: mixed-content
+    title: Mixed content on HTTPS pages
+    subject: "the page URL without query"
+  - id: cookie-without-secure
+    title: Cookie without the Secure flag
+    subject: "the cookie name, for example `jsessionid`"
+  - id: sensitive-data-in-url
+    title: Sensitive values in URLs
+    subject: "the parameter name, for example `token`"
+  - id: padding-oracle
+    title: Padding oracle
+    subject: "where the value is sent and its name, for example `cookie auth`, `parameter state`"
+  - id: reversible-encoding
+    title: Encoding presented as encryption
+    subject: "where the value is sent and its name, for example `cookie user`"
+  - id: predictable-token
+    title: Predictable token or session identifier
+    subject: "where the token is sent and its name, for example `cookie sessionid`"
+  - id: weak-cryptography
+    title: Weak algorithm, mode, key, or random source
+    subject: "what is weak, for example `password storage md5`, `ecb mode cookie auth`, `hardcoded key`"

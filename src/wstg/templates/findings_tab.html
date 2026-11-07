@@ -5,7 +5,7 @@
   <tr><th>Finding</th><th>WSTG</th><th>Status</th><th>CVSS</th><th>Updated</th></tr>
   {% for f in findings %}
   <tr>
-    <td><a href="{{ url_for('finding_page', name=target.name, fid=f.id) }}"><b>{{ f.title }}</b></a></td>
+    <td><a href="{{ url_for('finding_page', name=target.name, fid=f.id) }}"><b>{{ f.title }}</b></a>{% if f.kind %}<br><code class="muted small">{{ f.kind }}: {{ f.subject }}</code>{% endif %}</td>
     <td class="nowrap"><a href="{{ url_for('wstg_page', name=target.name, test_id=f.test_id) }}">{{ f.test_id }}</a></td>
     <td class="nowrap">{{ f.status }}</td>
     <td class="nowrap">{% if f.cvss %}<span class="sev sev-{{ f.cvss.severity | lower }}">{{ f.cvss.score }} {{ f.cvss.severity }}</span>{% else %}<span class="muted">not rated</span>{% endif %}</td>

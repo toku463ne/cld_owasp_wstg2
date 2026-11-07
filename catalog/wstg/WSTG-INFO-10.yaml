@@ -14,6 +14,7 @@ notes:
   - Confirm the inferred architecture with the system owner; do not report guesses as facts.
   - Different Server headers on /, the 404 page, and plain HTTP often mean a proxy or load balancer in front of the application.
   - traceroute uses UDP and is often filtered; `sudo traceroute -T -p {port} {fqdn}` (TCP) gets further through firewalls.
+finding_kinds: [infrastructure-information-leak, internal-component-exposed, version-disclosure]
 steps:
   - summary: Look for proxy, cache, CDN, and load balancer markers in response headers
     auto_run: true

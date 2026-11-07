@@ -16,6 +16,7 @@ notes:
   - Block ciphers in CBC mode have a decoded length that is a multiple of 8 (DES/3DES) or 16 (AES). Base64 or hex values with such a length that change on every login are good candidates.
   - ASP.NET ViewState and WebResource.axd / ScriptResource.axd parameters on unpatched servers are classic oracles (CVE-2010-3332).
   - Agree on the request count before running padbuster; a full decryption takes thousands of requests and may lock the session or trigger a WAF.
+finding_kinds: [padding-oracle, reversible-encoding]
 steps:
   - summary: List encrypted-looking values in cookies, hidden fields, and URL parameters
     auto_run: true
