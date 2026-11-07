@@ -53,7 +53,8 @@ Options:
 | `--admin NAME` | first admin user name (default `admin`) |
 | `--no-packages` | skip apt |
 | `--no-nginx` | skip the nginx site |
-| `--no-systemd` | skip the user service; run `uv run wstg serve` yourself |
+| `--no-systemd` | skip the user services; run `uv run wstg serve` and `uv run wstg worker` yourself |
+| `--backup-timer` | also install a daily database backup (`wstg backup`, keeps 14) |
 | `--dry-run` | print what would be done, including the rendered nginx site |
 
 Without a terminal (for example over a non-interactive SSH command), set
@@ -121,6 +122,7 @@ uv run wstg serve [--dev]                 # 127.0.0.1:$WSTG_APP_PORT
 uv run wstg catalog-check [-v]            # validate the WSTG catalog (catalog/)
 uv run wstg worker [--once]               # run queued automatic evidence jobs (systemd: wstg2-worker)
 uv run wstg collect TARGET [--mode light|full] [--run]   # queue (or with --run, run now) a collection
+uv run wstg backup [--dest DIR] [--keep 14]              # copy the database; rsync the evidence folder yourself
 ```
 
 ## Development

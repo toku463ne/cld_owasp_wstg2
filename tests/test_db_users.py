@@ -58,3 +58,22 @@ def test_users(db):
     assert users.authenticate(db, "alice", "new-long-password")
     actions = [r["action"] for r in db.query("SELECT action FROM audit_log ORDER BY id")]
     assert actions == ["user.add", "user.add", "user.disable", "user.password"]
+
+
+def test_backup_command_keeps_newest(tmp_path, monkeypatch):
+    import sqlite3
+    from wstg import cli
+    env = tmp_path / "wstg2.env"
+    env.write_text(f"WSTG_EVIDENCE_ROOT={tmp_path}/data/evidence\nWSTG_DB_PATH={tmp_path}/data/db/w.sqlite3\n"
+                   "WSTG_SECRET_KEY=x\n")
+    monkeypatch.setenv("WSTG_CONFIG", str(env))
+    assert cli.main(["migrate"]) == 0
+    dest = tmp_path / "bk"
+    for i in range(3):
+        (dest).mkdir(exist_ok=True)
+        (dest / f"w-2020010{i}T000000Z.sqlite3").write_bytes(b"old")
+    assert cli.main(["backup", "--dest", str(dest), "--keep", "2"]) == 0
+    files = sorted(dest.glob("w-*.sqlite3"))
+    assert len(files) == 2
+    con = sqlite3.connect(files[-1])
+    assert con.execute("SELECT count(*) FROM schema_migrations").fetchone()[0] >= 5

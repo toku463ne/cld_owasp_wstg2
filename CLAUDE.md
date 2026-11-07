@@ -114,6 +114,7 @@ uv run wstg serve [--dev]                 # web app on 127.0.0.1:$WSTG_APP_PORT 
 uv run wstg catalog-check [-v]            # validate catalog/ (index, evidence, scenarios); needs no config
 uv run wstg worker [--once]               # run queued automatic evidence jobs
 uv run wstg collect TARGET [--mode light|full] [--run]
+uv run wstg backup [--dest DIR] [--keep 14]
 
 uv run pytest -q                          # tests (temporary directories only)
 ```

@@ -80,7 +80,7 @@ Last updated: 2026-11-07
 - Config, data, service, and nginx names use the `wstg2` prefix so mine.wstg can run on the same host.
 
 ### Open items carried forward
-- M8 remainder: worker unit (with M5), backup timer.
+- Backup frequency is the owner's decision; `--backup-timer` installs a daily one only when asked. Evidence is copied with rsync (versions never change).
 - Login rate limiting is not implemented yet (consider in M8, or rely on nginx `limit_req`).
 - Session cookie is not `Secure` while the tool runs on plain HTTP (8083). Turn it on when moving to TLS on 443.
 - UI title is provisional ("WSTG Runner").

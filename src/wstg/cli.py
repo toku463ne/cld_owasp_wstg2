@@ -6,6 +6,7 @@ import argparse
 import getpass
 import os
 import sys
+from pathlib import Path
 
 from . import catalog, config, db as dbmod, users
 
@@ -127,6 +128,27 @@ def cmd_collect(args) -> int:
     return 0
 
 
+def cmd_backup(args) -> int:
+    """Consistent copy of the database (SQLite online backup), keeping the newest N.
+    Evidence folders are append-only versions: copy them with rsync."""
+    from datetime import datetime, timezone
+    cfg = _cfg()
+    dest = Path(args.dest).expanduser() if args.dest else cfg.db_path.parent.parent / "backup"
+    root = config.repo_root()
+    if root and config.is_inside(dest, root):
+        raise config.ConfigError(f"backup folder {dest} is inside the repository")
+    dest.mkdir(mode=0o700, parents=True, exist_ok=True)
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    out = dbmod.backup(_db(cfg), dest / f"{cfg.db_path.stem}-{stamp}.sqlite3")
+    out.chmod(0o600)
+    old = sorted(dest.glob(f"{cfg.db_path.stem}-*.sqlite3"))[:-args.keep] if args.keep > 0 else []
+    for p in old:
+        p.unlink()
+    print(f"database backup: {out}" + (f" (removed {len(old)} old)" if old else ""))
+    print(f"evidence: rsync -a {cfg.evidence_root}/ <backup host or disk>/  (versions are never changed)")
+    return 0
+
+
 def cmd_serve(args) -> int:
     from .web import create_app
 
@@ -183,6 +205,11 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--mode", choices=("light", "full"), default="light")
     s.add_argument("--run", action="store_true", help="run it now in this process (no worker needed)")
     s.set_defaults(func=cmd_collect)
+
+    s = sub.add_parser("backup", help="copy the database to a backup folder (keeps the newest N)")
+    s.add_argument("--dest", help="backup folder (default: <data dir>/backup)")
+    s.add_argument("--keep", type=int, default=14)
+    s.set_defaults(func=cmd_backup)
 
     s = sub.add_parser("serve", help="run the web app on 127.0.0.1:WSTG_APP_PORT (behind nginx)")
     s.add_argument("--dev", action="store_true", help="use the Flask development server")

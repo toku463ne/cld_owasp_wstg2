@@ -10,7 +10,8 @@
 #   --admin NAME      first admin user, created only when no user exists (default admin)
 #   --no-packages     skip apt
 #   --no-nginx        skip the nginx site (port 8083)
-#   --no-systemd      skip the systemd user service (run `uv run wstg serve` yourself)
+#   --no-systemd      skip the systemd user services (run `uv run wstg serve` / `worker` yourself)
+#   --backup-timer    also install a daily database backup (wstg backup, keeps 14)
 #   --dry-run         print what would be done, change nothing
 #   -h, --help        show this help
 #
@@ -27,6 +28,7 @@ ADMIN=admin
 PACKAGES=1
 NGINX=1
 SYSTEMD=1
+BACKUP_TIMER=0
 DRY=0
 
 while [ $# -gt 0 ]; do
@@ -37,6 +39,7 @@ while [ $# -gt 0 ]; do
     --no-packages) PACKAGES=0; shift;;
     --no-nginx) NGINX=0; shift;;
     --no-systemd) SYSTEMD=0; shift;;
+    --backup-timer) BACKUP_TIMER=1; shift;;
     --dry-run) DRY=1; shift;;
     -h|--help) sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'; exit 0;;
     *) echo "unknown option: $1 (see --help)" >&2; exit 2;;
@@ -219,11 +222,38 @@ EOF
   }
   unit wstg2-web "WSTG Runner web app (127.0.0.1:$APP_PORT, behind nginx :$WEB_PORT)" serve
   unit wstg2-worker "WSTG Runner automatic evidence worker" worker
+  if [ "$BACKUP_TIMER" = 1 ]; then
+    if [ "$DRY" = 1 ]; then echo "  [dry-run] would write $UNIT_DIR/wstg2-backup.service/.timer"
+    else
+      cat > "$UNIT_DIR/wstg2-backup.service" <<EOF
+[Unit]
+Description=WSTG Runner database backup
+
+[Service]
+Type=oneshot
+Environment=WSTG_CONFIG=$CONFIG
+WorkingDirectory=$REPO
+ExecStart=$UV_BIN run --frozen wstg backup
+EOF
+      cat > "$UNIT_DIR/wstg2-backup.timer" <<EOF
+[Unit]
+Description=Daily WSTG Runner database backup
+
+[Timer]
+OnCalendar=daily
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+EOF
+    fi
+  fi
   run systemctl --user daemon-reload
   run systemctl --user enable wstg2-web.service wstg2-worker.service
   # Restart (not just start) so an update picks up the new code. A collection
   # that is running is marked interrupted; collecting again skips what is done.
   run systemctl --user restart wstg2-web.service wstg2-worker.service
+  [ "$BACKUP_TIMER" = 0 ] || run systemctl --user enable --now wstg2-backup.timer
   # Keep the user service running without an open login session.
   if [ "$(loginctl show-user "$USER" -p Linger --value 2>/dev/null || true)" != yes ]; then
     run sudo loginctl enable-linger "$USER"
