@@ -268,7 +268,7 @@ if [ "$DRY" = 0 ]; then
   if [ "$SYSTEMD" = 1 ]; then
     code=000
     for _ in $(seq 1 15); do
-      code=$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:$APP_PORT/login" || true)
+      code=$(curl -s --noproxy '*' --max-time 5 -o /dev/null -w '%{http_code}' "http://127.0.0.1:$APP_PORT/login" || true)
       [ "$code" = 200 ] && break
       sleep 1
     done
@@ -276,7 +276,7 @@ if [ "$DRY" = 0 ]; then
     [ "$code" = 200 ] || echo "warning: app not answering; see: journalctl --user -u wstg2-web -n 50"
   fi
   if [ "$NGINX" = 1 ]; then
-    code=$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:$WEB_PORT/login" || true)
+    code=$(curl -s --noproxy '*' --max-time 5 -o /dev/null -w '%{http_code}' "http://127.0.0.1:$WEB_PORT/login" || true)
     echo "nginx http://127.0.0.1:$WEB_PORT/login -> HTTP $code"
     [ "$code" = 200 ] || echo "warning: expected 200 (403 means 127.0.0.0/8 is not in WSTG_ALLOWED_NETWORKS; 502 means the app is down)"
   fi

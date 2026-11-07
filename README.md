@@ -71,7 +71,7 @@ Check it:
 ```bash
 systemctl --user status wstg2-web
 journalctl --user -u wstg2-web -f
-curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8083/login   # expect 200
+curl -s --noproxy '*' --max-time 5 -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8083/login   # expect 200
 ```
 
 ## Configuration
