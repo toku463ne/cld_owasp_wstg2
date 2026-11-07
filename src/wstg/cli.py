@@ -216,10 +216,15 @@ def cmd_ai_prompts(args) -> int:
     for tid in args.test or []:
         if tid not in ai_files.tests_with_scenarios(r.cat, t):
             raise config.ConfigError(f"{tid} has no scenario for {t.type} targets")
-    paths = ai_files.save_prompts(r.cfg, r.db, r.cat, r.store, t, args.test or None)
-    for p in paths:
-        print(p)
-    print(f"{len(paths)} prompt(s); instructions for an AI agent: {ai_files.folder(r.cfg, t) / 'README.md'}")
+    res = ai_files.save_prompts(r.cfg, r.db, r.cat, r.store, t, args.test or None,
+                                evidence=args.evidence, existing=args.existing)
+    for p in res["saved"]:
+        print(f"  saved    {p}")
+    for tid in res["skipped_existing"]:
+        print(f"  skipped  {tid} (prompt file exists; --existing overwrite to rewrite)")
+    for tid in res["skipped_evidence"]:
+        print(f"  skipped  {tid} (evidence not collected; --evidence all to save anyway)")
+    print(f"{ai_files.summary(res)}; instructions for an AI agent: {ai_files.folder(r.cfg, t) / 'README.md'}")
     return 0
 
 
@@ -325,6 +330,10 @@ def build_parser() -> argparse.ArgumentParser:
     s = sub.add_parser("ai-prompts", help="save AI prompts to <evidence>/<target>/_ai/prompts for an AI agent")
     s.add_argument("target")
     s.add_argument("--test", action="append", help="only this test (repeatable); default: every test with a scenario")
+    s.add_argument("--evidence", choices=("complete", "any", "all"), default="complete",
+                   help="complete: only tests whose evidence is all collected (default); any: at least one; all: every test")
+    s.add_argument("--existing", choices=("skip", "overwrite"), default="skip",
+                   help="what to do when a prompt file exists (default: skip)")
     s.set_defaults(func=cmd_ai_prompts)
 
     s = sub.add_parser("ai-import", help="import AI answers from <evidence>/<target>/_ai/answers/WSTG-*.json")

@@ -116,7 +116,8 @@ uv run wstg tools-check [--strict]        # which tools of catalog/tools.yaml ar
 uv run wstg tools-check --remote          # tools on the jump host (WSTG_DIRECT_SSH)
 uv run wstg worker [--once]               # run queued automatic evidence jobs
 uv run wstg collect TARGET [--mode light|full] [--run]
-uv run wstg ai-prompts TARGET [--test WSTG-..]   # save AI prompts to <evidence>/TARGET/_ai/prompts
+uv run wstg ai-prompts TARGET [--test WSTG-..] [--evidence complete|any|all] [--existing skip|overwrite]
+                                          # save AI prompts to <evidence>/TARGET/_ai/prompts
 uv run wstg ai-import TARGET [--overwrite] [--findings]  # import _ai/answers/WSTG-*.json
 uv run wstg backup [--dest DIR] [--keep 14]
 

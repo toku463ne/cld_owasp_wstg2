@@ -7,6 +7,9 @@
 <p class="muted">
   {% for s, n in counts.items() %}<span class="status s-{{ s if s != '-' else 'none' }}">{{ s }}</span> {{ n }}{{ ' · ' if not loop.last }}{% endfor %}
   {% if target.type == 'fqdn' %} · Domain-only tests are on the parent domain target.{% endif %}
+  <br>Evidence: <span class="status s-pass">complete</span> {{ ev_counts.complete }} ·
+  <span class="status s-started">partial</span> {{ ev_counts.partial }} ·
+  <span class="status s-none">none</span> {{ ev_counts.none }}
 </p>
 {% if can_write %}
 <details class="ai-box" id="ai-bulk">
@@ -15,8 +18,16 @@
     <code>{{ ai_folder }}/prompts/</code>. An AI agent (or you, from an AI chat) writes each answer to
     <code>{{ ai_folder }}/answers/WSTG-XXXX-NN.json</code>; the folder's README.md tells the agent what to do.
     Then import all answers at once. Answers already imported are skipped.</p>
-  <form method="post" class="inline" action="{{ url_for('ai_prompts_save', name=target.name) }}">
-    <input type="hidden" name="csrf" value="{{ csrf }}"><button>Save all AI prompts</button></form>
+  <form method="post" class="stack" action="{{ url_for('ai_prompts_save', name=target.name) }}">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <div>Tests:
+      <label><input type="radio" name="evidence" value="complete" checked> evidence complete ({{ ev_counts.complete }})</label>
+      <label><input type="radio" name="evidence" value="any"> some evidence collected ({{ ev_counts.complete + ev_counts.partial }})</label>
+      <label><input type="radio" name="evidence" value="all"> all tests ({{ ai_prompts }})</label></div>
+    <div>Existing prompt files:
+      <label><input type="radio" name="existing" value="skip" checked> skip</label>
+      <label><input type="radio" name="existing" value="overwrite"> overwrite</label></div>
+    <div><button>Save AI prompts</button></div></form>
   <form method="post" class="inline" action="{{ url_for('ai_answers_import', name=target.name) }}">
     <input type="hidden" name="csrf" value="{{ csrf }}">
     <label><input type="checkbox" name="overwrite" value="1"> Overwrite tester verdicts</label>
@@ -25,7 +36,7 @@
 </details>
 {% endif %}
 <table class="index">
-  <tr><th>ID</th><th>Test</th><th>OWASP</th><th>Status</th></tr>
+  <tr><th>ID</th><th>Test</th><th>OWASP</th><th>Evidence</th><th>Status</th></tr>
   {% for r in rows %}
   <tr class="{{ 'merged' if r.test.merged_into }}">
     <td class="nowrap">
@@ -34,6 +45,10 @@
     <td><b>{{ r.test.title }}</b>{% if not r.scenario and not r.test.merged_into %} <span class="chip">no scenario yet</span>{% endif %}<br>
       <span class="muted">{{ r.test.summary }}</span></td>
     <td><a href="{{ r.test.owasp_url }}" target="_blank" rel="noopener noreferrer">WSTG</a></td>
+    <td class="nowrap">{% set e = r.evidence %}{% if e and e.total %}<span class="status s-{{ {'complete': 'pass', 'partial': 'started', 'none': 'none'}[e.state] }}"
+        title="{{ 'Missing: ' ~ (e.missing | join(', ')) if e.missing else 'All evidence collected' }}">{{ e.have }}/{{ e.total }}</span>
+      {% elif e %}<span class="muted small">no evidence</span>{% endif %}
+      {% if r.prompt %}<br><span class="muted small" title="Saved in {{ ai_folder }}/prompts">prompt saved</span>{% endif %}</td>
     <td class="nowrap">{% if r.status %}<span class="status s-{{ r.status if r.status != '-' else 'none' }}">{{ r.status }}</span>{% else %}<span class="muted">merged into {{ r.test.merged_into }}</span>{% endif %}</td>
   </tr>
   {% endfor %}

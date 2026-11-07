@@ -119,15 +119,21 @@ def register(app: Flask, cfg: Config, db: dbmod.Database, cat: catmod.Catalog, s
         vs = tmod.verdicts(db, t)
         have = collected(t)
         rows = []
+        prompts_dir = ai_files.folder(cfg, t) / "prompts"
         for test in tests_for(t):
             sc = cat.scenarios.get(test.id)
             has_ev = any(e.id in have for e in cat.evidence_for(test.id))
             st = None if test.merged_into else tmod.status(len(sc.steps) if sc else 0, vs.get(test.id, {}), has_ev)
-            rows.append({"test": test, "scenario": sc, "status": st})
+            rows.append({"test": test, "scenario": sc, "status": st,
+                         "evidence": ai_files.evidence_state(cat, test.id, have) if sc else None,
+                         "prompt": sc is not None and (prompts_dir / f"{test.id}.md").exists()})
         counts = {s: sum(1 for r in rows if r["status"] == s) for s in ("-", "started", "pass", "fail")}
+        ev_counts = {s: sum(1 for r in rows if r["evidence"] and r["evidence"]["state"] == s)
+                     for s in ("complete", "partial", "none")}
         scope_problems = tmod.scope_problems(tmod.get_scope(db, t))
         return render_template("wstg_index.html", tab="index", rows=rows, counts=counts,
                                scope_problems=scope_problems, ai_folder=ai_files.folder(cfg, t),
+                               ev_counts=ev_counts,
                                ai_answers=len(ai_files.answer_files(cfg, t)),
                                ai_prompts=len(ai_files.tests_with_scenarios(cat, t)))
 
@@ -271,7 +277,7 @@ def register(app: Flask, cfg: Config, db: dbmod.Database, cat: catmod.Catalog, s
         t = load_target(name)
         if test_id not in ai_files.tests_with_scenarios(cat, t):
             abort(404)
-        path = ai_files.save_prompts(cfg, db, cat, store, t, [test_id])[0]
+        path = ai_files.save_prompts(cfg, db, cat, store, t, [test_id])["saved"][0]
         flash(f"AI prompt saved to {path}")
         return redirect(url_for("wstg_page", name=t.name, test_id=test_id))
 
@@ -279,8 +285,12 @@ def register(app: Flask, cfg: Config, db: dbmod.Database, cat: catmod.Catalog, s
     @admin_required
     def ai_prompts_save(name: str):
         t = load_target(name)
-        paths = ai_files.save_prompts(cfg, db, cat, store, t)
-        flash(f"{len(paths)} AI prompt(s) saved to {ai_files.folder(cfg, t) / 'prompts'}")
+        evidence = request.form.get("evidence", "complete")
+        existing = request.form.get("existing", "skip")
+        if evidence not in ai_files.EVIDENCE_FILTERS or existing not in ai_files.EXISTING:
+            abort(400)
+        res = ai_files.save_prompts(cfg, db, cat, store, t, evidence=evidence, existing=existing)
+        flash(f"AI prompts: {ai_files.summary(res)} in {ai_files.folder(cfg, t) / 'prompts'}")
         return redirect(url_for("wstg_index", name=t.name) + "#ai-bulk")
 
     @app.post("/t/<name>/ai/answers")

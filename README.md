@@ -106,15 +106,17 @@ curl -s --noproxy '*' --max-time 5 -o /dev/null -w '%{http_code}\n' http://127.0
    subject across all tests; the AI can also point to an existing finding (`same_as`). Without a
    kind, the same title on the same test counts as a duplicate. The AI chat prompt lists the
    findings of that test; prompts saved for an AI agent list all findings of the target.
-6. **AI review in bulk (AI agent)**: *Save all AI prompts* on the WSTG index tab (or
-   `uv run wstg ai-prompts TARGET`) writes `<evidence>/<target>/_ai/prompts/WSTG-*.md` and a
-   README.md for the agent. The agent, or you from an AI chat, writes each answer to
+6. **AI review in bulk (AI agent)**: the WSTG index shows per test how much of its evidence is
+   collected (`3/4`; hover for the missing IDs) and whether its prompt is saved. *Save AI prompts*
+   there (or `uv run wstg ai-prompts TARGET [--evidence complete|any|all] [--existing skip|overwrite]`)
+   writes `<evidence>/<target>/_ai/prompts/WSTG-*.md` and a README.md for the agent: by default only
+   for tests whose evidence is complete, skipping prompt files that already exist. The agent, or you from an AI chat, writes each answer to
    `_ai/answers/WSTG-XXXX-NN.json`. *Import AI answers* (or `uv run wstg ai-import TARGET
    [--findings]`) imports them all; files already imported are skipped.
 
 ### Prompt for an AI agent (bulk review)
 
-After *Save all AI prompts* (or `uv run wstg ai-prompts TARGET`), start an AI agent that can read
+After *Save AI prompts* (or `uv run wstg ai-prompts TARGET`), start an AI agent that can read
 and write local files (for example Claude Code on the Kali host) and give it the prompt below.
 Replace `EVIDENCE_ROOT` with the value of `WSTG_EVIDENCE_ROOT` (for example `/srv/wstg2/evidence`)
 and `TARGET` with the target name, or keep `*` to review every target that has saved prompts.

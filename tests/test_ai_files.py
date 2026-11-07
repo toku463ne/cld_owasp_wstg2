@@ -43,7 +43,7 @@ def test_parse_findings_validates_vectors_and_steps():
 
 def test_save_prompts_for_an_agent(cfg, db, env):
     t, cat, store = env
-    paths = ai_files.save_prompts(cfg, db, cat, store, t)
+    paths = ai_files.save_prompts(cfg, db, cat, store, t)["saved"]
     names = {p.name for p in paths}
     assert "WSTG-INFO-02.md" in names and "WSTG-INFO-01.md" not in names     # INFO-01 is for domains
     base = cfg.evidence_root / "www.example.com" / "_ai"
@@ -85,10 +85,10 @@ def test_web_bulk_and_create_finding(admin_client, guest_client, cfg, db, env):
     t, cat, store = env
     tok = csrf_of(admin_client)
     page = admin_client.get("/t/www.example.com/").get_data(as_text=True)
-    assert "Save all AI prompts" in page and "Import AI answers (0 files)" in page
-    assert "Save all AI prompts" not in guest_client.get("/t/www.example.com/").get_data(as_text=True)
+    assert "Save AI prompts" in page and "Import AI answers (0 files)" in page
+    assert "Save AI prompts" not in guest_client.get("/t/www.example.com/").get_data(as_text=True)
     assert guest_client.post("/t/www.example.com/ai/prompts", data={"csrf": csrf_of(guest_client)}).status_code == 403
-    assert admin_client.post("/t/www.example.com/ai/prompts", data={"csrf": tok}).status_code == 302
+    assert admin_client.post("/t/www.example.com/ai/prompts", data={"csrf": tok, "evidence": "all"}).status_code == 302
     assert (cfg.evidence_root / "www.example.com" / "_ai" / "prompts" / "WSTG-INFO-02.md").is_file()
     r = admin_client.post("/t/www.example.com/wstg/WSTG-INFO-02/ai-prompt/save", data={"csrf": tok})
     assert r.status_code == 302
@@ -116,7 +116,7 @@ def test_cli_ai_prompts_and_import(cfg, db, env, monkeypatch, capsys):
     from wstg import cli
     t, cat, store = env
     monkeypatch.setattr(cli, "_cfg", lambda: cfg)
-    assert cli.main(["ai-prompts", "www.example.com", "--test", "WSTG-INFO-02"]) == 0
+    assert cli.main(["ai-prompts", "www.example.com", "--test", "WSTG-INFO-02", "--evidence", "all"]) == 0
     assert "WSTG-INFO-02.md" in capsys.readouterr().out
     d = cfg.evidence_root / "www.example.com" / "_ai" / "answers"
     (d / "WSTG-INFO-02.json").write_text(json.dumps(review()))
@@ -145,3 +145,38 @@ def test_reset_test_keeps_evidence_and_findings(admin_client, guest_client, cfg,
     assert ar.latest(db, t, "WSTG-INFO-02") is None
     assert len(fmod.list_for(db, t, "WSTG-INFO-02")) == 2
     assert store.load(t.name, "har-browse") is not None
+
+
+def test_save_prompts_by_evidence_and_existing_files(admin_client, cfg, db, env):
+    t, cat, store = env
+    have = ai_files.collected(db, cat, store, t)
+    assert ai_files.evidence_state(cat, "WSTG-INFO-02", have) == {
+        "have": 0, "total": 4, "missing": ["http-root-https", "http-root-http", "http-404", "whatweb"], "state": "none"}
+    # collect all INFO-02 evidence (complete), one of INFO-03's (partial)
+    for eid in ("http-root-https", "http-root-http", "http-404", "whatweb"):
+        store.add_text(t, eid, "x", "", "admin")
+    state = ai_files.evidence_state(cat, "WSTG-INFO-03", ai_files.collected(db, cat, store, t))
+    assert state["state"] == "partial" and state["have"] >= 1
+    res = ai_files.save_prompts(cfg, db, cat, store, t, evidence="complete", existing="skip")
+    saved = {p.stem for p in res["saved"]}
+    assert "WSTG-INFO-02" in saved and "WSTG-INFO-03" not in saved and "WSTG-INFO-03" in res["skipped_evidence"]
+    prompt = cfg.evidence_root / "www.example.com" / "_ai" / "prompts" / "WSTG-INFO-02.md"
+    prompt.write_text("old")
+    res = ai_files.save_prompts(cfg, db, cat, store, t, evidence="any", existing="skip")
+    assert "WSTG-INFO-02" in res["skipped_existing"] and prompt.read_text() == "old"
+    assert "WSTG-INFO-03" in {p.stem for p in res["saved"]}
+    ai_files.save_prompts(cfg, db, cat, store, t, ["WSTG-INFO-02"], evidence="all", existing="overwrite")
+    assert prompt.read_text() != "old"
+    # the index shows the evidence state and saved prompts; the form passes the options
+    page = admin_client.get("/t/www.example.com/").get_data(as_text=True)
+    assert 'title="All evidence collected">4/4</span>' in page and "prompt saved" in page
+    assert 'name="evidence" value="complete" checked' in page and 'name="existing" value="skip" checked' in page
+    prompt.write_text("old")
+    admin_client.post("/t/www.example.com/ai/prompts", data={"csrf": csrf_of(admin_client), "evidence": "complete",
+                                                             "existing": "skip"})
+    assert prompt.read_text() == "old"
+    admin_client.post("/t/www.example.com/ai/prompts", data={"csrf": csrf_of(admin_client), "evidence": "complete",
+                                                             "existing": "overwrite"})
+    assert prompt.read_text() != "old"
+    assert admin_client.post("/t/www.example.com/ai/prompts", data={"csrf": csrf_of(admin_client),
+                                                                    "evidence": "bad"}).status_code == 400

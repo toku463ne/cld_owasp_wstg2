@@ -149,21 +149,66 @@ def _write(path: Path, text: str) -> None:
     os.replace(tmp, path)
 
 
+EVIDENCE_FILTERS = ("complete", "any", "all")    # all evidence collected / some / no condition
+EXISTING = ("skip", "overwrite")
+
+
+def evidence_state(cat: catmod.Catalog, test_id: str, have: dict) -> dict:
+    """Collected evidence of a test's scenario: {"have", "total", "missing": [ids],
+    "state": "complete" | "partial" | "none" | "no evidence"}."""
+    evs = cat.evidence_for(test_id)
+    missing = [e.id for e in evs if e.id not in have]
+    n = len(evs) - len(missing)
+    state = ("no evidence" if not evs else "complete" if not missing else "partial" if n else "none")
+    return {"have": n, "total": len(evs), "missing": missing, "state": state}
+
+
+def _wanted(state: dict, evidence: str) -> bool:
+    if evidence == "complete":
+        return state["state"] in ("complete", "no evidence")
+    if evidence == "any":
+        return state["have"] > 0 or state["state"] == "no evidence"
+    return True
+
+
 def save_prompts(cfg: Config, db: dbmod.Database, cat: catmod.Catalog, store: evmod.Store,
-                 t: tmod.Target, test_ids: list[str] | None = None) -> list[Path]:
-    """Write prompts/<test>.md for the given tests (default: every test with a
-    scenario for this target type) and README.md. Returns the prompt paths."""
+                 t: tmod.Target, test_ids: list[str] | None = None, *,
+                 evidence: str = "all", existing: str = "overwrite") -> dict:
+    """Write prompts/<test>.md and README.md.
+
+    test_ids: default every test with a scenario for this target type.
+    evidence: "complete" = only tests whose evidence is all collected, "any" =
+    tests with at least one collected evidence, "all" = no condition.
+    existing: "skip" keeps prompt files that are already there, "overwrite" rewrites them.
+    Returns {"saved": [paths], "skipped_existing": [ids], "skipped_evidence": [ids]}."""
+    if evidence not in EVIDENCE_FILTERS or existing not in EXISTING:
+        raise ValueError("bad evidence or existing option")
     base = folder(cfg, t)
     have = collected(db, cat, store, t)
-    out = []
+    out = {"saved": [], "skipped_existing": [], "skipped_evidence": []}
     for tid in test_ids or tests_with_scenarios(cat, t):
-        steps = steps_for(cfg, db, cat, store, t, tid, have)
         path = base / "prompts" / f"{tid}.md"
+        if not _wanted(evidence_state(cat, tid, have), evidence):
+            out["skipped_evidence"].append(tid)
+            continue
+        if existing == "skip" and path.exists():
+            out["skipped_existing"].append(tid)
+            continue
+        steps = steps_for(cfg, db, cat, store, t, tid, have)
         _write(path, build_prompt(cfg, db, cat, store, t, tid, steps, for_file=True))
-        out.append(path)
+        out["saved"].append(path)
     (base / "answers").mkdir(mode=0o700, parents=True, exist_ok=True)
     _write(base / "README.md", README.format(target=t.name, saved=dbmod.utcnow()))
     return out
+
+
+def summary(res: dict) -> str:
+    parts = [f"{len(res['saved'])} saved"]
+    if res["skipped_existing"]:
+        parts.append(f"{len(res['skipped_existing'])} skipped (prompt file exists)")
+    if res["skipped_evidence"]:
+        parts.append(f"{len(res['skipped_evidence'])} skipped (evidence not collected)")
+    return ", ".join(parts)
 
 
 def answer_files(cfg: Config, t: tmod.Target) -> list[Path]:
