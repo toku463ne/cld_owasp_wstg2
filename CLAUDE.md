@@ -94,4 +94,24 @@ Implementation plan and milestones: [`docs/PLAN.md`](docs/PLAN.md).
 
 ## Commands
 
-_Not yet defined. Add setup, run, and test commands here (all via `uv run ...`)._
+Settings come from a KEY=VALUE file outside the repo named by `WSTG_CONFIG`
+(example: `docs/examples/wstg.env.example`; keys are listed in `src/wstg/config.py`).
+
+```bash
+export WSTG_CONFIG=~/.config/wstg/wstg.env
+
+uv sync                                   # install dependencies
+uv run wstg check-config                  # show settings; fails if data paths are inside the repo
+uv run wstg migrate                       # create data dirs, apply migrations (backs up the DB first)
+uv run wstg user-add NAME --role admin    # admin|guest; password from WSTG_NEW_USER_PASSWORD or prompt
+uv run wstg user-passwd NAME
+uv run wstg user-disable NAME [--enable]
+uv run wstg user-list
+uv run wstg serve [--dev]                 # web app on 127.0.0.1:$WSTG_APP_PORT (default 5083), behind nginx :8083
+
+uv run pytest -q                          # tests (temporary directories only)
+```
+
+Code layout: `src/wstg/` (`config.py`, `db.py` + `migrations/NNNN_*.sql`, `users.py`,
+`web.py` + `templates/` + `static/`, `cli.py`), tests in `tests/`.
+Schema changes: add a new numbered migration; never edit an applied one.

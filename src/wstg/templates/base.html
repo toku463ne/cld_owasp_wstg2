@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}WSTG Runner{% endblock %}</title>
+<meta name="csrf" content="{{ csrf }}">
+<link rel="stylesheet" href="{{ static_url('style.css') }}">
+</head><body>
+<header class="top">
+  <a class="brand" href="{{ url_for('index') }}">WSTG Runner</a>
+  {% block header_left %}{% endblock %}
+  <span class="sp"></span>
+  {% if user %}
+    {% if can_write %}<a href="{{ url_for('admin_users') }}">Users</a>{% endif %}
+    <span>{{ user.username }} <span class="chip">{{ user.role }}</span></span>
+    <form method="post" action="{{ url_for('logout') }}"><input type="hidden" name="csrf" value="{{ csrf }}"><button>Log out</button></form>
+  {% endif %}
+</header>
+<main>
+{% for m in get_flashed_messages() %}<div class="flash">{{ m }}</div>{% endfor %}
+{% block body %}{% endblock %}
+</main>
+</body></html>

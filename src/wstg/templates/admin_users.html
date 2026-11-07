@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}Users · WSTG Runner{% endblock %}
+{% block body %}
+<h2>Users</h2>
+<table>
+  <tr><th>User name</th><th>Role</th><th>Status</th><th>Created</th><th></th></tr>
+  {% for u in users %}
+  <tr>
+    <td>{{ u.username }}</td><td>{{ u.role }}</td>
+    <td>{{ 'disabled' if u.disabled else 'active' }}</td><td>{{ u.created_at }}</td>
+    <td>
+      <form method="post" class="inline" action="{{ url_for('admin_users_disabled', username=u.username) }}">
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <input type="hidden" name="disabled" value="{{ '0' if u.disabled else '1' }}">
+        <button>{{ 'Enable' if u.disabled else 'Disable' }}</button>
+      </form>
+    </td>
+  </tr>
+  {% endfor %}
+</table>
+
+<h3>Add user</h3>
+<form method="post" class="stack" action="{{ url_for('admin_users_add') }}">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <p><label>User name <input name="username" required pattern="[A-Za-z0-9._\-]{1,64}"></label></p>
+  <p><label>Password (12 characters or more) <input name="password" type="password" autocomplete="new-password" required minlength="12"></label></p>
+  <p><label>Role <select name="role">{% for r in roles %}<option value="{{ r }}" {{ 'selected' if r == 'guest' }}>{{ r }}</option>{% endfor %}</select></label></p>
+  <p><button>Add</button></p>
+</form>
+{% endblock %}

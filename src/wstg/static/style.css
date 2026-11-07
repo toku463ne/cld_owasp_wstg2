@@ -1,0 +1,42 @@
+:root {
+  --fg: #1d232a; --muted: #5d6670; --bg: #fafbfc; --surface: #fff; --line: #d9dee3;
+  --ok: #1a7f37; --bad: #b42318; --warn: #9a6700; --link: #0b5cad; --th: #f1f3f5;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --fg: #e6e8eb; --muted: #9aa3ab; --bg: #15191d; --surface: #1d2227; --line: #343b42;
+    --ok: #4ac26b; --bad: #f47067; --warn: #d4a72c; --link: #6cb6ff; --th: #252b31;
+  }
+}
+* { box-sizing: border-box; }
+body { font: 14px/1.45 system-ui, sans-serif; color: var(--fg); background: var(--bg); margin: 0; }
+a { color: var(--link); text-decoration: none; }
+a:hover { text-decoration: underline; }
+header.top { background: var(--surface); border-bottom: 1px solid var(--line); padding: 8px 16px;
+  display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+header.top .brand { font-weight: 700; color: var(--fg); }
+header.top .sp { flex: 1; }
+header.top form { margin: 0; }
+main { padding: 16px; max-width: 1200px; }
+.target-select { display: flex; gap: 4px; align-items: center; }
+nav.tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin: 8px 0 16px; flex-wrap: wrap; }
+nav.tabs a, nav.tabs span { padding: 6px 12px; border: 1px solid transparent; border-bottom: none;
+  border-radius: 4px 4px 0 0; color: var(--muted); }
+nav.tabs .on { background: var(--surface); border-color: var(--line); color: var(--fg); font-weight: 600; margin-bottom: -1px; }
+table { border-collapse: collapse; width: 100%; background: var(--surface); margin: 8px 0 20px; }
+th, td { border: 1px solid var(--line); padding: 4px 8px; text-align: left; vertical-align: top; }
+th { background: var(--th); font-weight: 600; }
+.flash { background: #fff4e5; color: #1d232a; border: 1px solid #f0c36d; padding: 6px 10px; margin-bottom: 12px; }
+.muted { color: var(--muted); }
+.chip { display: inline-block; font-size: 12px; padding: 1px 7px; border-radius: 10px; border: 1px solid var(--line); }
+button, input, select, textarea { font: inherit; color: inherit; }
+input, select, textarea { background: var(--surface); border: 1px solid var(--line); border-radius: 4px; padding: 4px 6px; }
+button { background: var(--surface); border: 1px solid var(--line); border-radius: 4px; padding: 4px 10px; cursor: pointer; }
+button:disabled { opacity: .5; cursor: not-allowed; }
+form.stack p { margin: 8px 0; }
+form.stack label { display: block; }
+.login { max-width: 360px; margin: 48px auto; background: var(--surface); border: 1px solid var(--line);
+  border-radius: 6px; padding: 16px 20px; }
+.login input { width: 100%; }
+form.inline { display: inline; }
+@media (max-width: 700px) { main { padding: 12px; } }

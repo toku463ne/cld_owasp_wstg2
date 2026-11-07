@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block header_left %}
+<div class="target-select">
+  <select aria-label="Test target" disabled><option>No targets yet</option></select>
+  <button type="button" title="Add a test target (coming in M2)" disabled>+</button>
+</div>
+{% endblock %}
+{% block body %}
+<nav class="tabs">
+  <span class="on">WSTG index</span>
+  <span>Findings</span>
+  <span>Manual evidence</span>
+  <span>Automatic evidence</span>
+</nav>
+<p class="muted">No test target yet. Targets, the WSTG index, findings and evidence come in the next milestones.</p>
+{% endblock %}

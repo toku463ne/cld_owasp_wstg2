@@ -1,0 +1,6 @@
+{% extends "base.html" %}
+{% block title %}{{ error.code }} · WSTG Runner{% endblock %}
+{% block body %}
+<h2>{{ error.code }} {{ error.name }}</h2>
+<p>{{ error.description }}</p>
+{% endblock %}
