@@ -2,7 +2,8 @@
 
 It holds the criteria, the steps with the tester's verdicts and the commands,
 excerpts of the collected evidence, and the existing findings, and asks for a
-verdict per step and CVSS vectors for failures.
+verdict per step and CVSS vectors for failures, and to end with a JSON
+block that `ai_review.py` imports back.
 
 Excerpts: text items and small text files are included (each cut at
 PER_FILE chars, the whole prompt at TOTAL chars). Images are listed by
@@ -10,6 +11,8 @@ caption. HAR files are not included: they hold cookies and tokens.
 """
 
 from __future__ import annotations
+
+import json
 
 from . import catalog as catmod
 from . import evidence as evmod
@@ -90,5 +93,16 @@ def build(*, test: catmod.Test, scenario: catmod.Scenario, target, steps: list[d
             sc = f"{f['cvss']['score']} {f['cvss']['severity']} {f['cvss_vector']}" if f["cvss"] else "not rated"
             lines.append(f"- {f['title']} [{f['status']}] {sc}")
     lines += ["", "Answer with: a verdict per step, an overall verdict, and for each fail the observed problem,",
-              "its impact, reproduction steps, and a CVSS 3.1 vector with a short rationale per metric."]
+              "its impact, reproduction steps, and a CVSS 3.1 vector with a short rationale per metric.",
+              "",
+              "End the answer with this JSON block, filled in (it is imported back into the test tool).",
+              "One entry per step. verdict is \"pass\", \"fail\", or \"-\" when the evidence is missing, failed,",
+              "or not enough to decide. reason: one or two sentences citing the evidence.",
+              "```json",
+              json.dumps({"wstg_review": {
+                  "test": test.id, "target": target.name, "overall": "pass | fail | -",
+                  "summary": "one paragraph",
+                  "steps": [{"step": s["n"], "verdict": "pass | fail | -", "reason": "..."} for s in steps]}},
+                  indent=2),
+              "```"]
     return "\n".join(lines) + "\n"

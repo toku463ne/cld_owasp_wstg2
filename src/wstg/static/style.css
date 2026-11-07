@@ -66,7 +66,7 @@ tr.merged td { color: var(--muted); }
 .criteria { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 .criteria h4 { margin: 4px 0; }
 h4.ok { color: var(--ok); } h4.bad { color: var(--bad); }
-section.step, section.overview, section.findings-box { background: var(--surface); border: 1px solid var(--line);
+section.step, section.overview, section.findings-box, section.ai-box { background: var(--surface); border: 1px solid var(--line);
   border-radius: 6px; padding: 8px 14px; margin: 10px 0; }
 section.step h4 { margin: 6px 0; }
 .cmd { display: flex; gap: 6px; align-items: flex-start; }
@@ -99,3 +99,5 @@ th.col-used { width: 9em; }
 details.used-by summary { cursor: pointer; white-space: nowrap; color: var(--link); }
 details.used-by a { display: block; }
 td code { overflow-wrap: anywhere; }
+.ai-note { font-size: 13px; border-left: 3px solid var(--link); padding: 2px 8px; margin: 6px 0; }
+.ai-box textarea { width: 100%; box-sizing: border-box; font-family: ui-monospace, monospace; font-size: 12px; }

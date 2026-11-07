@@ -15,6 +15,7 @@ from . import catalog as catmod
 from . import db as dbmod
 from . import evidence as evmod
 from . import findings as fmod
+from . import ai_review
 from . import prompt
 from . import runner as rmod
 from . import targets as tmod
@@ -226,9 +227,34 @@ def register(app: Flask, cfg: Config, db: dbmod.Database, cat: catmod.Catalog, s
         findings = fmod.list_for(db, t, test_id)
         ai_prompt = prompt.build(test=test, scenario=sc, target=t, steps=steps, store=store,
                                  findings=findings) if sc else ""
+        setters = ai_review.setters(db, t, test_id)
+        for s in steps:
+            s["by_ai"] = setters.get(s["n"], "").startswith(ai_review.AI_PREFIX)
         return render_template("wstg_page.html", tab="index", test=test, scenario=sc, steps=steps,
                                status=st_value, applicable=t.type in test.target_types,
-                               findings=findings, ai_prompt=ai_prompt)
+                               findings=findings, ai_prompt=ai_prompt,
+                               ai=ai_review.latest(db, t, test_id) if sc else None)
+
+    @app.post("/t/<name>/wstg/<test_id>/ai-review")
+    @admin_required
+    def wstg_ai_import(name: str, test_id: str):
+        t = load_target(name)
+        sc = cat.scenarios.get(test_id)
+        if not sc:
+            abort(404)
+        answer = request.form.get("answer", "")
+        try:
+            review = ai_review.parse(answer, test_id=test_id, target_name=t.name, step_count=len(sc.steps))
+        except ai_review.ReviewError as e:
+            flash(f"AI answer not imported: {e}")
+            return redirect(url_for("wstg_page", name=t.name, test_id=test_id) + "#ai-review")
+        out = ai_review.apply(db, store, cat, t, review, answer, g.user["username"],
+                              overwrite=bool(request.form.get("overwrite")))
+        counts: dict[str, int] = {}
+        for r in out["results"]:
+            counts[r["outcome"]] = counts.get(r["outcome"], 0) + 1
+        flash("AI review imported: " + ", ".join(f"{v} {k}" for k, v in counts.items()))
+        return redirect(url_for("wstg_page", name=t.name, test_id=test_id) + "#ai-review")
 
     @app.post("/t/<name>/wstg/<test_id>/steps/<int:n>")
     @admin_required

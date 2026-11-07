@@ -33,6 +33,26 @@
   {% else %}<p class="muted">No findings for this test.</p>{% endfor %}
 </section>
 
+<section class="ai-box" id="ai-review">
+  <div class="step-head"><h3>AI review</h3></div>
+  {% if ai %}
+  <p>Imported {{ ai.created_at }} by {{ ai.created_by }} · overall <span class="status s-{{ ai.overall if ai.overall != '-' else 'none' }}">{{ ai.overall }}</span></p>
+  {% if ai.summary %}<p>{{ ai.summary }}</p>{% endif %}
+  {% else %}<p class="muted">No AI review imported yet. Copy the AI prompt, paste it into the AI chat, and import its answer here.</p>{% endif %}
+  {% if can_write %}
+  <details {{ 'open' if not ai }}>
+    <summary>Import an AI answer</summary>
+    <form method="post" class="stack" action="{{ url_for('wstg_ai_import', name=target.name, test_id=test.id) }}">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <textarea name="answer" rows="8" placeholder="Paste the whole AI answer (it must end with the ```json block the prompt asks for)" required></textarea>
+      <label><input type="checkbox" name="overwrite" value="1"> Overwrite verdicts set by a tester</label>
+      <p class="muted small">Proposed verdicts are applied to the steps. A pass is refused when a step's evidence is missing or failed; "-" leaves a step unchanged.</p>
+      <div><button>Import and apply</button></div>
+    </form>
+  </details>
+  {% endif %}
+</section>
+
 <h3>Steps</h3>
 {% for s in steps %}
 <section class="step" id="step-{{ s.n }}">
@@ -44,9 +64,12 @@
       <select name="verdict" aria-label="Verdict of step {{ s.n }}" {{ 'disabled' if not can_write }} data-autosubmit>
         {% for v in ['-', 'pass', 'fail'] %}<option value="{{ v }}" {{ 'selected' if s.verdict == v }}>{{ v }}</option>{% endfor %}
       </select>
+      {% if s.by_ai %}<span class="chip" title="Set by an AI review import">AI</span>{% endif %}
       {% if can_write %}<noscript><button>Save</button></noscript><button name="reset" value="1" title="Reset this step">Reset</button>{% endif %}
     </form>
   </div>
+  {% set a = ai.steps.get(s.n) if ai else None %}
+  {% if a %}<div class="ai-note"><b>AI: {{ a.proposed }}</b> · {{ a.outcome }}{% if a.note %} ({{ a.note }}){% endif %}{% if a.reason %}<br>{{ a.reason }}{% endif %}</div>{% endif %}
   {% if s.step.load_note %}<div class="note warn">{{ s.step.load_note | ticks }}</div>{% endif %}
   {% if s.command %}
   <div class="cmd"><pre id="cmd-{{ s.n }}">{{ s.command }}</pre><button type="button" data-copy="#cmd-{{ s.n }}">Copy</button></div>
