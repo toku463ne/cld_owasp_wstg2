@@ -12,7 +12,7 @@ Last updated: 2026-11-07
 | M1 | Catalog | **In progress** | Index (97), schema and validator, INFO + CRYP scenarios; CONF pending |
 | M2 | Targets and main page | **Done** | Targets, scope records and check, selector, tabs, WSTG index |
 | M3 | WSTG page | **In progress** | Overview, criteria, steps, verdict/reset, rendered commands, AI prompt (basic); evidence view/edit with M4/M5 |
-| M4 | Manual evidence | Not started | |
+| M4 | Manual evidence | **Done** (browser paste to be checked on Kali) | Versioned store, capture box, upload, text, edit/remove as new versions |
 | M5 | Automatic evidence | Not started | |
 | M6 | Findings | Not started | |
 | M7 | AI prompt | Not started | |
@@ -28,6 +28,14 @@ Last updated: 2026-11-07
 - Main page shell (target selector + `+`, four tabs, all placeholders); admin user page.
 - CLI: `check-config`, `migrate`, `user-add`, `user-passwd`, `user-disable`, `user-list`, `serve`.
 - Fixed during smoke test: waitress dropped nginx's `X-Forwarded-For` by default, which would have made every client look like 127.0.0.1.
+
+### M4 delivered
+- Migration `0003_evidence`: `evidence_versions` index (source manual / auto / edit, status complete / failed, item count).
+- `src/wstg/evidence.py` store: `<root>/<target>/<evidence id>/v0001/` with `meta.json` and `items/`; every change (add images / file / text, edit caption or text, remove) writes a full new version; unchanged files are hard links; temp folder + fsync + rename under the DB write lock; `latest` symlink replaced atomically, only for complete versions; an indexing failure moves the folder back and removes it.
+- Web (`src/wstg/web_evidence.py`): evidence page with version banner and history, capture box adapted from mine.wstg (`static/capture.js`: paste / drop / choose, several images with captions, one version per save), file upload, text, edit and remove. Domain evidence opened from an FQDN target redirects to the domain target; writes go to the owner only.
+- Serving: only PNG/JPEG (checked by magic bytes on upload) and text are shown inline; everything else is a download (`application/octet-stream`, attachment) with a sandbox CSP, so uploaded HTML/SVG never runs in the tool's origin.
+- The WSTG index counts collected evidence (status `started`); the WSTG page and the manual evidence tab show collected date, version, and item count.
+- Not yet checked in a real browser: clipboard paste into the capture box (only the upload path was tested with curl).
 
 ### M2 delivered (and M3 so far)
 - Migration `0002_targets`: `targets` (domain / FQDN, parent), `scopes` (allowed hosts and ports, base URL, authorization reference, validity period), `step_verdicts` (no row = `-`).

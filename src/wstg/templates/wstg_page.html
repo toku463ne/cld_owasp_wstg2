@@ -51,11 +51,11 @@
     <tr><th>Evidence</th><th>Kind</th><th>Collected</th><th>Shared with</th></tr>
     {% for e in s.evidence %}
     <tr>
-      <td><b>{{ e.ev.title }}</b> <code class="muted">{{ e.ev.id }}</code>
+      <td>{% if e.owner %}<a href="{{ url_for('evidence_page', name=e.owner, eid=e.ev.id) }}"><b>{{ e.ev.title }}</b></a>{% else %}<b>{{ e.ev.title }}</b>{% endif %} <code class="muted">{{ e.ev.id }}</code>
         {% if e.owner and e.owner != target.name %}<br><span class="muted">from {{ e.owner }}</span>{% endif %}
         {% if e.ev.kind == 'auto' %}<br><code class="muted small">{{ e.ev.argv | join(' ') }}</code>{% else %}<br><span class="muted">{{ e.ev.description }}</span>{% endif %}</td>
       <td class="nowrap">{{ e.ev.kind }}{% if e.ev.level %} · {{ e.ev.level }}{% endif %}{% if e.ev.heavy %} <span class="chip warn">heavy</span>{% endif %}</td>
-      <td class="nowrap">{% if not e.owner %}<span class="muted">no parent domain</span>{% else %}<span class="muted">not collected</span>{% endif %}</td>
+      <td class="nowrap">{% if not e.owner %}<span class="muted">no parent domain</span>{% elif e.row %}{{ e.row.created_at }}<br><span class="muted">v{{ e.row.version }} · {{ e.row.item_count }} item(s)</span>{% else %}<span class="muted">not collected</span>{% endif %}</td>
       <td>{% for tid in e.used_by %}<a href="{{ url_for('wstg_page', name=target.name, test_id=tid) }}">{{ tid }}</a> {% endfor %}</td>
     </tr>
     {% endfor %}
@@ -80,7 +80,7 @@ Steps (tester verdict in brackets):
 {% for s in steps %}{{ s.n }}. [{{ s.verdict }}] {{ s.step.summary }}
 {% if s.command %}   Command: {{ s.command }}
 {% endif %}{% if s.operation %}   Operation: {{ s.operation }}
-{% endif %}{% for e in s.evidence %}   Evidence {{ e.ev.id }}: not collected yet
+{% endif %}{% for e in s.evidence %}   Evidence {{ e.ev.id }}: {% if e.row %}collected {{ e.row.created_at }} (v{{ e.row.version }}, {{ e.row.item_count }} item(s); contents not included yet){% else %}not collected{% endif %}
 {% endfor %}{% endfor %}
 Answer with: a verdict per step, an overall verdict, and for each fail the observed problem, its impact, and a CVSS 3.1 vector with a short rationale.</textarea>
 {% endif %}

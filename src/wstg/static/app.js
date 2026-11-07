@@ -30,6 +30,9 @@ document.addEventListener("DOMContentLoaded", function () {
   document.querySelectorAll("select[data-autosubmit]").forEach(function (sel) {
     sel.addEventListener("change", function () { sel.form.submit(); });
   });
+  document.querySelectorAll("button[data-confirm]").forEach(function (btn) {
+    btn.addEventListener("click", function (ev) { if (!confirm(btn.getAttribute("data-confirm"))) ev.preventDefault(); });
+  });
   document.querySelectorAll("button[data-copy]").forEach(function (btn) {
     btn.addEventListener("click", function () {
       var src = document.querySelector(btn.getAttribute("data-copy"));

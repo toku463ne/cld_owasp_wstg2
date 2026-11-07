@@ -1,0 +1,87 @@
+{% extends "target_base.html" %}
+{% block title %}{{ ev.id }} · {{ target.name }}{% endblock %}
+{% block content %}
+<div class="wstg-head">
+  <h2>{{ ev.title }} <code class="muted">{{ ev.id }}</code></h2>
+  <span class="chip">{{ ev.kind }}{% if ev.level %} · {{ ev.level }}{% endif %}</span>
+</div>
+<p>{{ ev.description }}</p>
+{% if ev.kind == 'auto' %}<p><code>{{ ev.argv | join(' ') }}</code></p>{% endif %}
+<p class="muted">Used by:
+  {% for tid in used_by %}<a href="{{ url_for('wstg_page', name=target.name, test_id=tid) }}">{{ tid }}</a> {% endfor %}</p>
+
+{% if version %}
+<div class="{{ 'okbox' if is_latest else 'warnbox' }}">
+  Version {{ version.version }} · {{ version.meta.source }} · {{ version.created_at }} by {{ version.meta.created_by }}
+  {% if version.meta.summary %} · {{ version.meta.summary }}{% endif %}
+  {% if not is_latest %} · <a href="{{ url_for('evidence_page', name=target.name, eid=ev.id) }}">show the latest version</a>{% endif %}
+</div>
+<div class="items">
+  {% for it in version.items %}
+  {% set url = url_for('evidence_file', name=target.name, eid=ev.id, v=version.version, rel=it.file) %}
+  <div class="item" id="item-{{ loop.index }}">
+    <div class="item-head"><b>{{ loop.index }}.</b> <span class="chip">{{ it.type }}</span> {{ it.caption }}
+      {% if it.type == 'file' %}<a href="{{ url }}">{{ it.name }}</a> <span class="muted">({{ it.size }} bytes)</span>{% endif %}</div>
+    {% if it.type == 'image' %}<a href="{{ url }}" target="_blank"><img class="shot" src="{{ url }}" alt="{{ it.caption }}"></a>{% endif %}
+    {% if it.type == 'text' and not (can_write and is_latest) %}<pre class="text-item">{{ texts[loop.index0] }}</pre>{% endif %}
+    {% if can_write and is_latest %}
+    <form method="post" class="stack edit" action="{{ url_for('evidence_edit_item', name=target.name, eid=ev.id, index=loop.index0) }}">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <input name="caption" value="{{ it.caption }}" placeholder="Caption" size="50">
+      {% if it.type == 'text' %}<textarea name="text" rows="{{ [texts[loop.index0].count('\n') + 2, 20] | min }}">{{ texts[loop.index0] }}</textarea>{% endif %}
+      <button>Save as new version</button>
+    </form>
+    <form method="post" class="inline" action="{{ url_for('evidence_remove_item', name=target.name, eid=ev.id, index=loop.index0) }}">
+      <input type="hidden" name="csrf" value="{{ csrf }}"><button data-confirm="Remove this item? Earlier versions keep it.">Remove</button>
+    </form>
+    {% endif %}
+  </div>
+  {% else %}
+  <p class="muted">This version has no items.</p>
+  {% endfor %}
+</div>
+{% else %}
+<p class="muted">Not collected yet.</p>
+{% endif %}
+
+{% if can_write and ev.kind == 'manual' and (is_latest or not version) %}
+<h3>Add</h3>
+<div class="capture" data-url="{{ url_for('evidence_add_images', name=target.name, eid=ev.id) }}">
+  <div class="drop" tabindex="0">Paste screenshots here (Ctrl+V), drop image files, or <a href="#" class="pick">choose files</a>.</div>
+  <input type="file" accept="image/png,image/jpeg,image/*" multiple hidden>
+  <div class="preview" hidden>
+    <div class="pending"></div>
+    <button type="button" class="save">Save images</button> <button type="button" class="cancel">Discard</button>
+  </div>
+  <span class="msg muted"></span>
+</div>
+<div class="add-forms">
+  <form method="post" enctype="multipart/form-data" class="stack" action="{{ url_for('evidence_add_file', name=target.name, eid=ev.id) }}">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <h4>Upload a file</h4>
+    <p><input type="file" name="file" required> <input name="caption" placeholder="Caption" size="30"> <button>Upload</button></p>
+  </form>
+  <form method="post" class="stack" action="{{ url_for('evidence_add_text', name=target.name, eid=ev.id) }}">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <h4>Add text</h4>
+    <p><input name="caption" placeholder="Caption (for example: query and result count)" size="50"></p>
+    <p><textarea name="text" rows="4" required></textarea></p>
+    <p><button>Add text</button></p>
+  </form>
+</div>
+{% endif %}
+
+{% if history %}
+<h3>Versions</h3>
+<table>
+  <tr><th>Version</th><th>Source</th><th>Status</th><th>Created</th><th>By</th><th>Change</th><th>Items</th></tr>
+  {% for h in history %}
+  <tr class="{{ 'current' if version and h.version == version.version }}">
+    <td>{% if h.status == 'complete' %}<a href="{{ url_for('evidence_page', name=target.name, eid=ev.id, v=h.version) }}">v{{ h.version }}</a>{% else %}v{{ h.version }}{% endif %}</td>
+    <td>{{ h.source }}</td><td>{{ h.status }}</td><td class="nowrap">{{ h.created_at }}</td><td>{{ h.created_by }}</td>
+    <td>{{ h.summary }}</td><td>{{ h.item_count }}</td>
+  </tr>
+  {% endfor %}
+</table>
+{% endif %}
+{% endblock %}

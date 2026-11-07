@@ -13,6 +13,7 @@ from markupsafe import Markup, escape
 
 from . import catalog as catmod
 from . import db as dbmod
+from . import evidence as evmod
 from . import targets as tmod
 from . import users
 from .config import Config
@@ -26,7 +27,7 @@ def ticks(text: str) -> Markup:
     return Markup(_TICKS_RE.sub(lambda m: f"<code>{m.group(1)}</code>", str(escape(text or ""))))
 
 
-def register(app: Flask, cfg: Config, db: dbmod.Database, cat: catmod.Catalog) -> None:
+def register(app: Flask, cfg: Config, db: dbmod.Database, cat: catmod.Catalog, store: evmod.Store) -> None:
     app.jinja_env.filters["ticks"] = ticks
 
     def load_target(name: str) -> tmod.Target:
@@ -39,6 +40,16 @@ def register(app: Flask, cfg: Config, db: dbmod.Database, cat: catmod.Catalog) -
 
     def tests_for(t: tmod.Target) -> list[catmod.Test]:
         return [x for x in cat.tests.values() if t.type in x.target_types]
+
+    def collected(t: tmod.Target) -> dict[str, dict]:
+        """{evidence_id: newest complete version row} visible from t (own + parent domain)."""
+        out = {}
+        parent = tmod.get(db, t.parent_name) if t.parent_name else None
+        if parent:
+            out.update({k: dict(v, owner=parent.name) for k, v in store.latest_rows(parent).items()
+                        if cat.evidence.get(k) and cat.evidence[k].target_type == "domain"})
+        out.update({k: dict(v, owner=t.name) for k, v in store.latest_rows(t).items()})
+        return out
 
     @app.context_processor
     def inject_targets():
@@ -110,10 +121,12 @@ def register(app: Flask, cfg: Config, db: dbmod.Database, cat: catmod.Catalog) -
     def wstg_index(name: str):
         t = load_target(name)
         vs = tmod.verdicts(db, t)
+        have = collected(t)
         rows = []
         for test in tests_for(t):
             sc = cat.scenarios.get(test.id)
-            st = None if test.merged_into else tmod.status(len(sc.steps) if sc else 0, vs.get(test.id, {}))
+            has_ev = any(e.id in have for e in cat.evidence_for(test.id))
+            st = None if test.merged_into else tmod.status(len(sc.steps) if sc else 0, vs.get(test.id, {}), has_ev)
             rows.append({"test": test, "scenario": sc, "status": st})
         counts = {s: sum(1 for r in rows if r["status"] == s) for s in ("-", "started", "pass", "fail")}
         scope_problems = tmod.scope_problems(tmod.get_scope(db, t))
@@ -129,8 +142,15 @@ def register(app: Flask, cfg: Config, db: dbmod.Database, cat: catmod.Catalog) -
     @app.get("/t/<name>/manual")
     @login_required
     def manual_tab(name: str):
-        load_target(name)
-        return render_template("tab_placeholder.html", tab="manual", what="Manual evidence", milestone="M4")
+        t = load_target(name)
+        have = collected(t)
+        rows = []
+        for e in cat.evidence.values():
+            owner = tmod.evidence_owner(t, e.target_type)
+            if e.kind == "manual" and owner:
+                rows.append({"ev": e, "owner": owner, "row": have.get(e.id), "used_by": cat.tests_using(e.id)})
+        rows.sort(key=lambda r: (r["owner"] != t.name, r["used_by"][:1], r["ev"].id))
+        return render_template("manual_tab.html", tab="manual", rows=rows)
 
     @app.get("/t/<name>/auto")
     @login_required
@@ -161,6 +181,7 @@ def register(app: Flask, cfg: Config, db: dbmod.Database, cat: catmod.Catalog) -
             if owner:
                 ev_paths[e.id] = str(tmod.evidence_dir(cfg, owner) / e.id / "latest")
         steps = []
+        have = collected(t)
         vs = tmod.verdicts(db, t, test_id).get(test_id, {})
         for i, st in enumerate(sc.steps if sc else (), 1):
             steps.append({
@@ -168,10 +189,12 @@ def register(app: Flask, cfg: Config, db: dbmod.Database, cat: catmod.Catalog) -
                 "command": catmod.render(st.command, values, ev_paths),
                 "operation": catmod.render(st.operation, values, ev_paths),
                 "evidence": [{"ev": cat.evidence[eid], "owner": tmod.evidence_owner(t, cat.evidence[eid].target_type),
+                              "row": have.get(eid),
                               "used_by": [x for x in cat.tests_using(eid) if x != test_id]}
                              for eid in st.evidence],
             })
-        st_value = tmod.status(len(steps), vs) if sc else "-"
+        has_ev = any(e.id in have for e in cat.evidence_for(test_id))
+        st_value = tmod.status(len(steps), vs, has_ev) if sc else "-"
         return render_template("wstg_page.html", tab="index", test=test, scenario=sc, steps=steps,
                                status=st_value, applicable=t.type in test.target_types)
 

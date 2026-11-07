@@ -167,8 +167,12 @@ def create_app(cfg: Config, db: dbmod.Database | None = None, cat: catmod.Catalo
             flash(str(e))
         return redirect(url_for("admin_users"))
 
-    from . import web_targets
-    web_targets.register(app, cfg, db, cat)
+    from . import evidence as evmod
+    from . import web_evidence, web_targets
+    store = evmod.Store(cfg, db)
+    app.extensions["wstg.store"] = store
+    web_targets.register(app, cfg, db, cat, store)
+    web_evidence.register(app, store, cat)
 
     @app.errorhandler(400)
     @app.errorhandler(403)
