@@ -13,6 +13,8 @@ repository. Explicit environment variables win over the file.
     WSTG_ALLOWED_NETWORKS   comma-separated client networks the app accepts
                             (default 192.168.0.0/16,127.0.0.0/8); nginx enforces
                             the same list, this is a second line of defense
+    WSTG_WEB_PORT           nginx port (default 8083); read by scripts/setup-kali.sh,
+                            not by the app
 """
 
 from __future__ import annotations

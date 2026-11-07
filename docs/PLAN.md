@@ -16,7 +16,7 @@ Last updated: 2026-11-07
 | M5 | Automatic evidence | Not started | |
 | M6 | Findings | Not started | |
 | M7 | AI prompt | Not started | |
-| M8 | Deployment | Not started | |
+| M8 | Deployment | **Partly done** (setup script) | `scripts/setup-kali.sh`, nginx :8083, `wstg-web` user service; worker unit and backup pending |
 | M9 | More automation | Not started | |
 
 ### M0 delivered
@@ -29,7 +29,14 @@ Last updated: 2026-11-07
 - CLI: `check-config`, `migrate`, `user-add`, `user-passwd`, `user-disable`, `user-list`, `serve`.
 - Fixed during smoke test: waitress dropped nginx's `X-Forwarded-For` by default, which would have made every client look like 127.0.0.1.
 
+### M8 (pulled forward) delivered
+- `scripts/setup-kali.sh`: apt base packages, uv, data dirs (`/srv/wstg/{evidence,db}`), config file and secret key generated once, `uv sync`, `check-config`, `migrate`, first admin, systemd user service `wstg-web` (restarted on every run, lingering), nginx site rendered from `deploy/nginx/wstg.conf.template` (port and allow list from the config), `nginx -t` with rollback, smoke test. Options `--no-packages`, `--no-nginx`, `--no-systemd`, `--dry-run`. Rerun after `git pull` to update a Kali host.
+- New config key `WSTG_WEB_PORT` (default 8083), read by the setup script only.
+- `README.md` with setup, update, configuration, and uninstall steps.
+- Checked on WSL (not Kali yet): dry run, real run into a scratch directory (`--no-nginx --no-systemd`), rerun keeps config/secret/users, rendered nginx site passes `nginx -t`. The nginx and systemd parts still need a check on Kali.
+
 ### Open items carried forward
+- M8 remainder: worker unit (with M5), backup timer, first full run of the setup script on Kali.
 - Login rate limiting is not implemented yet (consider in M8, or rely on nginx `limit_req`).
 - Session cookie is not `Secure` while the tool runs on plain HTTP (8083). Turn it on when moving to TLS on 443.
 - UI title is provisional ("WSTG Runner").

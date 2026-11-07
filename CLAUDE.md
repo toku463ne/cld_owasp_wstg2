@@ -101,6 +101,8 @@ Settings come from a KEY=VALUE file outside the repo named by `WSTG_CONFIG`
 ```bash
 export WSTG_CONFIG=~/.config/wstg/wstg.env
 
+scripts/setup-kali.sh [--no-packages] [--dry-run]   # set up / update a Kali host (see README.md)
+
 uv sync                                   # install dependencies
 uv run wstg check-config                  # show settings; fails if data paths are inside the repo
 uv run wstg migrate                       # create data dirs, apply migrations (backs up the DB first)
@@ -114,5 +116,6 @@ uv run pytest -q                          # tests (temporary directories only)
 ```
 
 Code layout: `src/wstg/` (`config.py`, `db.py` + `migrations/NNNN_*.sql`, `users.py`,
-`web.py` + `templates/` + `static/`, `cli.py`), tests in `tests/`.
+`web.py` + `templates/` + `static/`, `cli.py`), tests in `tests/`, setup in
+`scripts/setup-kali.sh` + `deploy/nginx/wstg.conf.template`.
 Schema changes: add a new numbered migration; never edit an applied one.
