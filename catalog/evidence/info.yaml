@@ -140,10 +140,11 @@ evidence:
     description: >-
       URLs found by crawling {base_url}/ without logging in, depth 3, including
       endpoints parsed from JavaScript, robots.txt, and sitemap.xml. One URL per line in
-      katana.txt.
+      katana.txt. Every response (request line, headers, body) is kept under responses/
+      (katana -store-response), so pages and scripts can be scanned without new requests.
     argv: [katana, -u, "{base_url}/", -d, "3", -jc, -kf, "robotstxt,sitemapxml", -fs, fqdn,
            -rl, "10", -c, "5", -ct, "1200", -silent, -nc, -o, "{out}/katana.txt",
-           "{proxy_args}"]
+           -sr, -srd, "{out}/responses", "{proxy_args}"]
     proxy_args: [-proxy, "{proxy_url}"]
     files: [katana.txt]
     timeout: 1800

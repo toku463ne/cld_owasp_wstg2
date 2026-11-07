@@ -28,7 +28,7 @@ steps:
     evidence: [har-browse]
     command: >-
       jq -r '.log.entries[] | select(.request.url | startswith("http://"))
-      | [.request.method, .request.url] | @tsv' {ev:har-browse}/*.har | sort -u
+      | [.request.method, .request.url] | @tsv' {ev:har-browse}/items/*.har | sort -u
   - summary: Check that forms sending sensitive data post to an HTTPS action
     auto_run: true
     evidence: [http-root-https, har-browse]
@@ -36,26 +36,26 @@ steps:
       grep -oiE '<form[^>]+action="[^"]*"[^>]*>' {ev:http-root-https}/body.html | grep -i 'action="http:';
       jq -r '.log.entries[] | select(.request.postData.text? != null)
       | select(.request.postData.text | test("pass|pwd|token|card|ssn"; "i"))
-      | [.request.url] | @tsv' {ev:har-browse}/*.har
+      | [.request.url] | @tsv' {ev:har-browse}/items/*.har
   - summary: Check for mixed content (HTTP sub-resources requested from HTTPS pages)
     auto_run: true
     evidence: [har-browse]
     command: >-
       jq -r '.log.entries[] | select((.request.headers[]? | select(.name|ascii_downcase=="referer")
       | .value | startswith("https://"))) | select(.request.url | startswith("http://"))
-      | .request.url' {ev:har-browse}/*.har | sort -u
+      | .request.url' {ev:har-browse}/items/*.har | sort -u
   - summary: Check that session and authentication cookies have the Secure flag
     auto_run: true
     evidence: [http-root-https, har-browse]
     command: >-
       grep -i '^set-cookie' {ev:http-root-https}/stdout.txt | grep -vi 'secure';
       jq -r '.log.entries[].response.headers[]? | select(.name|ascii_downcase=="set-cookie")
-      | .value' {ev:har-browse}/*.har | grep -vi 'secure'
+      | .value' {ev:har-browse}/items/*.har | grep -vi 'secure'
   - summary: Check for sensitive values carried in URLs or query strings
     auto_run: true
     evidence: [har-browse]
     command: >-
-      jq -r '.log.entries[] | .request.url' {ev:har-browse}/*.har
+      jq -r '.log.entries[] | .request.url' {ev:har-browse}/items/*.har
       | grep -iE '[?&](pass|pwd|token|sessionid|auth|card|ssn|email)=' | sort -u
   - summary: Check cleartext services in scope for sensitive data
     operation: >-

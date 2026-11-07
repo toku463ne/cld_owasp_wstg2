@@ -24,7 +24,7 @@ steps:
     evidence: [har-browse, katana-crawl]
     command: >-
       jq -r '.log.entries[].request | [.method, (.url | sub("\\?.*"; "")), (.postData.mimeType // "-")] | @tsv'
-      {ev:har-browse}/*.har | sort -u; grep -c . {ev:katana-crawl}/katana.txt
+      {ev:har-browse}/items/*.har | sort -u; grep -c . {ev:katana-crawl}/katana.txt
   - summary: List parameter, JSON field, cookie, and custom header names
     auto_run: true
     evidence: [har-browse]
@@ -32,7 +32,7 @@ steps:
       jq -r '.log.entries[].request | (.queryString[]?.name | "query " + .), (.postData.params[]?.name | "form " + .),
       (.cookies[]?.name | "cookie " + .), (.headers[] | select(.name | test("^(x-|authorization$)"; "i")) | "header " + .name),
       (select((.postData.mimeType // "") | test("json")) | .postData.text | fromjson? | paths(scalars) | map(tostring) | "json " + join("."))'
-      {ev:har-browse}/*.har | sort | uniq -c | sort -rn
+      {ev:har-browse}/items/*.har | sort | uniq -c | sort -rn
   - summary: Add query parameters seen in the crawl and the web archive
     auto_run: true
     evidence: [katana-crawl, wayback-urls]
@@ -46,7 +46,7 @@ steps:
   - summary: Replay logged-in GET requests without cookies to find entry points open without login
     evidence: [har-browse]
     command: >-
-      jq -r '.log.entries[] | select(.request.method == "GET") | .request.url' {ev:har-browse}/*.har
+      jq -r '.log.entries[] | select(.request.method == "GET") | .request.url' {ev:har-browse}/items/*.har
       | grep -F '{base_url}' | sort -u | while read -r u; do echo "$(curl -sk -m 10 -o /dev/null -w '%{http_code} %{size_download}' "$u") $u"; done
     load_note: One GET per unique URL in the HAR. Run it only on the logged-in HAR and skip logout or other state-changing GET URLs.
   - summary: Write the entry point inventory

@@ -24,7 +24,7 @@ steps:
     auto_run: true
     evidence: [har-browse, katana-crawl]
     command: >-
-      jq -r '.log.entries[].request.url' {ev:har-browse}/*.har | sed 's/[?#].*//' | sort -u > walk.txt;
+      jq -r '.log.entries[].request.url' {ev:har-browse}/items/*.har | sed 's/[?#].*//' | sort -u > walk.txt;
       sed 's/[?#].*//' {ev:katana-crawl}/katana.txt | sort -u > crawl.txt; comm -13 walk.txt crawl.txt
   - summary: Find archived and script-referenced paths missing from both
     evidence: [wayback-urls, site-assets]

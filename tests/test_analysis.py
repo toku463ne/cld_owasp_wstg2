@@ -122,3 +122,64 @@ def test_wstg_page_runs_decode_and_keeps_har_output_out_of_the_prompt(admin_clie
     assert "POST https://www.example.com/login?next=…&amp;t=…" in prompt
     assert "fields: user" in prompt and "cookies: SID" in prompt and "set-cookie: SID (Path=/; HttpOnly)" in prompt
     assert "SECRET" not in prompt
+
+
+FAKE_GITLEAKS = r'''#!/usr/bin/env python3
+# Stand-in for gitleaks in tests: reports lines with AKIA keys, redacted.
+import json, os, re, sys
+a = sys.argv[1:]
+src, rep = a[a.index("--source") + 1], a[a.index("--report-path") + 1]
+out = []
+for root, _, files in os.walk(src):
+    for f in files:
+        p = os.path.join(root, f)
+        for n, line in enumerate(open(p, errors="replace"), 1):
+            if re.search(r"AKIA[0-9A-Z]{16}", line):
+                out.append({"RuleID": "aws-access-token", "File": p, "StartLine": n,
+                            "Match": re.sub(r"AKIA[0-9A-Z]{16}", "REDACTED", line.strip())})
+json.dump(out, open(rep, "w"))
+'''
+
+
+def test_info05_scans_pages_crawl_and_har(admin_client, cfg, db, site, tmp_path, monkeypatch):
+    import shutil
+    if not shutil.which("jq"):
+        pytest.skip("jq not installed")
+    bindir = tmp_path / "bin"
+    bindir.mkdir()
+    (bindir / "gitleaks").write_text(FAKE_GITLEAKS)
+    (bindir / "gitleaks").chmod(0o755)
+    monkeypatch.setenv("PATH", f"{bindir}:{os.environ['PATH']}")
+    store = evmod.Store(cfg, db)
+    key = "AKIA" + "ABCDEFGHIJKLMNOP"         # in a public script: may appear in the prompt
+    har_key = "AKIA" + "QRSTUVWXYZ234567"     # in a logged-in page of the HAR: must not
+    _auto(store, site, "http-root-https", {"stdout.txt": b"HTTP/1.1 200 OK\r\n",
+                                           "body.html": b"<html><!-- build 42 --></html>"})
+    tmp = store.begin(site, "site-assets")
+    (tmp / "site" / "js").mkdir(parents=True)
+    (tmp / "site" / "index.html").write_text("<!-- TODO: remove before release -->\n<script src='/js/app.js'></script>")
+    (tmp / "site" / "js" / "app.js").write_text(
+        f'var k="{key}"; fetch("/api/v2/users"); var u="https://dev.example.internal/debug"; var i="logo.png";\n')
+    store.commit(site, "site-assets", tmp, source="auto", actor="test", summary="collected",
+                 items=[evmod.Item("file", f, "", 0, name=f) for f in ("site/index.html", "site/js/app.js")])
+    tmp = store.begin(site, "katana-crawl")
+    (tmp / "katana.txt").write_text("https://www.example.com/\n")
+    (tmp / "responses" / "www.example.com").mkdir(parents=True)
+    (tmp / "responses" / "www.example.com" / "a1.txt").write_text(
+        "GET https://www.example.com/help\n\nHTTP/1.1 200 OK\n\n<!-- served by 10.1.2.3 -->")
+    store.commit(site, "katana-crawl", tmp, source="auto", actor="test", summary="collected",
+                 items=[evmod.Item("file", "katana.txt", "", 0, name="katana.txt")])
+    har = {"log": {"entries": [{"request": {"url": "https://www.example.com/home"},
+                                "response": {"content": {"mimeType": "text/html",
+                                                         "text": f"<!-- admin panel at intra.corp --><p>{har_key}</p>"}}}]}}
+    store.add_file(site, "har-browse", json.dumps(har).encode(), "walk.har", "", "admin")
+    page = admin_client.get("/t/www.example.com/wstg/WSTG-INFO-05").get_data(as_text=True)
+    assert "TODO: remove before release" in page and "build 42" in page                     # step 1
+    assert "aws-access-token\tjs/app.js\t1" in page                                          # step 2
+    assert "dev.example.internal/debug" in page                                              # step 3 / 5
+    assert "/api/v2/users" in page and "logo.png" not in page.split("Step 5")[1].split("Step 6")[0]  # step 5
+    assert "served by 10.1.2.3" in page                                                      # step 4 (crawl)
+    assert "1 response bodies from" in page and "admin panel at intra.corp" in page          # step 6 (HAR)
+    prompt = page[page.index('id="ai-prompt"'):]
+    assert "aws-access-token" in prompt and "/api/v2/users" in prompt and "served by 10.1.2.3" in prompt
+    assert "admin panel at intra.corp" not in prompt and har_key not in prompt

@@ -38,6 +38,7 @@ LOCAL_TOOLS = {
     "grep", "jq", "sed", "awk", "sort", "uniq", "tr", "cut", "cat", "head", "tail", "wc",
     "comm", "perl", "find", "printf", "echo", "tee", "base64", "xxd", "cd", "true", "test",
     "openssl",   # x509 only, see below
+    "gitleaks",  # detect --no-git / dir only (scans files), see below
 }
 SHELL_WORDS = {"{", "}", "!"}
 PUNCT = set("|&;()<>")
@@ -76,6 +77,9 @@ def check(command: str) -> list[str]:
             problems.append(f"'{tok}' is not a local tool (allowed: {', '.join(sorted(LOCAL_TOOLS))})")
         elif name == "openssl" and (i + 1 >= len(tokens) or tokens[i + 1] != "x509"):
             problems.append("openssl may run only as 'openssl x509' (reads a file)")
+        elif name == "gitleaks" and not (i + 1 < len(tokens) and (
+                tokens[i + 1] == "dir" or (tokens[i + 1] == "detect" and "--no-git" in tokens[i + 2:i + 12]))):
+            problems.append("gitleaks may run only as 'gitleaks dir' or 'gitleaks detect --no-git' (scans files)")
     if not catmod.EV_REF_RE.search(command):
         problems.append("reads no evidence ({ev:ID})")
     return problems

@@ -2,31 +2,104 @@ id: WSTG-INFO-05
 overview: >-
   Review HTML comments, JavaScript, source maps, and page metadata for information left
   over from development: credentials, API keys, internal host names or addresses,
-  hidden endpoints, and debug notes.
+  hidden endpoints, and debug notes. Machines read every collected page and script
+  (top page, crawled pages, and the logged-in pages in the HAR files); the AI review
+  sorts the hits; the browser review covers only what those cannot see.
 pass: >-
-  The top page and its scripts were collected, the main screens were reviewed, and no
-  comment, script, or source map contains credentials, keys, internal hosts or
-  addresses, undocumented endpoints, or developer notes.
+  The top page, the crawl, and the HAR files were collected and scanned, and no comment,
+  script, or source map contains credentials, keys, internal hosts or addresses,
+  undocumented endpoints, or developer notes.
 fail: >-
   Page source, JavaScript, or a source map contains an API key, password, token,
   internal host name or address, debug endpoint, or a developer note that reveals
   internals.
 notes:
-  - Keyword hits are often only variable names (for example `password` in a form label). Check each hit; record real secrets by evidence path, do not copy them into the finding.
+  - gitleaks prints matches with the secret replaced by REDACTED. Open the file in the evidence folder to see the value; record real secrets by evidence path and line, do not copy them into the finding.
+  - Keyword hits are often only variable names or labels (for example `password` in a form label). The AI review sorts them; check each hit it calls real.
   - Public keys meant for browsers (map or analytics keys restricted by referrer) are low risk; check the restriction before reporting.
-  - Single-line grep misses multi-line comments and comments added by JavaScript; the perl command and the browser review cover them.
+  - Outputs that read HAR files stay out of the AI prompt (they hold cookies and tokens); judge those hits on this page.
+  - The crawl (katana-crawl) is collected in full mode only; until then steps 4 and 5 wait.
 finding_kinds: [client-code-information-leak, secret-in-client-code, public-source-map]
 steps:
   - summary: Extract HTML comments from the top page and its downloaded files
     auto_run: true
     evidence: [site-assets, http-root-https]
-    command: perl -0777 -ne 'print "== $ARGV\n$&\n" while /<!--.*?-->/gs' {ev:http-root-https}/body.html $(grep -rlI '<!--' {ev:site-assets}/site)
-  - summary: Search the page and scripts for secrets, internal hosts, and debug notes
+    command: >-
+      perl -0777 -ne 'print "== $ARGV\n$&\n" while /<!--.*?-->/gs'
+      {ev:http-root-https}/body.html $(grep -rlI '<!--' {ev:site-assets}/site)
+  - summary: Scan the top page and its scripts for secrets with gitleaks
     auto_run: true
     evidence: [site-assets]
     command: >-
-      grep -rnaioE '.{0,40}(passw(or)?d|api[_-]?key|secret|token|bearer|authorization|BEGIN [A-Z ]*PRIVATE KEY|AKIA[0-9A-Z]{16}|AIza[0-9A-Za-z_-]{35}|(10|172\.(1[6-9]|2[0-9]|3[01])|192\.168)\.[0-9]+\.[0-9]+|[a-z0-9.-]+\.(local|internal|corp|lan)\b|todo|fixme|debug).{0,40}'
-      {ev:site-assets}/site | sort -u
+      gitleaks detect --no-git --no-banner --redact --exit-code 0 --log-level error --source
+      {ev:site-assets}/site --report-format json --report-path leaks.json; jq -r '.[] |
+      [.RuleID, (.File | sub(".*/(site|responses|har-bodies)/"; "")), (.StartLine | tostring),
+      .Match] | @tsv' leaks.json
+    ai_task: >-
+      For each gitleaks hit in the command output (rule, file, line, match with the secret
+      redacted), say whether it is a real secret, a key meant to be public (browser map or
+      analytics key), or a false positive, with a one-line reason. Fail when a real secret
+      is present; pass when the output is empty or every hit is harmless.
+  - summary: Search the top page and its scripts for internal hosts, private addresses, and developer notes
+    auto_run: true
+    evidence: [site-assets]
+    command: >-
+      grep -rnaioE '.{0,40}((10|172\.(1[6-9]|2[0-9]|3[01])|192\.168)\.[0-9]+\.[0-9]+|[a-z0-9.-]+\.(local|internal|corp|lan|intra)\b|localhost|staging|todo|fixme|debug).{0,40}' {ev:site-assets}/site | sort -u
+    ai_task: >-
+      Sort the hits into real internal information (internal host or private address,
+      staging or debug endpoint, developer note that reveals internals) and noise (library
+      code, variable names, generic words). List the real ones with file and line. Fail when
+      any real one is present; pass otherwise.
+  - summary: Scan every crawled page and script the same way (comments, secrets, internal hosts)
+    auto_run: true
+    evidence: [katana-crawl]
+    command: >-
+      perl -0777 -ne 'print "== $ARGV\n$&\n" while /<!--.*?-->/gs' $(grep -rlI '<!--'
+      {ev:katana-crawl}/responses); gitleaks detect --no-git --no-banner --redact --exit-code 0
+      --log-level error --source {ev:katana-crawl}/responses --report-format json --report-path
+      leaks.json; jq -r '.[] | [.RuleID, (.File | sub(".*/(site|responses|har-bodies)/"; "")),
+      (.StartLine | tostring), .Match] | @tsv' leaks.json; grep -rnaioE
+      '.{0,40}((10|172\.(1[6-9]|2[0-9]|3[01])|192\.168)\.[0-9]+\.[0-9]+|[a-z0-9.-]+\.(local|internal|corp|lan|intra)\b|localhost|staging|todo|fixme|debug).{0,40}'
+      {ev:katana-crawl}/responses | sort -u
+    ai_task: >-
+      The output has three parts: HTML comments per file, gitleaks hits, and internal-host
+      or developer-note hits, from all pages and scripts the crawler fetched. Sort them as
+      in steps 1 to 3 and list the real ones with the file (its first line is the URL).
+      Fail when any real secret or internal detail is present; pass otherwise.
+  - summary: List the endpoints and URLs that the scripts refer to
+    auto_run: true
+    evidence: [site-assets]
+    command: >-
+      grep -rhoP '["\x27](/[\w./-]{2,}|https?://[\w.-]+[\w./?=&%-]*)["\x27]' {ev:site-assets}/site
+      | sed -E 's/^.(.*).$/\1/' | grep -vE '\.(png|jpe?g|gif|svg|css|woff2?|ttf|ico|map)$'
+      | sort | uniq -c | sort -rn | head -300
+    ai_task: >-
+      From the list (count and path or URL), point out endpoints that look internal,
+      administrative, debug, versioned-old (/v1/ next to /v2/), or for another environment
+      (dev, staging, test hosts). Fail when the scripts reveal such an endpoint that should
+      not be public; pass when every entry is an ordinary public path or third-party URL.
+  - summary: Scan the logged-in pages in the HAR files (response bodies) for comments, secrets, and internal hosts
+    auto_run: true
+    evidence: [har-browse]
+    command: >-
+      perl -MJSON::PP -MMIME::Base64 -0777 -ne 'BEGIN { mkdir "har-bodies" } my $h =
+      decode_json($_); my $i = 0; for my $e (@{$h->{"log"}{"entries"} || []}) { my $c =
+      $e->{"response"}{"content"} || {}; next unless defined $c->{"text"} && ($c->{"mimeType"}
+      // "") =~ /html|javascript|ecmascript|json|xml/; my $t = ($c->{"encoding"} // "") eq
+      "base64" ? decode_base64($c->{"text"}) : $c->{"text"}; $i++; open(my $f, ">:utf8",
+      sprintf("har-bodies/%04d.txt", $i)) or die; print $f "URL: " . $e->{"request"}{"url"} . "\n\n" . $t;
+      close $f; } print "$i response bodies from $ARGV\n";' {ev:har-browse}/items/*.har; perl -0777
+      -ne 'print "== $ARGV\n$&\n" while /<!--.*?-->/gs' $(grep -rlI '<!--' har-bodies); gitleaks
+      detect --no-git --no-banner --redact --exit-code 0 --log-level error --source har-bodies
+      --report-format json --report-path leaks.json; jq -r '.[] | [.RuleID, (.File |
+      sub(".*/(site|responses|har-bodies)/"; "")), (.StartLine | tostring), .Match] | @tsv'
+      leaks.json; grep -rnaioE
+      '.{0,40}((10|172\.(1[6-9]|2[0-9]|3[01])|192\.168)\.[0-9]+\.[0-9]+|[a-z0-9.-]+\.(local|internal|corp|lan|intra)\b|localhost|staging|todo|fixme|debug).{0,40}'
+      har-bodies | sort -u
+    operation: >-
+      The HAR files must contain the response bodies (Chrome and Firefox include them in
+      "Save all as HAR"). Each body file starts with its URL. Judge the hits here; this
+      output is not sent to the AI.
   - summary: Look for JavaScript source maps and check whether they are public
     evidence: [site-assets]
     command: >-
@@ -37,9 +110,10 @@ steps:
     auto_run: true
     evidence: [http-root-https]
     command: grep -oiE '<meta[^>]+>|window\.[A-Za-z_]*(config|env|settings)[A-Za-z_]*\s*=' {ev:http-root-https}/body.html
-  - summary: Review the source of the login page and each main screen in the browser
+  - summary: Review in the browser only what the scans cannot see
     operation: >-
-      Open each screen, press Ctrl+U and search (Ctrl+F) for `<!--`, `password`, `key`,
-      `api`, `internal`. For pages rendered by JavaScript, use F12 > Elements and search
-      the same strings. Capture any hit with the URL visible.
+      Screens missing from the HAR files, and content that JavaScript builds after the
+      page loads: open the screen, press F12 > Elements, and search (Ctrl+F) for `<!--`,
+      `key`, `internal`, `debug`. Capture any hit with the URL visible, or write "nothing
+      found" with the list of screens checked.
     evidence: [page-source-review]

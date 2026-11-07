@@ -26,7 +26,7 @@ steps:
     command: >-
       grep -i '^set-cookie' {ev:http-root-https}/stdout.txt;
       jq -r '.log.entries[].response.headers[]? | select(.name|ascii_downcase=="set-cookie") | .value'
-      {ev:har-browse}/*.har | sort -u;
+      {ev:har-browse}/items/*.har | sort -u;
       v='VALUE'; printf '%s' "$v" | tr '_-' '/+' | base64 -d 2>/dev/null | xxd | head
   - summary: Check tokens and session identifiers for predictability
     auto_run: true

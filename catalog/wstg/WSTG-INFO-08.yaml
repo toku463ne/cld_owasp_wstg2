@@ -42,7 +42,7 @@ steps:
     evidence: [site-assets, har-browse]
     command: >-
       mkdir -p js && jq -r '.log.entries[] | select((.response.content.mimeType // "") | test("javascript|ecmascript")) | .request.url'
-      {ev:har-browse}/*.har | sort -u | while read -r u; do curl -sk -m 30 -o "js/$(printf '%s' "$u" | md5sum | cut -c1-12).js" "$u"; done;
+      {ev:har-browse}/items/*.har | sort -u | while read -r u; do curl -sk -m 30 -o "js/$(printf '%s' "$u" | md5sum | cut -c1-12).js" "$u"; done;
       retire --path {ev:site-assets}/site --outputformat json --outputpath retire-site.json --exitwith 0;
       retire --path js --outputformat json --outputpath retire-har.json --exitwith 0;
       jq -r '.data[]? | .file as $f | .results[]? | select((.vulnerabilities // []) | length > 0)

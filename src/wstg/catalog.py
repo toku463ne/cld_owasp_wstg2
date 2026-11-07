@@ -26,7 +26,8 @@ Placeholders in commands and text, filled in per target:
     {base_url}  https://{fqdn} by default (scheme and port from the scope record)
     {port}      the port of {base_url} (443 by default)
     {out}       evidence commands only: the version folder the command writes files into
-    {ev:ID}     step commands only: the latest version folder of evidence ID
+    {ev:ID}     step commands only: the latest version folder of evidence ID (manual
+                evidence keeps its files under {ev:ID}/items/, for example items/*.har)
 
 Proxy (WSTG_HTTP_PROXY): commands get http_proxy/https_proxy in their
 environment. Tools that ignore it declare `proxy_args`, which replace the
@@ -402,6 +403,11 @@ def _load_scenarios(dir_: Path, tests: dict[str, Test], evidence: dict[str, Evid
                 for eid in EV_REF_RE.findall(text):
                     if eid not in st.evidence:
                         problems.append(f"{sw}: {{ev:{eid}}} must also be listed in the step's evidence")
+                # Manual evidence keeps its files under items/ in the version folder.
+                for m in re.finditer(r"\{ev:([a-z0-9-]+)\}(\S*)", text):
+                    ev = evidence.get(m.group(1))
+                    if ev and ev.kind == "manual" and not m.group(2).startswith("/items/"):
+                        problems.append(f"{sw}: files of manual evidence {ev.id} are under {{ev:{ev.id}}}/items/")
             steps.append(st)
         if not steps:
             problems.append(f"{where}: no steps")

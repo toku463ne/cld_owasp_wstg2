@@ -37,6 +37,8 @@ tools:
   - {name: xxd}
   - {name: zip}
   - {name: perl, install: none}
+  - name: gitleaks
+    note: secret scanner for collected pages and scripts (WSTG-INFO-05); runs on local files only
   - name: retire
     install: npm
     note: retire.js (JavaScript library check); installed with npm into ~/.local
