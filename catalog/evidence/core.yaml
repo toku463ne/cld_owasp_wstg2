@@ -14,6 +14,8 @@
 #                stdout.txt and stderr as stderr.txt in the evidence version folder
 #   files        extra files the command writes under {out}
 #   timeout      seconds (default 120)
+#   ok_exit_codes  exit codes that mean the collection finished (default [0]); anything
+#                else marks the collection failed, never complete
 #   load_note    load, rate-limit, or lockout warning shown with the evidence
 #
 # Placeholders: {domain} {fqdn} {base_url} {port} {out} (see src/wstg/catalog.py).
@@ -89,6 +91,20 @@ evidence:
       nothing is found.
 
   # ---- FQDN targets ---------------------------------------------------------
+
+  - id: har-browse
+    title: Browser HAR of the main flows
+    target_type: fqdn
+    kind: manual
+    description: >-
+      HAR files exported from the browser's developer tools while walking through the
+      application: one file anonymous, one file per logged-in role. Press F12, open
+      Network, tick "Preserve log" (Firefox: "Persist Logs"), press Ctrl+Shift+R, then
+      open the login page, log in, use every main screen and function once (profile,
+      search, forms that send personal data), and log out. Right-click the request list,
+      choose "Save all as HAR (with sensitive data)" (older browsers: "Save all as HAR"),
+      and upload the file with the caption "anonymous" or "logged in as ROLE". HAR files
+      contain cookies and tokens; keep them only here.
 
   - id: http-root-https
     title: HTTPS response of /

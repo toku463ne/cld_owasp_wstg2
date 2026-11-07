@@ -1,0 +1,53 @@
+id: WSTG-CRYP-04
+overview: >-
+  Check that the application uses sound cryptographic algorithms, key lengths, and random
+  sources: strong ciphers and modes, proper password storage, no hardcoded keys or reused
+  IVs, and unpredictable tokens. Much of this needs a design or source review, since it is
+  hard to judge from outside alone.
+pass: >-
+  Data at rest and in transit uses current algorithms (AES-GCM or equivalent) with adequate
+  key length; passwords are stored with a strong salted KDF (bcrypt, scrypt, Argon2, or
+  PBKDF2 with a high iteration count); keys are not hardcoded and IVs/nonces are not reused;
+  tokens come from a cryptographically secure random source; and nothing that looks
+  encrypted is merely reversible encoding.
+fail: >-
+  Passwords are stored in cleartext or with MD5/SHA-1 or unsalted hashes; ECB mode or a
+  home-grown cipher is used; a key or IV is hardcoded or reused; tokens are predictable or
+  sequential; or a value presented as encrypted is only Base64/hex/ROT (reversible encoding).
+notes:
+  - External testing shows little; pair it with a source or design review or developer interview, and record the source of each judgement.
+  - Base64, hex, and URL-encoding are not encryption. Decode suspicious values first; if they decode to readable data, they are unprotected.
+  - A decoded length that is a multiple of 16 with no readable structure suggests a block cipher; feed such values to WSTG-CRYP-02.
+  - Identical ciphertext blocks within one value are a sign of ECB mode.
+steps:
+  - summary: Collect tokens and stored/transmitted values and try to decode them as Base64, hex, or URL-encoding
+    evidence: [http-root-https, har-browse]
+    command: >-
+      grep -i '^set-cookie' {ev:http-root-https}/stdout.txt;
+      jq -r '.log.entries[].response.headers[]? | select(.name|ascii_downcase=="set-cookie") | .value'
+      {ev:har-browse}/*.har | sort -u;
+      v='VALUE'; printf '%s' "$v" | tr '_-' '/+' | base64 -d 2>/dev/null | xxd | head
+  - summary: Check tokens and session identifiers for predictability
+    evidence: [har-browse]
+    command: >-
+      jq -r '.log.entries[].response.headers[]? | select(.name|ascii_downcase=="set-cookie")
+      | .value' {ev:har-browse}/*.har | grep -oiE '(sessionid|token|csrf)=[^;]+' | sort
+  - summary: Look for ECB mode by detecting repeated 16-byte blocks inside a decoded value
+    command: >-
+      v='VALUE'; printf '%s' "$v" | tr '_-' '/+' | base64 -d 2>/dev/null | xxd -p -c 16
+      | sort | uniq -d
+  - summary: Review password storage and KDF with the developers or source
+    operation: >-
+      Confirm the hashing algorithm, salt, and work factor used for passwords. Cleartext,
+      MD5, SHA-1, or any unsalted hash fails. Record the source (document, interview, code).
+    evidence: [crypto-review]
+  - summary: Review encryption algorithms, modes, key handling, and the random source
+    operation: >-
+      Confirm the symmetric algorithm and mode, key length, how keys are stored (not
+      hardcoded), whether IVs/nonces are unique per message, and that tokens use a CSPRNG.
+      Record each answer and its source.
+    evidence: [crypto-review]
+  - summary: Record weak algorithms, reversible "encryption", or weak key/random handling as a finding
+    operation: >-
+      For each weakness, write what is weak, where it was observed or confirmed, and the
+      source of the judgement.

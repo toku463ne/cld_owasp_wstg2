@@ -1,0 +1,55 @@
+id: WSTG-INFO-04
+overview: >-
+  Find every application served by the target's hosts: subdomains, virtual hosts on the
+  same address, non-standard ports, and base paths, including forgotten staging,
+  legacy, or administrative instances.
+pass: >-
+  All sources were collected successfully, and every application found is known to the
+  system owner and either in scope or explicitly out of scope.
+fail: >-
+  An unexpected application (old or staging environment, another department's tool,
+  administrative console) is reachable on the target's hosts, ports, or virtual hosts.
+notes:
+  - Out-of-scope findings are reported as existence only; do not test them.
+  - "Domain targets: only passive sources (CT logs, passive DNS, archives). FQDN targets: ports and virtual hosts of the server itself."
+  - If every port shows filtered or no response, the scan did not reach the target; do not judge from it.
+  - nmap and ffuf ignore http_proxy/https_proxy. Behind a proxy, use the curl loop in step 4 for web ports, and add -x to ffuf.
+steps:
+  - summary: "Domain: list subdomains from Certificate Transparency and passive sources"
+    evidence: [ct-crtsh, subdomains-subfinder, dns-records]
+    command: >-
+      { jq -r '.[].name_value' {ev:ct-crtsh}/crtsh.json; cat {ev:subdomains-subfinder}/subfinder.txt; }
+      | tr 'A-Z' 'a-z' | sed 's/^\*\.//' | sort -u > hosts-all.txt; wc -l hosts-all.txt
+  - summary: "Domain: resolve each name and group the names by address"
+    command: >-
+      while read -r h; do for a in $(dig +short A "$h" | grep -E '^[0-9.]+$'); do echo "$a $h"; done; done
+      < hosts-all.txt | sort | tee hosts-by-ip.txt
+  - summary: "Domain: find hosts and paths only the web archive still knows"
+    evidence: [wayback-urls]
+    command: sed -E 's#^[a-z]+://([^/:]+).*#\1#' {ev:wayback-urls}/wayback.txt | sort | uniq -c | sort -rn | head -50
+  - summary: "FQDN: find open web and administrative ports on the server"
+    evidence: [ports-web-common, dns-fqdn]
+    command: >-
+      grep open {ev:ports-web-common}/nmap-web.txt;
+      for p in 80 81 443 3000 5000 8000 8080 8081 8443 8888 9000 9090 9443 10000; do for s in http https; do
+      echo "$p $s $(curl -sk -m 5 -o /dev/null -w '%{http_code}' "$s://{fqdn}:$p/")"; done; done | grep -v ' 000$'
+    load_note: The curl loop is the proxy-friendly alternative to nmap (28 requests). Admin ports such as 2375 (Docker) and 9200 (Elasticsearch) may trigger IDS alerts.
+  - summary: "FQDN: find virtual hosts on the same server by Host header brute force"
+    evidence: [vhost-ffuf]
+    command: jq -r '.results[] | [.status, .length, .host] | @tsv' {ev:vhost-ffuf}/ffuf-vhost.json
+  - summary: Identify the purpose of each host and port found
+    command: >-
+      while read -r hp; do echo "== $hp"; curl -sk -m 8 -D - -o body.tmp "https://$hp/" | grep -iE '^(HTTP/|server:|x-powered-by:|www-authenticate:)';
+      grep -oiE '<title>[^<]*' body.tmp | head -1; done < hosts.txt
+    operation: >-
+      Put the hosts and host:port pairs from the steps above in hosts.txt, one per line, and
+      run the command. Use titles, Server headers, realms, and names such as dev, stg, test,
+      old, admin, jenkins, grafana, or phpmyadmin to decide the purpose of each, and record
+      them in the inventory.
+    evidence: [app-inventory]
+  - summary: Scan all ports from outside the target's network
+    operation: >-
+      From a host on the Internet, run `nmap -sV -Pn -p- --open -oN nmap-allports.txt {fqdn}`
+      and upload the result with the source IP and times.
+    evidence: [nmap-external-allports]
+    load_note: Full port scan; agree on the time window and announce the source IP first.

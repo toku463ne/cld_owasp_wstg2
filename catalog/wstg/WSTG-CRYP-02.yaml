@@ -1,0 +1,47 @@
+id: WSTG-CRYP-02
+overview: >-
+  Check whether encrypted values sent to the client (cookies, hidden fields such as
+  ViewState, URL tokens) can be decrypted or forged because the server answers
+  differently to bad padding than to bad content (padding oracle).
+pass: >-
+  Every candidate encrypted value was probed, and the server's response (status, body,
+  length, timing) is the same for invalid padding and for valid padding with wrong
+  content, or the value is integrity-protected (MAC or AEAD) and rejected before
+  decryption. If no encrypted value exists, record that as text.
+fail: >-
+  Status, body, length, error message, or timing tells invalid padding apart from other
+  errors, or a tool such as padbuster recovers plaintext or forges a valid value.
+notes:
+  - Not probing the candidates is not a pass; "no encrypted values" must be written down with the list of parameters examined.
+  - Block ciphers in CBC mode have a decoded length that is a multiple of 8 (DES/3DES) or 16 (AES). Base64 or hex values with such a length that change on every login are good candidates.
+  - ASP.NET ViewState and WebResource.axd / ScriptResource.axd parameters on unpatched servers are classic oracles (CVE-2010-3332).
+  - Agree on the request count before running padbuster; a full decryption takes thousands of requests and may lock the session or trigger a WAF.
+steps:
+  - summary: List encrypted-looking values in cookies, hidden fields, and URL parameters
+    evidence: [http-root-https, har-browse]
+    command: >-
+      grep -i '^set-cookie' {ev:http-root-https}/stdout.txt;
+      grep -oiE '<input[^>]+type="?hidden[^>]*>' {ev:http-root-https}/body.html;
+      jq -r '.log.entries[] | .request.url, (.request.cookies[]? | "\(.name)=\(.value)")' {ev:har-browse}/*.har | sort -u
+  - summary: Decode each candidate and check whether its length is a multiple of the block size
+    command: >-
+      v='VALUE'; printf '%s' "$v" | tr '_-' '/+' | base64 -d 2>/dev/null | wc -c;
+      printf '%s' "$v" | xxd -r -p 2>/dev/null | wc -c
+  - summary: Send the original value and values with a changed byte in the last and second-to-last block, and compare responses
+    operation: >-
+      For each candidate, decode it, change one byte in the last byte of the ciphertext
+      (bad padding) and, separately, a byte of the second-to-last block (valid padding,
+      garbled plaintext), re-encode, and send each value back in its cookie or parameter,
+      recording the status code, response size, and total time for the three cases.
+    evidence: [padding-oracle-responses]
+  - summary: Confirm a suspected oracle with padbuster, limited to one block
+    command: padbuster {base_url}/PATH ENCRYPTED_VALUE 16 -cookies "NAME=ENCRYPTED_VALUE" -encoding 0 -noiv
+    load_note: >-
+      Up to 256 requests per byte (about 4000 per block). Heavy and noisy; may lock the
+      session or trigger a WAF. Run only with agreement, stop after the first decrypted
+      block, and use -encoding 1/2 for hex or 3 for .NET UrlToken values.
+    evidence: [padding-oracle-responses]
+  - summary: Record each oracle with the parameter, the response difference, and the recovered block as a finding
+    operation: >-
+      Write the parameter name, the request that shows the difference, the two distinct
+      responses, and (if run) the first decrypted block. Keep the proof to the minimum.

@@ -1,0 +1,41 @@
+id: WSTG-INFO-05
+overview: >-
+  Review HTML comments, JavaScript, source maps, and page metadata for information left
+  over from development: credentials, API keys, internal host names or addresses,
+  hidden endpoints, and debug notes.
+pass: >-
+  The top page and its scripts were collected, the main screens were reviewed, and no
+  comment, script, or source map contains credentials, keys, internal hosts or
+  addresses, undocumented endpoints, or developer notes.
+fail: >-
+  Page source, JavaScript, or a source map contains an API key, password, token,
+  internal host name or address, debug endpoint, or a developer note that reveals
+  internals.
+notes:
+  - Keyword hits are often only variable names (for example `password` in a form label). Check each hit; record real secrets by evidence path, do not copy them into the finding.
+  - Public keys meant for browsers (map or analytics keys restricted by referrer) are low risk; check the restriction before reporting.
+  - Single-line grep misses multi-line comments and comments added by JavaScript; the perl command and the browser review cover them.
+steps:
+  - summary: Extract HTML comments from the top page and its downloaded files
+    evidence: [site-assets, http-root-https]
+    command: perl -0777 -ne 'print "== $ARGV\n$&\n" while /<!--.*?-->/gs' {ev:http-root-https}/body.html $(grep -rlI '<!--' {ev:site-assets}/site)
+  - summary: Search the page and scripts for secrets, internal hosts, and debug notes
+    evidence: [site-assets]
+    command: >-
+      grep -rnaioE '.{0,40}(passw(or)?d|api[_-]?key|secret|token|bearer|authorization|BEGIN [A-Z ]*PRIVATE KEY|AKIA[0-9A-Z]{16}|AIza[0-9A-Za-z_-]{35}|(10|172\.(1[6-9]|2[0-9]|3[01])|192\.168)\.[0-9]+\.[0-9]+|[a-z0-9.-]+\.(local|internal|corp|lan)\b|todo|fixme|debug).{0,40}'
+      {ev:site-assets}/site | sort -u
+  - summary: Look for JavaScript source maps and check whether they are public
+    evidence: [site-assets]
+    command: >-
+      grep -rhoE 'sourceMappingURL=[^[:space:]*]+' {ev:site-assets}/site | sort -u;
+      find {ev:site-assets}/site -name '*.js' | sed "s#^{ev:site-assets}/site#{base_url}#; s/\$/.map/"
+      | while read -r u; do echo "$(curl -sk -m 10 -o /dev/null -w '%{http_code}' "$u") $u"; done
+  - summary: Read page metadata (meta tags, generator comments, inline configuration objects)
+    evidence: [http-root-https]
+    command: grep -oiE '<meta[^>]+>|window\.[A-Za-z_]*(config|env|settings)[A-Za-z_]*\s*=' {ev:http-root-https}/body.html
+  - summary: Review the source of the login page and each main screen in the browser
+    operation: >-
+      Open each screen, press Ctrl+U and search (Ctrl+F) for `<!--`, `password`, `key`,
+      `api`, `internal`. For pages rendered by JavaScript, use F12 > Elements and search
+      the same strings. Capture any hit with the URL visible.
+    evidence: [page-source-review]

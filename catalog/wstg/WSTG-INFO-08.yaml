@@ -1,0 +1,52 @@
+id: WSTG-INFO-08
+overview: >-
+  Identify the web application framework, CMS, and front-end libraries with their
+  versions (headers, cookies, HTML, file paths, scripts), and whether those versions
+  have known vulnerabilities. Covers WSTG-INFO-09, merged into this test in v4.2.
+pass: >-
+  Fingerprinting and the library scan completed, and either no framework version can be
+  identified or every identified version has no known vulnerability.
+fail: >-
+  A framework, CMS, plugin, or JavaScript library in use has a version with a known
+  vulnerability (identified from cookies, paths, headers, HTML, or scripts).
+notes:
+  - Cookie names hint at the platform: JSESSIONID = Java, ASP.NET_SessionId = .NET, PHPSESSID = PHP, laravel_session = Laravel, ci_session = CodeIgniter, connect.sid = Express.
+  - Retire.js downloads its vulnerability database from GitHub at run time; behind a proxy or without Internet access the update fails. It scans local files only, so it sends nothing to the target. Use --exitwith 0 so a finding does not stop a batch.
+  - Look up CMS and framework versions in NVD as in WSTG-INFO-02 step 4 (5 requests per 30 seconds without an API key). Record where each version was seen.
+  - Scripts that need a login are not in site-assets; fetch them from the logged-in HAR.
+steps:
+  - summary: List products and versions WhatWeb recognized
+    evidence: [whatweb]
+    command: >-
+      grep '^{' {ev:whatweb}/whatweb.json | sed 's/,[[:space:]]*$//'
+      | jq -rR 'fromjson? | .plugins // {} | to_entries[] | "\(.key) \(.value.version // [] | join(","))"' | sort -u
+  - summary: Infer the platform from headers, cookie names, and the error page
+    evidence: [http-root-https, http-404]
+    command: >-
+      grep -ihE '^(server|x-powered-by|x-aspnet(mvc)?-version|x-generator|x-drupal-[a-z-]+|set-cookie):'
+      {ev:http-root-https}/stdout.txt {ev:http-404}/stdout.txt; grep -oiE '<meta name="generator"[^>]*>' {ev:http-root-https}/body.html
+  - summary: Check framework and CMS marker paths
+    evidence: [framework-paths, http-404]
+    command: grep -vE '^(404|000) ' {ev:framework-paths}/stdout.txt
+  - summary: Confirm the technology stack with Wappalyzer in the browser
+    operation: >-
+      With the Wappalyzer extension installed in Chrome or Firefox, open the top page and a
+      logged-in screen, click the Wappalyzer icon, and capture the list. Compare it with
+      the WhatWeb result.
+    evidence: [wappalyzer]
+  - summary: Scan JavaScript libraries for known vulnerabilities with Retire.js
+    evidence: [site-assets, har-browse]
+    command: >-
+      mkdir -p js && jq -r '.log.entries[] | select((.response.content.mimeType // "") | test("javascript|ecmascript")) | .request.url'
+      {ev:har-browse}/*.har | sort -u | while read -r u; do curl -sk -m 30 -o "js/$(printf '%s' "$u" | md5sum | cut -c1-12).js" "$u"; done;
+      retire --path {ev:site-assets}/site --outputformat json --outputpath retire-site.json --exitwith 0;
+      retire --path js --outputformat json --outputpath retire-har.json --exitwith 0;
+      jq -r '.data[]? | .file as $f | .results[]? | select((.vulnerabilities // []) | length > 0)
+      | [.component, .version, ([.vulnerabilities[].severity] | unique | join(",")), ([.vulnerabilities[].identifiers.CVE[]?] | unique | join(" ")), $f] | @tsv'
+      retire-site.json retire-har.json
+    load_note: One GET per script URL in the HAR.
+  - summary: Record each vulnerable component with its version and where it was identified
+    operation: >-
+      For each product with a known CVE (CVSS 7.0 or higher first), write the product,
+      version, CVE IDs, and the evidence that shows the version (header, cookie, path,
+      script) in the finding.

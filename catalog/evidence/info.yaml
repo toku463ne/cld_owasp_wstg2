@@ -1,0 +1,221 @@
+# Evidence used by the Information Gathering (INFO) scenarios.
+# Schema: see the comments at the top of core.yaml.
+evidence:
+
+  # ---- FQDN targets: light ---------------------------------------------------
+
+  - id: dns-fqdn
+    title: DNS records of the FQDN (A, AAAA, CNAME)
+    target_type: fqdn
+    kind: auto
+    level: light
+    passive: true
+    description: Addresses and CNAME chain of {fqdn} from the system resolver (CDN and hosting hints).
+    argv: [dig, +noall, +answer, "{fqdn}", A, "{fqdn}", AAAA, "{fqdn}", CNAME]
+    timeout: 60
+
+  - id: metafiles
+    title: Webserver metafiles
+    target_type: fqdn
+    kind: auto
+    level: light
+    description: >-
+      robots.txt, sitemap.xml, security.txt (/.well-known and /), humans.txt,
+      crossdomain.xml, clientaccesspolicy.xml, and common /.well-known files, one file
+      each. stdout.txt lists the HTTP code and size per URL; a non-200 file holds the
+      error page, not the metafile.
+    argv: [curl, -sS, -k, --max-time, "20", -w, "%{http_code} %{size_download} %{url_effective}\n",
+           -o, "{out}/robots.txt", "{base_url}/robots.txt",
+           -o, "{out}/sitemap.xml", "{base_url}/sitemap.xml",
+           -o, "{out}/security.txt", "{base_url}/.well-known/security.txt",
+           -o, "{out}/security-root.txt", "{base_url}/security.txt",
+           -o, "{out}/humans.txt", "{base_url}/humans.txt",
+           -o, "{out}/crossdomain.xml", "{base_url}/crossdomain.xml",
+           -o, "{out}/clientaccesspolicy.xml", "{base_url}/clientaccesspolicy.xml",
+           -o, "{out}/openid-configuration.json", "{base_url}/.well-known/openid-configuration",
+           -o, "{out}/apple-app-site-association.json", "{base_url}/.well-known/apple-app-site-association",
+           -o, "{out}/assetlinks.json", "{base_url}/.well-known/assetlinks.json"]
+    files: [robots.txt, sitemap.xml, security.txt, security-root.txt, humans.txt, crossdomain.xml,
+            clientaccesspolicy.xml, openid-configuration.json, apple-app-site-association.json,
+            assetlinks.json]
+    timeout: 240
+
+  - id: site-assets
+    title: Top page with its scripts and styles
+    target_type: fqdn
+    kind: auto
+    level: light
+    description: >-
+      GET {base_url}/ and the files it references on the same host (scripts, styles,
+      images), saved under site/ by wget --page-requisites. Input for comment, secret,
+      source map, and library checks.
+    argv: [wget, -q, -e, robots=off, --no-check-certificate, -T, "20", -t, "1",
+           --page-requisites, -nH, -P, "{out}/site", "{base_url}/"]
+    files: [site]
+    timeout: 300
+    ok_exit_codes: [0, 8]
+    load_note: One request per referenced file (usually tens). wget exits 8 when any referenced file returns an error; the files that did download are still usable, check stderr.txt.
+
+  - id: framework-paths
+    title: Framework and CMS marker paths
+    target_type: fqdn
+    kind: auto
+    level: light
+    description: >-
+      HTTP code, size, and URL (stdout.txt) for well-known paths of common CMSs and
+      frameworks (WordPress, Drupal, Joomla, Laravel, Spring Boot, ASP.NET). Bodies are
+      not kept.
+    argv: [curl, -sS, -k, --max-time, "10", -w, "%{http_code} %{size_download} %{url_effective}\n",
+           -o, /dev/null, "{base_url}/wp-login.php",
+           -o, /dev/null, "{base_url}/wp-json/",
+           -o, /dev/null, "{base_url}/readme.html",
+           -o, /dev/null, "{base_url}/user/login",
+           -o, /dev/null, "{base_url}/CHANGELOG.txt",
+           -o, /dev/null, "{base_url}/administrator/",
+           -o, /dev/null, "{base_url}/actuator",
+           -o, /dev/null, "{base_url}/actuator/health",
+           -o, /dev/null, "{base_url}/trace.axd",
+           -o, /dev/null, "{base_url}/elmah.axd",
+           -o, /dev/null, "{base_url}/_ignition/health-check",
+           -o, /dev/null, "{base_url}/server-status"]
+    timeout: 180
+
+  # ---- FQDN targets: full ----------------------------------------------------
+
+  - id: traceroute
+    title: Network path (traceroute)
+    target_type: fqdn
+    kind: auto
+    level: full
+    description: Hops between the tester and {fqdn} (UDP probes, one per hop, up to 20 hops).
+    argv: [traceroute, -n, -w, "2", -q, "1", -m, "20", "{fqdn}"]
+    timeout: 120
+
+  - id: ports-web-common
+    title: Common web and admin ports (nmap)
+    target_type: fqdn
+    kind: auto
+    level: full
+    heavy: true
+    description: >-
+      Open state and service banner of {fqdn} on common web and administrative ports
+      (80, 443, 8080, 8443, 9200, 2375, ...), from the tester's network.
+    argv: [nmap, -Pn, -sV, --version-light, --max-rate, "50", --open,
+           -p, "80,81,443,591,2375,3000,5000,5601,7001,8000,8008,8080,8081,8088,8161,8443,8888,9000,9090,9200,9443,9990,10000,15672",
+           -oN, "{out}/nmap-web.txt", "{fqdn}"]
+    files: [nmap-web.txt]
+    timeout: 900
+    load_note: Port scan of 24 ports with service detection; IDS/IPS may react and block the tester's address. nmap ignores HTTP proxies, so it only works with direct reachability. Tell the target's administrator the source IP first.
+
+  - id: vhost-ffuf
+    title: Virtual host brute force (ffuf)
+    target_type: fqdn
+    kind: auto
+    level: full
+    heavy: true
+    description: >-
+      Host names under {domain} that the server at {base_url} answers differently from
+      its default response (Host header brute force, SecLists top 5000 subdomains).
+    argv: [ffuf, -s, -noninteractive, -ac, -rate, "50", -t, "10",
+           -w, "/usr/share/seclists/Discovery/DNS/subdomains-top1million-5000.txt:FUZZ",
+           -u, "{base_url}/", -H, "Host: FUZZ.{domain}",
+           -o, "{out}/ffuf-vhost.json", -of, json]
+    files: [ffuf-vhost.json]
+    timeout: 900
+    load_note: About 5000 requests at up to 50 per second. Needs the seclists package. ffuf ignores http_proxy/https_proxy; behind a proxy it fails unless -x is added.
+
+  - id: katana-crawl
+    title: Unauthenticated crawl (katana)
+    target_type: fqdn
+    kind: auto
+    level: full
+    heavy: true
+    description: >-
+      URLs found by crawling {base_url}/ without logging in, depth 3, including
+      endpoints parsed from JavaScript, robots.txt, and sitemap.xml. One URL per line in
+      katana.txt.
+    argv: [katana, -u, "{base_url}/", -d, "3", -jc, -kf, "robotstxt,sitemapxml", -fs, fqdn,
+           -rl, "10", -c, "5", -ct, "1200", -silent, -nc, -o, "{out}/katana.txt"]
+    files: [katana.txt]
+    timeout: 1800
+    load_note: Crawler; hundreds to thousands of GET requests at up to 10 per second, for at most 20 minutes. It follows links only (no form submission), but GET links that change state (logout, delete) are followed too. Install with `sudo apt install katana`.
+
+  - id: wafw00f
+    title: WAF detection (wafw00f)
+    target_type: fqdn
+    kind: auto
+    level: full
+    heavy: true
+    description: WAF product wafw00f recognizes in front of {base_url}/ (or "No WAF detected").
+    argv: [wafw00f, -a, "{base_url}/"]
+    timeout: 300
+    load_note: Sends requests with attack-like payloads (XSS, SQL injection strings); a WAF or IDS may alert or block the tester's address.
+
+  # ---- FQDN targets: manual --------------------------------------------------
+
+
+  - id: page-source-review
+    title: Page source review notes
+    target_type: fqdn
+    kind: manual
+    description: >-
+      For the login page and each main screen: the URL, and a screenshot of any comment,
+      script, or hidden field that holds a developer note, internal path or host name,
+      credential, or key (view-source with Ctrl+U for server pages, F12 Elements for
+      pages rendered by JavaScript). Write "nothing found" as text for screens without
+      findings.
+
+  - id: wappalyzer
+    title: Wappalyzer technology list
+    target_type: fqdn
+    kind: manual
+    description: >-
+      Screenshot of the Wappalyzer browser extension popup on the top page and on one
+      logged-in screen, with product names and versions visible.
+
+  - id: entry-points
+    title: Entry point inventory
+    target_type: fqdn
+    kind: manual
+    description: >-
+      Text table of every input the application accepts, one row per entry point:
+      method, URL, parameter names and where they go (query, body form, JSON, XML,
+      header, cookie, file upload, hidden field), and whether login is required.
+
+  - id: workflow-map
+    title: Execution path map
+    target_type: fqdn
+    kind: manual
+    description: >-
+      Text or diagram (image) of the main business flows: screens in order, branches,
+      cancel/back paths, and roles that can use each step. Mark the areas that are not
+      tested and why.
+
+  - id: app-inventory
+    title: Application inventory
+    target_type: fqdn
+    kind: manual
+    description: >-
+      Text list of every application found on the target's hosts, ports, and virtual
+      hosts: host:port or URL, page title or product, purpose (production, staging,
+      admin console, ...), the evidence it was found in, and whether it is in scope.
+
+  - id: nmap-external-allports
+    title: All-port scan from the Internet (nmap)
+    target_type: fqdn
+    kind: manual
+    description: >-
+      nmap-allports.txt from `nmap -sV -Pn -p- --open -oN nmap-allports.txt {fqdn}` run
+      from a host outside the target's network, plus a text item with the source IP and
+      start and end times.
+    load_note: Full 65535-port scan; IDS/IPS or connection limits may react. Agree on the time window and announce the source IP; slow it down with --max-rate 100 or -T2 if needed.
+
+  - id: architecture-map
+    title: Architecture map
+    target_type: fqdn
+    kind: manual
+    description: >-
+      Diagram (image) or text of the components between the client and the data:
+      CDN, WAF, load balancer, reverse proxy, application servers, API gateway,
+      databases, third-party services. For each, the evidence it was inferred from and
+      whether the system owner confirmed it.

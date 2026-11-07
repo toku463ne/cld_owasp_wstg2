@@ -1,0 +1,70 @@
+id: WSTG-CRYP-01
+overview: >-
+  Check that the TLS configuration of the web server (protocols, cipher suites,
+  certificate, known TLS vulnerabilities) meets current practice, and that plain HTTP is
+  redirected to HTTPS.
+pass: >-
+  The TLS scan completed, and: only TLS 1.2 and TLS 1.3 are offered; no NULL, anonymous,
+  EXPORT, RC4, DES, 3DES, or MD5 cipher suites are accepted; the certificate is within its
+  validity period, chains to a trusted CA, matches {fqdn}, has an RSA key of 2048 bits or
+  more (ECDSA 256 or more) and a SHA-256 or stronger signature; no known TLS vulnerability
+  is reported; plain HTTP on port 80 is closed or redirects to HTTPS.
+fail: >-
+  SSLv2, SSLv3, TLS 1.0, or TLS 1.1 is accepted; a weak cipher suite above is accepted;
+  DH parameters are below 2048 bits; the certificate is expired, self-signed, issued by an
+  untrusted CA, has an incomplete chain, or does not match the host name; the key or
+  signature is weaker than above; Heartbleed, ROBOT, CCS injection, POODLE, DROWN, FREAK,
+  LOGJAM, or insecure renegotiation is reported; or port 80 serves content without
+  redirecting to HTTPS.
+notes:
+  - A scan that did not finish (no testssl.json, or connection errors in stderr.txt) is not a pass; collect again.
+  - Test every TLS port in scope, not only the web port (mail, API, admin ports).
+  - BREACH and LUCKY13 are often reported for any compressed page or any CBC suite; judge them by context, not by the label alone.
+  - HSTS is judged in WSTG-CONF-07.
+  - Behind a proxy, add `--proxy=auto` to testssl. If a corporate proxy inspects TLS, results describe the proxy; check the certificate issuer.
+  - A local curl or openssl refusing TLS 1.0/1.1 may be the client's own policy; testssl and sslscan are authoritative.
+steps:
+  - summary: Run the full TLS scan and list every finding above severity OK/INFO
+    evidence: [tls-testssl]
+    command: >-
+      jq -r '.[] | select(.severity | test("LOW|MEDIUM|HIGH|CRITICAL")) | [.severity, .id, .finding] | @tsv'
+      {ev:tls-testssl}/testssl.json
+  - summary: Check that SSLv2, SSLv3, TLS 1.0, and TLS 1.1 are not offered
+    evidence: [tls-sslscan, tls-testssl]
+    command: >-
+      grep -E '(SSLv2|SSLv3|TLSv1\.0|TLSv1\.1) +enabled' {ev:tls-sslscan}/stdout.txt;
+      jq -r '.[] | select(.id | test("^(SSLv2|SSLv3|TLS1|TLS1_1)$")) | [.id, .finding] | @tsv'
+      {ev:tls-testssl}/testssl.json
+  - summary: Check that no weak cipher suite is accepted and DH parameters are 2048 bits or more
+    evidence: [tls-sslscan]
+    command: >-
+      grep -E '^(Preferred|Accepted)' {ev:tls-sslscan}/stdout.txt
+      | grep -Ei 'NULL|anon|ADH|AECDH|EXP|RC4|3DES|DES-CBC|MD5|IDEA|SEED|DHE [0-9]{3} bits'
+  - summary: Check certificate validity, chain, host name match, key size, and signature algorithm
+    evidence: [tls-cert-chain]
+    command: >-
+      f={ev:tls-cert-chain}/stdout.txt;
+      openssl x509 -in $f -noout -subject -issuer -dates -ext subjectAltName;
+      openssl x509 -in $f -noout -text | grep -E 'Public-Key:|Signature Algorithm:' | sort -u;
+      openssl x509 -in $f -noout -checkend 2592000 || echo 'expires within 30 days';
+      grep -E 'Verify return code|Certificate chain' $f
+  - summary: Check known TLS vulnerabilities (Heartbleed, ROBOT, POODLE, DROWN, renegotiation)
+    evidence: [tls-testssl]
+    command: >-
+      jq -r '.[] | select(.id | test("heartbleed|CCS|ticketbleed|ROBOT|renego|CRIME|POODLE|fallback_SCSV|SWEET32|FREAK|DROWN|LOGJAM|BEAST"))
+      | [.id, .severity, .finding, .cve // ""] | @tsv' {ev:tls-testssl}/testssl.json
+  - summary: Cross-check accepted TLS versions with curl
+    command: >-
+      for v in 1.0 1.1 1.2 1.3; do curl -sk -o /dev/null -m 10 --tlsv$v --tls-max $v
+      --ciphers 'DEFAULT@SECLEVEL=0' {base_url}/; rc=$?; case $rc in 0) echo "TLS$v: accepted";;
+      35) echo "TLS$v: refused (handshake failure)";; *) echo "TLS$v: unknown (curl exit $rc)";;
+      esac; done
+  - summary: Check that plain HTTP redirects to HTTPS on the same host, also for deep paths
+    evidence: [http-root-http, http-redirect-chain]
+    command: grep -iE '^(HTTP/|location:)|^final=' {ev:http-root-http}/stdout.txt {ev:http-redirect-chain}/stdout.txt
+  - summary: Scan the other TLS ports in scope (mail, API, admin)
+    operation: >-
+      For each other TLS port in the scope record, run testssl against {fqdn} and that port
+      (STARTTLS services need the matching -t option) and judge it with the same criteria.
+      Write "no other TLS ports" as text when there are none.
+    load_note: Each testssl run opens several hundred handshakes and takes minutes.

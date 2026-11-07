@@ -1,0 +1,42 @@
+id: WSTG-INFO-10
+overview: >-
+  Map the components between the client and the application: CDN, WAF, load balancer,
+  reverse proxy, application servers, API gateway, and back ends, and whether any
+  component that belongs inside the network is reachable from outside.
+pass: >-
+  The architecture is mapped with evidence for each component, the presence and position
+  of protections such as a WAF is known, and no internal component (management API,
+  cache, search engine, database console) is reachable from outside.
+fail: >-
+  A component that should be internal, such as Elasticsearch, Kibana, RabbitMQ, the
+  Docker API, phpMyAdmin, or Adminer, answers from outside without restriction.
+notes:
+  - Confirm the inferred architecture with the system owner; do not report guesses as facts.
+  - Different Server headers on /, the 404 page, and plain HTTP often mean a proxy or load balancer in front of the application.
+  - traceroute uses UDP and is often filtered; `sudo traceroute -T -p {port} {fqdn}` (TCP) gets further through firewalls.
+steps:
+  - summary: Look for proxy, cache, CDN, and load balancer markers in response headers
+    evidence: [http-root-https, http-root-http, http-404]
+    command: >-
+      grep -iHE '^(server|via|x-cache[a-z-]*|x-served-by|x-varnish|age|cf-ray|cf-cache-status|x-amz-cf-[a-z]+|x-azure-ref|x-akamai[a-z-]*|x-backend[a-z-]*|x-upstream[a-z-]*|set-cookie):'
+      {ev:http-root-https}/stdout.txt {ev:http-root-http}/stdout.txt {ev:http-404}/stdout.txt
+  - summary: Identify CDN and hosting from DNS and the owner of the address
+    evidence: [dns-fqdn]
+    command: cat {ev:dns-fqdn}/stdout.txt; for a in $(dig +short A {fqdn} | grep -E '^[0-9.]+$'); do whois "$a" | grep -iE '^(orgname|org-name|netname|descr|country):'; done
+  - summary: Detect a WAF in front of the application
+    evidence: [wafw00f]
+  - summary: Observe the network path to the server
+    evidence: [traceroute]
+  - summary: Check whether internal components are reachable from outside
+    evidence: [ports-web-common]
+    command: >-
+      grep -E '^(2375|5601|9200|15672|8161|9990)/tcp' {ev:ports-web-common}/nmap-web.txt;
+      while read -r h; do for p in :9200 :5601 :15672 :2375 :8081 /phpmyadmin/ /adminer.php /server-status; do
+      echo "$(curl -sk -m 8 -o /dev/null -w '%{http_code}' "https://$h$p") $h$p"; done; done < hosts.txt | grep -vE '^(000|404) '
+    operation: Put the target's host names (from WSTG-INFO-04) in hosts.txt, one per line, and run the command. 200 or 401 means the component is exposed.
+    load_note: 8 requests per host; with many hosts, start with a few and check the behavior first.
+  - summary: Draw the architecture and confirm it with the system owner
+    operation: >-
+      Draw the components from the steps above, note the evidence for each, and mark
+      which ones the system owner confirmed.
+    evidence: [architecture-map]

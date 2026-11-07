@@ -1,0 +1,38 @@
+id: WSTG-INFO-03
+overview: >-
+  Check whether robots.txt, sitemaps, security.txt, other /.well-known files, and HTML
+  meta tags reveal hidden paths, non-public pages, or internal information.
+pass: >-
+  Every metafile was fetched (HTTP code recorded), and none of them lists administrative,
+  backup, staging, or other non-public locations that are reachable, nor internal host
+  names or personal data.
+fail: >-
+  A Disallow line or sitemap entry points to an administrative, backup, or otherwise
+  non-public area that opens without authentication, or a metafile discloses internal
+  host names, addresses, or contacts that should not be public.
+notes:
+  - Disallow only asks crawlers not to index a path; it is not access control. Say so in the finding.
+  - Many servers return 200 with a soft 404 page for missing files. Compare the size and content with the default 404 response (http-404) before treating a 200 as reachable.
+  - A missing security.txt is not a failure of this test; mention it as a recommendation (RFC 9116).
+steps:
+  - summary: Fetch robots.txt, sitemap.xml, security.txt, and other /.well-known files
+    evidence: [metafiles]
+    command: cat {ev:metafiles}/stdout.txt; grep -iE '^(dis)?allow:|^sitemap:' {ev:metafiles}/robots.txt
+  - summary: Check whether paths in robots.txt Disallow lines open without authentication
+    evidence: [metafiles, http-404]
+    command: >-
+      grep -i '^Disallow:' {ev:metafiles}/robots.txt | awk '{print $2}' | tr -d '\r' | sed 's/\*.*//' | sort -u
+      | while read -r p; do [ -n "$p" ] && echo "$(curl -sk -m 10 -o /dev/null -w '%{http_code} %{size_download}' "{base_url}$p") $p"; done
+  - summary: Check whether sitemap URLs include pages that should not be public
+    evidence: [metafiles]
+    command: >-
+      grep -oiE '<loc>[^<]+' {ev:metafiles}/sitemap.xml | sed -E 's/<loc>//I' | sort -u
+      | while read -r u; do echo "$(curl -sk -m 10 -o /dev/null -w '%{http_code}' "$u") $u"; done
+  - summary: Review security.txt, humans.txt, cross-domain policies, and app association files for internal details
+    evidence: [metafiles]
+    command: >-
+      cd {ev:metafiles} && head -50 security.txt security-root.txt humans.txt;
+      grep -iE 'allow-access-from|domain uri' crossdomain.xml clientaccesspolicy.xml
+  - summary: Read HTML meta tags (robots, generator, author) of the top page
+    evidence: [http-root-https]
+    command: grep -oiE '<meta[^>]+>' {ev:http-root-https}/body.html

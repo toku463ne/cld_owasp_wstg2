@@ -9,7 +9,7 @@ Last updated: 2026-11-07
 | # | Milestone | Status | Notes |
 |---|---|---|---|
 | M0 | Skeleton | **Done** (`5d9c082`) | 23 tests pass; CLI and waitress server checked by hand |
-| M1 | Catalog | Next | Start with INFO/CONF/CRYP |
+| M1 | Catalog | **In progress** | Index (97), schema and validator, INFO + CRYP scenarios; CONF pending |
 | M2 | Targets and main page | Not started | |
 | M3 | WSTG page | Not started | |
 | M4 | Manual evidence | Not started | |
@@ -28,6 +28,13 @@ Last updated: 2026-11-07
 - Main page shell (target selector + `+`, four tabs, all placeholders); admin user page.
 - CLI: `check-config`, `migrate`, `user-add`, `user-passwd`, `user-disable`, `user-list`, `serve`.
 - Fixed during smoke test: waitress dropped nginx's `X-Forwarded-For` by default, which would have made every client look like 127.0.0.1.
+
+### M1 so far
+- `catalog/wstg_index.yaml`: 97 WSTG v4.2 tests with one-line summary, target types (domain: INFO-01; both: INFO-04, CONF-10), OWASP page path checked against the OWASP/wstg v4.2 file list, merged tests (INFO-09, INPV-03, ERRH-02).
+- `src/wstg/catalog.py` + `uv run wstg catalog-check [-v]`: loader and validator (unknown keys, duplicates, references, placeholders, domain = passive only, heavy = full + load_note, manual evidence has no command). Placeholders are replaced by name only, so curl globs and `%{http_code}` pass through.
+- Evidence: 34 definitions (23 auto, 11 manual) in `catalog/evidence/{core,info,cryp}.yaml`; `ok_exit_codes` for tools that exit non-zero with usable output (wget 8).
+- Scenarios: INFO-01 to 08 and 10, CRYP-01 to 04 (13).
+- Open: CONF-01 to 11 (writing was interrupted; resume later, possibly alongside M3), the remaining categories, and checking tool options on Kali (e.g. katana `-ct`). Commands were not run against any host.
 
 ### M8 (pulled forward) delivered
 - `scripts/setup-kali.sh`: apt base packages, uv, data dirs (`/srv/wstg2/{evidence,db}`), config file and secret key generated once, `uv sync`, `check-config`, `migrate`, first admin, systemd user service `wstg2-web` (restarted on every run, lingering), nginx site rendered from `deploy/nginx/wstg2.conf.template` (port and allow list from the config), `nginx -t` with rollback, smoke test. Options `--no-packages`, `--no-nginx`, `--no-systemd`, `--dry-run`. Rerun after `git pull` to update a Kali host.
@@ -108,4 +115,5 @@ M0–M3 give a minimal tool where tests can be viewed and judged. M4–M6 make i
 | Evidence edits | Keep the original; each edit is a new version |
 | Burp history | Replace with Python HTTP client, curl, headless browser HAR, HAR import |
 | Scope records | Required; every command is checked |
+| Catalog format | YAML (PyYAML, the only new dependency). Evidence commands are argv lists (no shell); analysis commands shown to the tester may use a shell and refer to collected evidence as `{ev:ID}` |
 | Host names (config, data, service, nginx site) | `wstg2` prefix (`~/.config/wstg2/wstg2.env`, `/srv/wstg2`, `wstg2-web`, `wstg2.conf`) so the predecessor mine.wstg (`wstg`) can run on the same Kali host |

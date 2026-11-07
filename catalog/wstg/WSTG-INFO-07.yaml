@@ -1,0 +1,42 @@
+id: WSTG-INFO-07
+overview: >-
+  Map the application's workflows and execution paths (screen order, branches, state
+  changes, roles) so that test coverage can be explained and no area is left untested.
+pass: >-
+  The main business flows and their branches are mapped from a logged-in walkthrough and
+  a crawl, untested areas are listed with a reason, and no hidden function reachable
+  only by direct link lacks protection.
+fail: >-
+  A hidden function or screen that is reachable only by direct URL (found in the crawl,
+  scripts, or web archive but not in the menus) is accessible without the expected
+  authentication or authorization.
+notes:
+  - A crawler cannot follow multi-step forms, wizards, or JavaScript-only navigation; the manual walkthrough fills those gaps.
+  - This test mostly produces the map for later tests; report a failure only for a concrete unprotected path.
+steps:
+  - summary: Walk through every function logged in, for each role, and save the HAR
+    operation: >-
+      Log in with each role available for testing and use every function once, including
+      cancel, back, and error branches of multi-step flows. Save a HAR per role.
+    evidence: [har-browse]
+  - summary: Compare crawled URLs with the walkthrough to find paths the menus do not show
+    evidence: [har-browse, katana-crawl]
+    command: >-
+      jq -r '.log.entries[].request.url' {ev:har-browse}/*.har | sed 's/[?#].*//' | sort -u > walk.txt;
+      sed 's/[?#].*//' {ev:katana-crawl}/katana.txt | sort -u > crawl.txt; comm -13 walk.txt crawl.txt
+  - summary: Find archived and script-referenced paths missing from both
+    evidence: [wayback-urls, site-assets]
+    command: >-
+      { grep -F '://{fqdn}' {ev:wayback-urls}/wayback.txt | sed 's/[?#].*//';
+      grep -rhoE '"/[A-Za-z0-9_./-]{2,}"' {ev:site-assets}/site | tr -d '"' | sed 's#^#{base_url}#'; }
+      | sort -u | comm -23 - <(sort -u walk.txt crawl.txt) | tee hidden.txt | wc -l
+  - summary: Check whether hidden paths open without login
+    command: >-
+      while read -r u; do echo "$(curl -sk -m 10 -o /dev/null -w '%{http_code} %{size_download}' "$u") $u"; done < hidden.txt
+      | grep -vE '^(404|000) '
+    load_note: One GET per URL in hidden.txt; trim the list first if it is long (archives can hold thousands of URLs).
+  - summary: Draw the flow map and mark untested areas
+    operation: >-
+      Draw each business flow (normal path, branches, cancel/back, role per step) and list
+      the areas not covered by later tests with the reason.
+    evidence: [workflow-map]

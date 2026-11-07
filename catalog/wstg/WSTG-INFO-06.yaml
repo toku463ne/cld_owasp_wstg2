@@ -1,0 +1,49 @@
+id: WSTG-INFO-06
+overview: >-
+  List every input the application accepts (URLs, query and body parameters, JSON and
+  XML fields, headers, cookies, hidden fields, file uploads), anonymous and logged in,
+  as the base for later tests.
+pass: >-
+  The entry point inventory was built from both the anonymous and the logged-in
+  walkthrough, and no entry point meant for logged-in users answers without
+  authentication. This test is mainly informational.
+fail: >-
+  While enumerating, an entry point that should require login (or a higher role)
+  returns its content or performs its function without authentication.
+notes:
+  - Coverage is the goal. A crawl without login misses most of the application; the logged-in HAR is required.
+  - A missing HAR or crawl is not a pass; the inventory is incomplete until both walkthroughs exist.
+  - "When replaying requests without cookies, use GET only: replaying POST/PUT/DELETE can change data."
+steps:
+  - summary: Walk through the application in the browser, anonymous and logged in, and save HAR files
+    operation: Follow the capture instructions of the HAR evidence; visit every menu, form, and wizard step once.
+    evidence: [har-browse]
+  - summary: List requests (method, URL, body type) from the HAR files and the crawl
+    evidence: [har-browse, katana-crawl]
+    command: >-
+      jq -r '.log.entries[].request | [.method, (.url | sub("\\?.*"; "")), (.postData.mimeType // "-")] | @tsv'
+      {ev:har-browse}/*.har | sort -u; grep -c . {ev:katana-crawl}/katana.txt
+  - summary: List parameter, JSON field, cookie, and custom header names
+    evidence: [har-browse]
+    command: >-
+      jq -r '.log.entries[].request | (.queryString[]?.name | "query " + .), (.postData.params[]?.name | "form " + .),
+      (.cookies[]?.name | "cookie " + .), (.headers[] | select(.name | test("^(x-|authorization$)"; "i")) | "header " + .name),
+      (select((.postData.mimeType // "") | test("json")) | .postData.text | fromjson? | paths(scalars) | map(tostring) | "json " + join("."))'
+      {ev:har-browse}/*.har | sort | uniq -c | sort -rn
+  - summary: Add query parameters seen in the crawl and the web archive
+    evidence: [katana-crawl, wayback-urls]
+    command: >-
+      { cat {ev:katana-crawl}/katana.txt; grep -F '://{fqdn}' {ev:wayback-urls}/wayback.txt; } | grep -F '?'
+      | sed -E 's/^[^?]*\?//' | tr '&' '\n' | cut -d= -f1 | sort | uniq -c | sort -rn
+  - summary: Find forms, hidden fields, and file uploads on the collected pages
+    evidence: [site-assets]
+    command: grep -rhoiE '<form[^>]*>|<input[^>]*type=.?(hidden|file)[^>]*>' {ev:site-assets}/site | sort -u
+  - summary: Replay logged-in GET requests without cookies to find entry points open without login
+    evidence: [har-browse]
+    command: >-
+      jq -r '.log.entries[] | select(.request.method == "GET") | .request.url' {ev:har-browse}/*.har
+      | grep -F '{base_url}' | sort -u | while read -r u; do echo "$(curl -sk -m 10 -o /dev/null -w '%{http_code} %{size_download}' "$u") $u"; done
+    load_note: One GET per unique URL in the HAR. Run it only on the logged-in HAR and skip logout or other state-changing GET URLs.
+  - summary: Write the entry point inventory
+    operation: Combine the lists above into one table (method, URL, parameters and location, login required) and save it as text.
+    evidence: [entry-points]

@@ -18,6 +18,10 @@ Placeholders in commands and text, filled in per target:
     {port}      the port of {base_url} (443 by default)
     {out}       evidence commands only: the version folder the command writes files into
     {ev:ID}     step commands only: the latest version folder of evidence ID
+
+Only these names are replaced (by regular expression, not str.format), so other
+braces pass through unchanged: curl globs such as {a,b} and curl's own
+--write-out syntax %{http_code}. An unknown {word} is reported as an error.
 """
 
 from __future__ import annotations
@@ -82,6 +86,7 @@ class Evidence:
     argv: tuple[str, ...] = ()        # auto only; no shell
     files: tuple[str, ...] = ()       # extra files the command writes under {out}
     timeout: int = 120
+    ok_exit_codes: tuple[int, ...] = (0,)  # exit codes that mean "finished"
     load_note: str = ""
     source: str = ""                  # file it was defined in
 
@@ -195,7 +200,7 @@ def _load_index(path: Path, problems: list[str]) -> tuple[str, dict[str, Test]]:
 
 
 EVIDENCE_KEYS = {"id", "title", "target_type", "kind", "description", "level", "passive", "heavy",
-                 "argv", "files", "timeout", "load_note"}
+                 "argv", "files", "timeout", "ok_exit_codes", "load_note"}
 
 
 def _load_evidence(dir_: Path, problems: list[str]) -> dict[str, Evidence]:
@@ -217,7 +222,8 @@ def _load_evidence(dir_: Path, problems: list[str]) -> dict[str, Evidence]:
                 description=_str(e.get("description")), level=_str(e.get("level")) or None,
                 passive=bool(e.get("passive", False)), heavy=bool(e.get("heavy", False)),
                 argv=_strs(e.get("argv")), files=_strs(e.get("files")),
-                timeout=int(e.get("timeout", 120)), load_note=_str(e.get("load_note")), source=path.name,
+                timeout=int(e.get("timeout", 120)),
+                ok_exit_codes=tuple(int(x) for x in e.get("ok_exit_codes", [0])), load_note=_str(e.get("load_note")), source=path.name,
             )
             _check_evidence(ev, problems)
             out[eid] = ev
@@ -246,7 +252,8 @@ def _check_evidence(ev: Evidence, problems: list[str]) -> None:
         if not 1 <= ev.timeout <= 3600:
             problems.append(f"{w}: timeout must be 1..3600 seconds")
     else:
-        for k, v in (("argv", ev.argv), ("level", ev.level), ("files", ev.files)):
+        for k, v in (("argv", ev.argv), ("level", ev.level), ("files", ev.files),
+                     ("ok_exit_codes", ev.ok_exit_codes != (0,))):
             if v:
                 problems.append(f"{w}: manual evidence must not set {k}")
         if not ev.description:

@@ -104,6 +104,7 @@ uv run wstg user-passwd NAME
 uv run wstg user-disable NAME [--enable]
 uv run wstg user-list
 uv run wstg serve [--dev]                 # 127.0.0.1:$WSTG_APP_PORT
+uv run wstg catalog-check [-v]            # validate the WSTG catalog (catalog/)
 ```
 
 ## Development

@@ -1,0 +1,85 @@
+# Evidence for the CRYP (weak cryptography) scenarios. Schema: see core.yaml.
+evidence:
+
+  - id: tls-testssl
+    title: TLS scan (testssl.sh)
+    target_type: fqdn
+    kind: auto
+    level: full
+    description: >-
+      testssl.sh results for {fqdn}:{port}: protocols, cipher suites, forward secrecy,
+      certificate, and known TLS vulnerabilities (Heartbleed, ROBOT, POODLE, ...).
+      testssl.json is a flat JSON list of {id, severity, finding, cve}; stdout.txt is the
+      readable report.
+    argv: [testssl, --quiet, --color, "0", --warnings, batch, --jsonfile, "{out}/testssl.json",
+           "{fqdn}:{port}"]
+    files: [testssl.json]
+    timeout: 1800
+    load_note: >-
+      Opens several hundred TLS handshakes and takes 2 to 15 minutes (longer when the name
+      has several IP addresses; each is scanned). Small TLS terminators or load balancers
+      may notice the load.
+
+  - id: tls-sslscan
+    title: TLS protocols and ciphers (sslscan)
+    target_type: fqdn
+    kind: auto
+    level: light
+    description: >-
+      Enabled protocols (SSLv2 to TLS 1.3), accepted cipher suites, key exchange groups, and
+      the leaf certificate of {fqdn}:{port}. sslscan's own OpenSSL can still test SSLv3 and
+      TLS 1.0/1.1, unlike the system OpenSSL.
+    argv: [sslscan, --no-colour, --show-certificate, "--xml={out}/sslscan.xml", "{fqdn}:{port}"]
+    files: [sslscan.xml]
+    timeout: 300
+    load_note: About a hundred short TLS handshakes in under a minute.
+
+  - id: tls-cert-chain
+    title: TLS certificate chain (openssl s_client)
+    target_type: fqdn
+    kind: auto
+    level: light
+    description: >-
+      Certificate chain sent by {fqdn}:{port} with SNI {fqdn} (PEM blocks in stdout.txt),
+      the verification result against the system trust store including the host name
+      ("Verify return code"), and the OCSP stapling response.
+    argv: [openssl, s_client, -connect, "{fqdn}:{port}", -servername, "{fqdn}",
+           -verify_hostname, "{fqdn}", -showcerts, -status]
+    timeout: 30
+
+  - id: http-redirect-chain
+    title: HTTP to HTTPS redirect chain (deep path)
+    target_type: fqdn
+    kind: auto
+    level: light
+    description: >-
+      Headers of every hop when following redirects from
+      http://{fqdn}/wstg-redirect-check?q=1 (port 80), and on the last line the final URL,
+      status, and number of redirects. Shows whether a deep path also lands on HTTPS of
+      the same host.
+    argv: [curl, -sS, -k, -L, --max-redirs, "10", --max-time, "30", -D, "-", -o, /dev/null,
+           -w, "final=%{url_effective} status=%{http_code} redirects=%{num_redirects}\n",
+           "http://{fqdn}/wstg-redirect-check?q=1"]
+    timeout: 45
+
+
+  - id: padding-oracle-responses
+    title: Padding oracle probe responses
+    target_type: fqdn
+    kind: manual
+    description: >-
+      For each candidate encrypted value (cookie, hidden field, URL parameter): the
+      original value, and the status line, length, and the relevant part of the body of
+      the response to (1) the original value, (2) the last byte of the last block changed,
+      (3) a byte of the second-to-last block changed. Text or screenshots, one item per
+      parameter.
+
+  - id: crypto-review
+    title: Cryptography design review notes
+    target_type: fqdn
+    kind: manual
+    description: >-
+      Answers from the developers or design documents (or source code excerpts) on: the
+      password storage algorithm and its parameters, encryption algorithms and modes,
+      key length and key storage, IV/nonce generation, and the random source used for
+      tokens. Name the source of each answer (document, interview, code path).
