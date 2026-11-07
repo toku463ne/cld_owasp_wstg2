@@ -131,3 +131,25 @@ def test_evidence_page_shows_proxy_args_and_last_failure(admin_client, db, cfg):
                      " VALUES (7, 0, 'tls-sslscan', 'failed', 'tool not installed: sslscan')")
     page = admin_client.get("/t/www.example.com/evidence/tls-sslscan").get_data(as_text=True)
     assert "Last attempt (job 7" in page and "tool not installed: sslscan" in page
+
+
+def test_failed_collection_shows_command_and_output(admin_client, db, cfg):
+    from wstg import evidence as evmod
+    t = tm.create(db, cfg, "example.com", "domain")
+    store = evmod.Store(cfg, db)
+    tmp = store.begin(t, "dns-whois")
+    (tmp / "stdout.txt").write_text("\n".join(f"line {i}" for i in range(300)))
+    (tmp / "stderr.txt").write_text("whois: connect: Connection refused\n")
+    items = [evmod.Item("text", "stdout.txt", "", 0, caption="stdout", mime="text/plain"),
+             evmod.Item("text", "stderr.txt", "", 0, caption="stderr", mime="text/plain")]
+    store.commit(t, "dns-whois", tmp, source="auto", actor="worker", status="failed", summary="failed: exit code 2",
+                 items=items, extra_meta={"argv": ["whois", "example.com"], "exit_code": 2, "duration_s": 1.5,
+                                          "via": "jump.example.net", "message": "exit code 2"})
+    page = admin_client.get("/t/example.com/evidence/dns-whois").get_data(as_text=True)
+    assert "Last failed collection: v1" in page and "whois example.com" in page and "jump.example.net" in page
+    assert "exit code <b>2</b>" in page and "whois: connect: Connection refused" in page
+    assert "line 299" in page and "line 50\n" not in page and "100 earlier lines" in page
+    assert 'href="/t/example.com/evidence/dns-whois?v=1"' in page
+    # an explicit version view does not repeat the block
+    assert "Last failed collection" not in admin_client.get("/t/example.com/evidence/dns-whois?v=1").get_data(as_text=True)
+    assert "#failed-log" in admin_client.get("/t/example.com/auto").get_data(as_text=True)

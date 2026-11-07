@@ -47,10 +47,25 @@
 </div>
 {% else %}
 <p class="muted">Not collected yet.</p>
-{% if attempt and attempt.status in ('failed', 'refused') %}
+{% if attempt and attempt.status in ('failed', 'refused', 'cancelled') %}
 <div class="warnbox">Last attempt (job {{ attempt.job_id }}, {{ attempt.mode }}, {{ attempt.finished_at or attempt.started_at }}):
   <b>{{ attempt.status }}</b>{% if attempt.message %} · {{ attempt.message }}{% endif %}</div>
 {% endif %}
+{% endif %}
+{% if failed %}
+<section class="overview" id="failed-log">
+  <h3>Last failed collection: v{{ failed.version }}, {{ failed.created_at }}</h3>
+  {% if failed.meta.argv %}<p class="muted small">Command{% if failed.meta.via %} (on <b>{{ failed.meta.via }}</b>){% endif %}:</p>
+  <pre class="text-item">{{ failed.meta.argv | join(' ') }}</pre>{% endif %}
+  <p>exit code <b>{{ failed.meta.exit_code if failed.meta.exit_code is not none else '-' }}</b>
+    {% if failed.meta.duration_s is defined %} · {{ failed.meta.duration_s }} s{% endif %}
+    {% if failed.meta.message %} · {{ failed.meta.message }}{% endif %}
+    · <a href="{{ url_for('evidence_page', name=target.name, eid=ev.id, v=failed.version) }}">all files of v{{ failed.version }}</a></p>
+  {% for log in failed_logs %}
+  <h4>{{ log.name }}{% if log.cut %} <span class="muted small">(last 200 lines; {{ log.cut }} earlier lines in the full file)</span>{% endif %}</h4>
+  <pre class="text-item log">{{ log.text }}</pre>
+  {% endfor %}
+</section>
 {% endif %}
 
 {% if can_write and ev.kind == 'manual' and (is_latest or not version) %}

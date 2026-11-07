@@ -16,6 +16,9 @@ from . import targets as tmod
 from .web import admin_required, login_required
 
 
+LOG_TAIL = 200   # lines of stdout/stderr shown for a failed collection
+
+
 def register(app: Flask, store: evmod.Store, cat: catmod.Catalog) -> None:
 
     def resolve(name: str, eid: str) -> tuple[tmod.Target, catmod.Evidence]:
@@ -51,10 +54,21 @@ def register(app: Flask, store: evmod.Store, cat: catmod.Catalog) -> None:
                     texts[i] = (version.path / it.file).read_text(errors="replace")
         history = store.history(t, eid)
         latest = store.load(t.name, eid)
+        # The newest collection failed: show its command and output right away.
+        failed, failed_logs = None, []
+        if not v and history and history[0]["status"] == "failed":
+            failed = store.load(t.name, eid, history[0]["version"])
+            if failed:
+                for it in failed.items:
+                    if it.type == "text" and it.file.endswith(".txt"):
+                        lines = (failed.path / it.file).read_text(errors="replace").splitlines()
+                        cut = len(lines) > LOG_TAIL
+                        failed_logs.append({"name": it.caption or it.file, "cut": len(lines) - LOG_TAIL if cut else 0,
+                                            "text": "\n".join(lines[-LOG_TAIL:]) or "(empty)"})
         return render_template("evidence.html", tab="manual" if ev.kind == "manual" else "auto", ev=ev,
                                version=version, texts=texts, history=history,
                                is_latest=bool(version and latest and version.version == latest.version),
-                               used_by=cat.tests_using(eid),
+                               used_by=cat.tests_using(eid), failed=failed, failed_logs=failed_logs,
                                attempt=rmod.last_attempt(store.db, t, eid) if ev.kind == "auto" else None)
 
     @app.post("/t/<name>/evidence/<eid>/images")

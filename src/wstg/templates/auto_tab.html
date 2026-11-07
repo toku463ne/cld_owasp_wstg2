@@ -43,7 +43,8 @@
       <td><span class="status s-{{ {'complete': 'pass', 'skipped': 'none', 'pending': 'none', 'running': 'started'}.get(it.status, 'fail') }}">{{ it.status }}</span></td>
       <td>{% if it.status == 'running' %}{% if job.stop_seq == it.seq %}<span class="muted">stopping…</span>{% elif can_write and job.status == 'running' %}<form method="post" class="inline" action="{{ url_for('auto_stop_item', name=target.name, job_id=job.id, seq=it.seq) }}">
         <input type="hidden" name="csrf" value="{{ csrf }}"><button class="danger" data-confirm="Stop {{ it.evidence_id }}? The job goes on with the next item.">Stop</button></form>{% endif %}{% endif %}
-        {{ it.message }}{% if it.exit_code is not none %} <span class="muted">(exit {{ it.exit_code }})</span>{% endif %}</td>
+        {{ it.message }}{% if it.exit_code is not none %} <span class="muted">(exit {{ it.exit_code }})</span>{% endif %}
+        {% if it.version and it.status in ('failed', 'cancelled') %} · <a href="{{ url_for('evidence_page', name=target.name, eid=it.evidence_id, v=it.version) }}">log</a>{% endif %}</td>
       <td class="nowrap">{{ it.finished_at or '' }}</td></tr>
     {% endfor %}
   </table>
@@ -59,7 +60,7 @@
     <td class="nowrap">{{ e.level }}{% if e.heavy %} <span class="chip warn">heavy</span>{% endif %}{% if e.passive %} <span class="chip">passive</span>{% endif %}</td>
     <td><code class="small">{{ e.argv | reject('in', ['{proxy_args}', '{pause_args}']) | join(' ') }}</code>{% if e.load_note %}<div class="note">{{ e.load_note }}</div>{% endif %}</td>
     <td class="nowrap">{% if have.get(e.id) %}{{ have[e.id].created_at }}<br><span class="muted">v{{ have[e.id].version }}</span>
-      {% elif failed.get(e.id) %}<span class="status s-fail">failed</span><br><span class="muted small">{{ failed[e.id].summary }}</span>
+      {% elif failed.get(e.id) %}<a href="{{ url_for('evidence_page', name=target.name, eid=e.id) }}#failed-log"><span class="status s-fail">failed</span></a><br><span class="muted small">{{ failed[e.id].summary }}</span>
       {% else %}<span class="muted">not collected</span>{% endif %}</td>
     <td>{{ test_links(cat.tests_using(e.id), target) }}</td>
   </tr>
