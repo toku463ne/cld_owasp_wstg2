@@ -1,0 +1,97 @@
+# Evidence used by the Business Logic (BUSL) scenarios.
+# Schema: see the comments at the top of core.yaml.
+# Business-logic testing depends on the application's rules and needs test accounts and
+# test data, so it is manual. The crawl surfaces some entry points (hidden fields,
+# upload forms); the rest comes from the tester driving the flows.
+evidence:
+
+  - id: logic-validation-tests
+    title: Business-logic data validation tests
+    target_type: fqdn
+    kind: manual
+    description: >-
+      Per business value (amount, quantity, date, state), the out-of-range values sent
+      with client validation bypassed (negative, zero, excessive, past date, inconsistent
+      total vs. lines) and whether the server accepted them, with the business effect.
+
+  - id: forge-request-tests
+    title: Request-forging tests
+    target_type: fqdn
+    kind: manual
+    description: >-
+      Per hidden or undisclosed field/parameter (price, status, userId, discount, role)
+      added or changed in a crafted request: whether the server used the client value
+      instead of its own, with the request and result.
+
+  - id: integrity-check-tests
+    title: Integrity-check tests
+    target_type: fqdn
+    kind: manual
+    description: >-
+      Per piece of data that should be integrity-checked (signed token, amount, quantity,
+      hidden field, JWT): the tampering done (unsigned, altered, signature stripped) and
+      whether the server detected it or recalculated server-side. Include whether audit
+      logs can be tampered.
+
+  - id: process-timing-tests
+    title: Process-timing tests
+    target_type: fqdn
+    kind: manual
+    description: >-
+      Response-time measurements where timing may leak information (success/failure,
+      exists/absent) and attempts to abuse a timing window or race in a time-dependent
+      function (booking, stock, coupon), with the statistics and whether an advantage was
+      gained.
+
+  - id: function-limit-tests
+    title: Use-count limit tests
+    target_type: fqdn
+    kind: manual
+    description: >-
+      Per limited function (coupon, vote, withdrawal, OTP attempts), the repeated and
+      parallel attempts made and whether the limit was exceeded, including bypasses such
+      as changing session or racing. Use test accounts and test data; real side effects
+      are possible.
+    load_note: Repeating a function on purpose can cause real side effects (withdrawals, OTP sends). Use test accounts and test data, and keep counts small.
+
+  - id: workflow-tests
+    title: Workflow-circumvention tests
+    target_type: fqdn
+    kind: manual
+    description: >-
+      Per multi-step flow (apply/approve/confirm, cart/checkout), the attempts to skip,
+      reorder, or revisit steps (direct URL, back button, parallel tabs) and whether an
+      invalid final state was reached (confirmed without payment, finalised without
+      approval), with the requests.
+
+  - id: misuse-defense-tests
+    title: Application-misuse defence tests
+    target_type: fqdn
+    kind: manual
+    description: >-
+      The abnormal usage attempted (rapid repeats, out-of-order actions, bulk requests,
+      automated tooling) and whether the application detected, logged, rate-limited, or
+      blocked it, including the owner's monitoring/alerting answer. Note the absence of any
+      active defence.
+    load_note: Rapid or bulk requests are effectively a load test; stay within what the target can bear and ramp up gradually.
+
+  - id: upload-type-tests
+    title: Unexpected file-type upload tests
+    target_type: fqdn
+    kind: manual
+    description: >-
+      Per upload feature, the unexpected types and bypasses tried (.php/.jsp/.svg/.html,
+      extension spoofing like shell.php.jpg, Content-Type spoofing, case and double
+      extensions) and whether they were accepted, plus whether the stored file is reachable
+      from the web.
+
+  - id: upload-malicious-tests
+    title: Malicious-file upload tests
+    target_type: fqdn
+    kind: manual
+    description: >-
+      The harmless test specimens uploaded (EICAR test string, a benign web shell, an
+      oversized file, a docx/svg with an XXE payload) and whether they were stored,
+      scanned, size/type-checked, isolated from the web root, or executable (checked by
+      requesting the stored file). Use only harmless specimens, never real malware.
+    load_note: Use only harmless specimens (EICAR, benign scripts); never upload real malware. An oversized file can stress storage; keep it modest.

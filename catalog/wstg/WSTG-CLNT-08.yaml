@@ -1,0 +1,31 @@
+id: WSTG-CLNT-08
+overview: >-
+  Check any remaining Flash (SWF) content for cross-site flashing: unsafe
+  allowScriptAccess/allowDomain settings or FlashVars that let script run or navigation be
+  controlled.
+pass: >-
+  No Flash content remains (the normal case today).
+fail: >-
+  An SWF remains and its settings allow script execution or cross-domain access.
+notes:
+  - Modern browsers do not run Flash, but a remaining asset should be removed; advise cleanup.
+finding_kinds: [cross-site-flashing]
+steps:
+  - summary: Look for SWF assets in the crawl
+    auto_run: true
+    evidence: [katana-crawl, site-assets]
+    command: >-
+      grep -rhoiE '[^ "'"'"'<>]+\.swf' {ev:katana-crawl}/katana.txt {ev:site-assets}/site 2>/dev/null | sort -u | head
+      || echo "no SWF asset found (Flash content is likely absent)"
+  - summary: Review SWF settings and FlashVars (manual)
+    evidence: [flash-tests]
+    operation: >-
+      If any SWF remains, review its allowScriptAccess/allowDomain settings and whether
+      FlashVars let script run or navigation be controlled from outside. If none remains,
+      write "no Flash content". Record in flash-tests.
+  - summary: Judge cross-site flashing
+    evidence: [flash-tests]
+    ai_task: >-
+      From steps 1 and 2 decide whether cross-site flashing is possible. Verdict: fail when
+      a remaining SWF allows script execution or cross-domain access; pass when no Flash
+      content remains or it is safely configured; "-" when flash-tests is missing.

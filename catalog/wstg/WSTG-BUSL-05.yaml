@@ -1,0 +1,29 @@
+id: WSTG-BUSL-05
+overview: >-
+  Check that limits on how many times a function can be used (coupon, vote, withdrawal,
+  OTP attempts) are enforced on the server and cannot be exceeded by repetition or
+  concurrency.
+pass: >-
+  The use count is counted or locked server-side; exceeding the limit is refused, and
+  concurrency does not slip past it.
+fail: >-
+  A limited function can be repeated without limit, or a race lets a one-time action run
+  several times.
+notes:
+  - Try bypasses: new sessions, parallel requests.
+finding_kinds: [function-limit-bypass]
+steps:
+  - summary: Repeat and race a limited function (manual)
+    evidence: [function-limit-tests]
+    operation: >-
+      For a function that should be limited (coupon apply, vote, withdrawal, OTP attempt),
+      repeat it past the limit, and send parallel requests to slip a one-time action
+      through more than once. Try changing the session to reset a per-session counter.
+      Record whether the limit held in function-limit-tests.
+    load_note: This repeats a real function on purpose and may cause real side effects (withdrawals, OTP sends); use test accounts and test data, small counts.
+  - summary: Judge use-count limits
+    evidence: [function-limit-tests]
+    ai_task: >-
+      From step 1 decide whether the limit is enforced. Verdict: fail when the function was
+      repeated past its limit or a race bypassed a one-time limit; pass when the server
+      counts/locks and refuses excess; "-" when function-limit-tests is missing.

@@ -248,10 +248,23 @@ _HOSTPORT_RE = re.compile(r"^([A-Za-z0-9.-]+\.[A-Za-z]{2,}):(\d+)$")
 _BARE_HOST_RE = re.compile(r"^(?:[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?\.)+[A-Za-z]{2,63}\.?$")
 
 
+# Flags whose value is request content (a header), never a host to connect to.
+# A URL or host inside such a value must not be read as a contacted host: curl -H
+# "Origin: https://evil.example" connects to the request URL, not to evil.example.
+_HEADER_FLAGS = {"-H", "--header"}
+
+
 def contacted(argv: list[str], target: Target) -> list[tuple[str, int | None]]:
     """Hosts (and ports, when known) a rendered command line would contact."""
     out = []
+    skip_next = False
     for a in argv:
+        if skip_next:
+            skip_next = False
+            continue
+        if a in _HEADER_FLAGS:
+            skip_next = True
+            continue
         for scheme, host, port in _URL_RE.findall(a):
             out.append((host.lower(), int(port) if port else (443 if scheme == "https" else 80)))
         m = _HOSTPORT_RE.match(a)

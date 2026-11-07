@@ -1,0 +1,35 @@
+id: WSTG-BUSL-02
+overview: >-
+  Check whether a crafted request can carry values or parameters the UI never offers
+  (price, role, status, owner) and have the server trust them, reaching hidden or
+  unintended behaviour.
+pass: >-
+  Unexpected parameters are ignored; price, privilege, state, and ownership always come
+  from the server's own values.
+fail: >-
+  Adding or changing a hidden or undisclosed parameter (price, role, discount, userId)
+  changes the result.
+notes:
+  - Hidden fields and constants inside the JavaScript are the starting points.
+finding_kinds: [forgeable-request]
+steps:
+  - summary: Find hidden fields and client-side constants to try
+    auto_run: true
+    evidence: [katana-crawl, site-assets]
+    command: >-
+      grep -rhoiE '<input[^>]*type=["'"'"']?hidden[^>]*name=["'"'"']?[A-Za-z0-9_.-]+' {ev:katana-crawl}/responses 2>/dev/null | sort -u | head;
+      grep -rhoiE '"(price|role|status|discount|isAdmin|owner|user_?id|amount)"\s*:' {ev:site-assets}/site 2>/dev/null | sort -u | head
+  - summary: Add or change undisclosed parameters in a crafted request (manual)
+    evidence: [forge-request-tests]
+    operation: >-
+      In a crafted request, add or change parameters the UI does not expose (price, status,
+      userId, discount, role), including guessed ones not sent by the normal flow, and see
+      whether the server uses the client value instead of its own. Record each in
+      forge-request-tests.
+  - summary: Judge request forging
+    evidence: [forge-request-tests]
+    ai_task: >-
+      From step 2 decide whether the server trusts client-supplied values it should own.
+      Verdict: fail when an unexpected or hidden parameter changed the result; pass when
+      such parameters are ignored and server values are used; "-" when forge-request-tests
+      is missing.

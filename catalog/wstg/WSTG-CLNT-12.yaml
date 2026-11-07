@@ -1,0 +1,32 @@
+id: WSTG-CLNT-12
+overview: >-
+  Check that sensitive data (session tokens, personal data, secrets) is not kept in
+  browser storage (localStorage, sessionStorage, IndexedDB), where XSS could read it.
+pass: >-
+  No credentials, tokens, or personal data are stored in browser storage.
+fail: >-
+  An access token or personal data is kept in localStorage in readable form and could be
+  stolen via XSS.
+notes:
+  - Check whether storage is cleared on logout.
+finding_kinds: [browser-storage-sensitive-data]
+steps:
+  - summary: Find browser-storage writes in the client scripts
+    auto_run: true
+    evidence: [site-assets]
+    command: >-
+      grep -rhnoiE '(localStorage|sessionStorage|indexedDB)\.[A-Za-z]+\([^)]*' {ev:site-assets}/site 2>/dev/null | sort -u | head -40
+      || echo "no browser-storage usage in the collected scripts"
+  - summary: Inspect stored data in the browser (manual)
+    evidence: [browser-storage-tests]
+    operation: >-
+      In DevTools Application, inspect localStorage, sessionStorage, IndexedDB, and cookies
+      for session tokens, personal data, or secrets kept in readable form, whether they
+      survive logout, and whether they are trusted on read. Record in browser-storage-tests.
+  - summary: Judge browser storage
+    evidence: [browser-storage-tests]
+    ai_task: >-
+      From step 2 decide whether sensitive data is in browser storage. Verdict: fail when a
+      token, secret, or personal data is stored readably (stealable via XSS) or not cleared
+      on logout; pass when no sensitive data is stored client-side; "-" when
+      browser-storage-tests is missing.

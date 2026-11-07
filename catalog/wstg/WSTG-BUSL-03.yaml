@@ -1,0 +1,35 @@
+id: WSTG-BUSL-03
+overview: >-
+  Check that the integrity of client-influenced data (signed tokens, totals, hidden
+  fields, JWTs) is verified on the server, so tampering is detected or the value is
+  recalculated.
+pass: >-
+  Server-side values are authoritative; client-supplied values are verified or
+  recalculated, and tampering is detected.
+fail: >-
+  An unsigned token or a total can be set by the client, or a signature can be stripped or
+  altered without detection.
+notes:
+  - Include whether audit logs can be tampered.
+finding_kinds: [integrity-check-missing]
+steps:
+  - summary: Tamper with integrity-checked data (manual)
+    evidence: [integrity-check-tests]
+    operation: >-
+      Alter data that should be integrity-checked (a signed token, an amount, a quantity,
+      a hidden field, a JWT): strip or change the signature, change the value, and resend.
+      Check whether the server detects it or recalculates server-side. Record in
+      integrity-check-tests.
+  - summary: Check server-side recalculation and audit integrity (manual)
+    evidence: [integrity-check-tests]
+    operation: >-
+      Confirm whether the server recalculates or re-verifies client-supplied values rather
+      than trusting them, and whether audit logs can be altered. Add the results to
+      integrity-check-tests.
+  - summary: Judge integrity checks
+    evidence: [integrity-check-tests]
+    ai_task: >-
+      From steps 1 and 2 decide whether integrity is enforced. Verdict: fail when a value
+      or signature could be tampered without detection or the client could set an
+      authoritative value; pass when the server verifies or recalculates; "-" when
+      integrity-check-tests is missing.

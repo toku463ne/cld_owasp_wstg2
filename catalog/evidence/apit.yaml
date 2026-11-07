@@ -1,0 +1,38 @@
+# Evidence used by the API Testing (APIT) scenario.
+# Schema: see the comments at the top of core.yaml.
+evidence:
+
+  - id: graphql-introspection
+    title: GraphQL introspection probe
+    target_type: fqdn
+    kind: auto
+    level: light
+    description: >-
+      One small introspection query ({__schema{types{name kind}}}) sent to common GraphQL
+      endpoints, saving one response body per endpoint under bodies/ with a
+      "code content-type URL" line in stdout.txt. If a body contains __schema or type
+      names, introspection is enabled and the schema is exposed. A single read-only query
+      per endpoint; nothing is changed.
+    argv: [curl, -sS, -k, --max-time, "10", --create-dirs, -H, "Content-Type: application/json",
+           -d, '{"query":"{__schema{types{name kind}}}"}',
+           -w, "%{http_code} %{content_type} %{url_effective}\n", -o, "{out}/bodies/graphql.json", "{base_url}/graphql",
+           --next, -sS, -k, --max-time, "10", --create-dirs, -H, "Content-Type: application/json",
+           -d, '{"query":"{__schema{types{name kind}}}"}',
+           -w, "%{http_code} %{content_type} %{url_effective}\n", -o, "{out}/bodies/api-graphql.json", "{base_url}/api/graphql",
+           --next, -sS, -k, --max-time, "10", --create-dirs, -H, "Content-Type: application/json",
+           -d, '{"query":"{__schema{types{name kind}}}"}',
+           -w, "%{http_code} %{content_type} %{url_effective}\n", -o, "{out}/bodies/v1-graphql.json", "{base_url}/v1/graphql"]
+    files: [bodies]
+    timeout: 120
+
+  - id: graphql-tests
+    title: GraphQL / API abuse tests
+    target_type: fqdn
+    kind: manual
+    description: >-
+      For each GraphQL (or similar) endpoint: whether introspection is enabled in
+      production, which sensitive queries/mutations can be called without authorization,
+      whether deep nesting or aliased/batched queries bypass any depth/complexity/rate
+      limit (ramped gradually), and the results. Report authorization gaps together with
+      the ATHZ findings.
+    load_note: Deep-nesting or alias-heavy queries are exactly the GraphQL DoS case; without a cost limit one request can overload the server. Raise nesting depth gradually.

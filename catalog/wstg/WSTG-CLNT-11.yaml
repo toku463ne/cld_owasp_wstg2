@@ -1,0 +1,34 @@
+id: WSTG-CLNT-11
+overview: >-
+  Check that cross-document messaging (postMessage) is used safely: senders set an explicit
+  targetOrigin, and receivers verify event.origin before acting on the message.
+pass: >-
+  Senders set a specific targetOrigin, and receivers validate event.origin before using
+  the data.
+fail: >-
+  targetOrigin is "*", or a receiver acts on message data (DOM write, eval, sensitive
+  action) without checking the origin.
+notes:
+  - Find the receivers quickly by searching for addEventListener('message').
+finding_kinds: [web-messaging-weakness]
+steps:
+  - summary: Find postMessage senders and receivers in the scripts
+    auto_run: true
+    evidence: [site-assets]
+    command: >-
+      grep -rhnoiE "(addEventListener\(['\"]message|onmessage|postMessage\()" {ev:site-assets}/site 2>/dev/null | sort -u | head -40
+      || echo "no postMessage usage in the collected scripts"
+  - summary: Check origin validation and targetOrigin (manual)
+    evidence: [web-messaging-tests]
+    operation: >-
+      For each message receiver, check whether it verifies event.origin before acting on
+      the data (DOM write, eval, sensitive action), and whether any sender uses
+      targetOrigin "*" with sensitive data. Send a message from another origin and see
+      whether it is accepted. Record in web-messaging-tests.
+  - summary: Judge web messaging
+    evidence: [web-messaging-tests]
+    ai_task: >-
+      From step 2 decide whether postMessage is handled safely. Verdict: fail when a
+      receiver acts on data without an origin check or a sender leaks data with
+      targetOrigin "*"; pass when senders target a specific origin and receivers validate
+      event.origin; "-" when web-messaging-tests is missing.

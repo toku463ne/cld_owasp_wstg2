@@ -1,0 +1,35 @@
+id: WSTG-BUSL-08
+overview: >-
+  Check that uploads of unexpected file types are rejected by validating both the
+  extension and the actual content (magic bytes), so only allowed types are stored.
+pass: >-
+  Both the extension and the real content are checked, and only permitted types are
+  accepted.
+fail: >-
+  Extension or Content-Type spoofing stores a disallowed type (for example a script),
+  especially in a web-reachable location.
+notes:
+  - Severity depends heavily on whether the store is web-reachable and executable (see WSTG-BUSL-09).
+finding_kinds: [unrestricted-file-upload]
+steps:
+  - summary: Find upload features in the crawl
+    auto_run: true
+    evidence: [katana-crawl]
+    command: >-
+      grep -rhoiE '<input[^>]*type=["'"'"']?file[^>]*>' {ev:katana-crawl}/responses 2>/dev/null | head;
+      grep -oiE '/(upload|import|attach|avatar|file|media|document)[^ "'"'"'<>]*' {ev:katana-crawl}/katana.txt 2>/dev/null | sort -u | head
+      || echo "no obvious upload feature in the crawl"
+  - summary: Upload unexpected types and try filter bypasses (manual)
+    evidence: [upload-type-tests]
+    operation: >-
+      In each upload feature send unexpected types (.php, .jsp, .svg, .html) and bypasses
+      (extension spoofing shell.php.jpg, Content-Type spoofing, case and double
+      extensions), and note what is accepted and whether the stored file is reachable from
+      the web. Record in upload-type-tests.
+  - summary: Judge unexpected file-type upload
+    evidence: [upload-type-tests]
+    ai_task: >-
+      From step 2 decide whether unexpected types are rejected. Verdict: fail when a
+      disallowed type was stored through extension or Content-Type spoofing (worse if
+      web-reachable); pass when both extension and content are validated; "-" when
+      upload-type-tests is missing.

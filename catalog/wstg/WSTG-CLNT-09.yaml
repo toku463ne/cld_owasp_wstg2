@@ -1,0 +1,33 @@
+id: WSTG-CLNT-09
+overview: >-
+  Check that pages, especially those with state-changing actions, cannot be framed by
+  other sites, so a clickjacking overlay cannot lure a user into operating them.
+pass: >-
+  Sensitive pages set X-Frame-Options DENY/SAMEORIGIN or a CSP frame-ancestors directive.
+fail: >-
+  A sensitive page can be framed by any site and operated through an overlay (shown by a
+  PoC).
+notes:
+  - The target is pages with state-changing actions; static pages have limited impact.
+finding_kinds: [clickjacking]
+steps:
+  - summary: Check the framing-protection headers on the root response
+    auto_run: true
+    evidence: [http-root-https]
+    command: >-
+      grep -iE '^(x-frame-options|content-security-policy):' {ev:http-root-https}/stdout.txt
+      | grep -iE 'x-frame-options|frame-ancestors' || echo "no X-Frame-Options or CSP frame-ancestors on the root response"
+  - summary: Frame a state-changing page with a PoC (manual)
+    evidence: [clickjacking-tests]
+    operation: >-
+      Build a PoC HTML page that frames a state-changing screen (transfer, settings) and
+      check whether it displays and can be operated inside the frame. Note which sensitive
+      screens lack X-Frame-Options or CSP frame-ancestors. Save the PoC in
+      clickjacking-tests.
+  - summary: Judge clickjacking
+    evidence: [clickjacking-tests, http-root-https]
+    ai_task: >-
+      From steps 1 and 2 decide whether sensitive pages can be framed. Verdict: fail when a
+      state-changing page can be framed and operated (no X-Frame-Options or frame-ancestors);
+      pass when sensitive pages forbid framing; "-" when clickjacking-tests is missing and
+      the headers were not captured.

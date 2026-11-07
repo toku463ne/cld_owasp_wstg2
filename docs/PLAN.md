@@ -9,7 +9,7 @@ Last updated: 2026-11-08
 | # | Milestone | Status | Notes |
 |---|---|---|---|
 | M0 | Skeleton | **Done** (`5d9c082`) | 23 tests pass; CLI and waitress server checked by hand |
-| M1 | Catalog | **In progress** | Index (97), schema and validator, INFO + CONF + IDNT + CRYP + ATHN + ATHZ + SESS + INPV scenarios (70); ERRH onwards pending |
+| M1 | Catalog | **Done** | All 94 WSTG v4.2 scenarios (97 tests, 3 merged); schema and validator; 121 evidence; catalog-check clean |
 | M2 | Targets and main page | **Done** | Targets, scope records and check, selector, tabs, WSTG index |
 | M3 | WSTG page | **Done** | Overview, criteria, steps, verdict/reset, commands, evidence (view, edit, collected date), findings, AI prompt |
 | M4 | Manual evidence | **Done** (browser paste to be checked on Kali) | Versioned store, capture box, upload, text, edit/remove as new versions |
@@ -109,6 +109,15 @@ Last updated: 2026-11-08
 - `tests/test_inpv.py`: INPV-01/19 candidate extraction (parameter vs URL-taking parameter), INPV-17 probe reflection, every INPV page renders, INPV-03 redirects to CONF-06. `catalog-check` clean (70 scenarios, 95 evidence); full suite 204 passed.
 - Not run against any host; all injection payloads/commands to be exercised against a lab target on Kali.
 
+### M1 ERRH / BUSL / CLNT / APIT delivered (catalog complete)
+- 24 scenarios finish the catalog: ERRH-01 (ERRH-02 merged here), BUSL-01 to 09, CLNT-01 to 13, APIT-01. All 94 WSTG v4.2 scenarios now exist (97 tests, 3 merged: INFO-09→INFO-08, INPV-03→CONF-06, ERRH-02→ERRH-01); `catalog-check` reports 0 tests without a scenario.
+- Three new harmless light auto evidence (headers/bodies only, nothing changed): `error-probes` (a few error-triggering GETs; ERRH-01 auto-run greps the bodies for stack-trace/SQL/internal-path markers), `cors-probe` (GET with an untrusted Origin; CLNT-07 auto-run flags a reflected/wildcard/null Origin combined with credentials=true), `graphql-introspection` (a read-only `{__schema{types{name kind}}}` to common endpoints; APIT-01 auto-run reports which bodies expose `__schema`). The two-field innermost selection avoids `{name}` being read as a `{placeholder}`.
+- Business logic (BUSL) depends on the application's rules and needs test accounts, so it is manual throughout; CLNT and APIT confirm in the browser/DevTools. Auto-run steps otherwise read only the crawl, `site-assets` (DOM sources/sinks, postMessage, storage, dynamic resource URLs, SWF), and `http-root-https` headers (clickjacking) to surface candidates. Each test ends with an `ai_task` verdict. Load notes on the disruptive ones (BUSL-05/07 repetition, BUSL-09 uploads, APIT-01 deep queries).
+- ~44 finding kinds added across ERRH/BUSL/CLNT/APIT; CLNT-01/02 share dom-xss-tests, INPV-11 reuse noted. Per-test manual evidence added in `catalog/evidence/{errh,busl,clnt,apit}.yaml`, each keeping retrieved data to a summary.
+- Scope-check refinement (`targets.contacted`): a URL or host inside a `-H`/`--header` value is request content, not a connection target, so it is no longer read as a contacted host (fixed a false positive on `cors-probe`'s untrusted Origin). New test `test_header_values_are_not_treated_as_contacted_hosts`; the connection URL is still checked.
+- `tests/test_errh_busl_clnt_apit.py`: ERRH-01 marker scan, CLNT-07 danger/safe CORS branches, CLNT-09 missing frame headers, APIT-01 introspection detection, every page renders. Full suite 234 passed.
+- Not run against any host; all probes and manual commands to be exercised against a lab target on Kali.
+
 ### M8 (pulled forward) delivered
 - `scripts/setup-kali.sh`: apt base packages, uv, data dirs (`/srv/wstg2/{evidence,db}`), config file and secret key generated once, `uv sync`, `check-config`, `migrate`, first admin, systemd user service `wstg2-web` (restarted on every run, lingering), nginx site rendered from `deploy/nginx/wstg2.conf.template` (port and allow list from the config), `nginx -t` with rollback, smoke test. Options `--no-packages`, `--no-nginx`, `--no-systemd`, `--dry-run`. Rerun after `git pull` to update a Kali host.
 - New config key `WSTG_WEB_PORT` (default 8083), read by the setup script only.
@@ -144,7 +153,8 @@ Last updated: 2026-11-08
 
 ### Open items carried forward
 - Check on Kali: katana `-sr -srd` (store responses) and the responses folder layout; gitleaks package and `detect --no-git --redact --report-format json` output fields (RuleID, File, StartLine, Match); the jump host (Ubuntu 24.04) with real whois/traceroute/nmap/sslscan; RDAP for the target's TLD; the proxy options of each tool (openssl, testssl, whatweb, nikto, ffuf, katana, subfinder, wafw00f) behind the real proxy; Kali package names in `catalog/tools.yaml` (katana, padbuster, theharvester); browser clipboard paste into the capture box, the worker with real tools against a lab target (tool options such as katana `-ct`), backup.
-- M1: the remaining categories (ERRH, BUSL, CLNT, APIT).
+- M1 is complete (all 94 scenarios). Remaining catalog work is refinement against real lab targets, not new categories.
+- Check on Kali: the new light probes against a lab target — `error-probes` (does `%c0%ae%c0%ae/` reach the server cleanly), `cors-probe` (CORS headers on `/` and `/api`), `graphql-introspection` (endpoints and the introspection response), `host-header-probe` (reflection) — and the many manual injection/logic commands.
 - Check on Kali: the ATHN `login-http` and `alt-auth-endpoints` curl `--next` chains against a lab target, and the manual-step commands (force browsing, cache-header loop, enumeration curl).
 - Check on Kali: the CONF evidence against a lab target (content-ffuf and backup-ffuf run time, Nikto JSON layout read by `jq '.. | objects | select(has("msg"))'`).
 - M9: headless-browser HAR recording (needs a decision on adding Playwright and a browser), HAR analysis (cookies, headers, parameters) to replace manual Burp checks.

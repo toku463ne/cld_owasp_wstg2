@@ -1,0 +1,33 @@
+id: WSTG-CLNT-05
+overview: >-
+  Check for CSS injection: whether input reflected into a style context lets an attacker
+  inject CSS, enabling display tampering or value exfiltration through selectors and
+  background requests.
+pass: >-
+  External input does not reach style declarations.
+fail: >-
+  Arbitrary CSS can be injected, and an attribute selector plus a background request can
+  read and send a value.
+notes:
+  - Impact is hard to convey; keep a PoC.
+finding_kinds: [css-injection]
+steps:
+  - summary: Find input reflected into style contexts
+    auto_run: true
+    evidence: [site-assets, http-root-https]
+    command: >-
+      grep -rhnoiE 'style\s*=|<style|cssText|\.style\.' {ev:site-assets}/site {ev:http-root-https}/body.html 2>/dev/null | head -30
+      || echo "no obvious style sink; confirm reflected inputs by hand"
+  - summary: Inject CSS and test exfiltration (manual)
+    evidence: [css-injection-tests]
+    operation: >-
+      Into inputs reflected into a style attribute or <style> inject a closing brace plus a
+      rule (`}body{background:url(//attacker/x)}`) and an attribute selector that triggers a
+      background request for a matched value, and check whether the CSS applies and a value
+      can be exfiltrated. Keep a PoC in css-injection-tests.
+  - summary: Judge CSS injection
+    evidence: [css-injection-tests]
+    ai_task: >-
+      From step 2 decide whether CSS can be injected. Verdict: fail when arbitrary CSS
+      applied, especially if a value could be exfiltrated or the display tampered; pass when
+      input never reaches style; "-" when css-injection-tests is missing.

@@ -1,0 +1,33 @@
+id: WSTG-CLNT-02
+overview: >-
+  Check whether attacker-controlled input reaches a JavaScript execution context
+  (eval, setTimeout, Function, a javascript: scheme, or a framework template binding) so
+  it runs as code.
+pass: >-
+  Values entering a JS string or expression are escaped and cannot break out into
+  execution.
+fail: >-
+  External input reaches eval/setTimeout/Function or a template binding and executes.
+notes:
+  - Overlaps WSTG-CLNT-01; state which sink fired.
+finding_kinds: [client-js-execution]
+steps:
+  - summary: Find JS execution sinks and framework bindings in the scripts
+    auto_run: true
+    evidence: [site-assets]
+    command: >-
+      grep -rhnoiE '(eval\(|setTimeout\(|setInterval\(|new Function|javascript:|ng-[a-z]+=|v-html|dangerouslySetInnerHTML)'
+      {ev:site-assets}/site 2>/dev/null | sort | uniq -c | sort -rn | head -40 || echo "no obvious JS execution sink in the collected scripts"
+  - summary: Trace input into a JS execution sink (manual)
+    evidence: [dom-xss-tests]
+    operation: >-
+      Using DevTools breakpoints, check whether user input reaches eval, setTimeout,
+      Function, a javascript: URL, or a template expression binding, and runs. Record the
+      path and the sink in dom-xss-tests.
+  - summary: Judge JavaScript execution
+    evidence: [dom-xss-tests]
+    ai_task: >-
+      From step 2 decide whether input is executed as JavaScript. Verdict: fail when input
+      reached an execution sink and ran (name the sink); pass when values are escaped out
+      of execution context; "-" when dom-xss-tests is missing. Note the overlap with
+      WSTG-CLNT-01.

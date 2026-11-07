@@ -1,0 +1,35 @@
+id: WSTG-CLNT-13
+overview: >-
+  Check for cross-site script inclusion (XSSI): whether an authenticated endpoint that
+  returns JavaScript or JSON can be loaded by an external page and its data read.
+pass: >-
+  Dynamic JS/JSON cannot be loaded as a script cross-site, or is protected by an
+  unguessable token; nosniff and a correct Content-Type are set.
+fail: >-
+  A cookie-authenticated JS/JSON response can be included with a <script src> from another
+  page and its data read.
+notes:
+  - Likely where a JSON response is a bare array literal or JSONP is supported.
+finding_kinds: [cross-site-script-inclusion]
+steps:
+  - summary: Find JS/JSON endpoints and JSONP callbacks
+    auto_run: true
+    evidence: [katana-crawl]
+    command: >-
+      grep -oiE '/[^ "'"'"'<>]*\.(json|js)(\?[^ "'"'"'<>]*)?' {ev:katana-crawl}/katana.txt 2>/dev/null | sort -u | head;
+      grep -oiE '[?&](callback|jsonp|cb)=[^&"'"'"'<> ]*' {ev:katana-crawl}/katana.txt 2>/dev/null | sort -u | head
+  - summary: Try to read the data cross-site (manual)
+    evidence: [xssi-tests]
+    operation: >-
+      For each authenticated JS/JSON endpoint, check whether it can be loaded with a
+      <script src> from an external page and its data read with cookie authentication
+      (array-literal JSON, JSONP), and whether X-Content-Type-Options: nosniff, a correct
+      Content-Type, and anti-CSRF are present (`curl` to see the Content-Type). Record in
+      xssi-tests.
+  - summary: Judge cross-site script inclusion
+    evidence: [xssi-tests]
+    ai_task: >-
+      From step 2 decide whether XSSI is possible. Verdict: fail when authenticated JS/JSON
+      data could be read cross-site via a script include; pass when it cannot be loaded as a
+      script or is token-protected with nosniff and a correct type; "-" when xssi-tests is
+      missing.

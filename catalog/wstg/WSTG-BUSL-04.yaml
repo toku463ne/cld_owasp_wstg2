@@ -1,0 +1,29 @@
+id: WSTG-BUSL-04
+overview: >-
+  Check whether process timing can be abused or leaks information: measurable differences
+  between outcomes, or a timing window or race that grants an advantage.
+pass: >-
+  Important operations are mutually exclusive (no double application under concurrency),
+  and timing does not reveal outcomes.
+fail: >-
+  Concurrent execution double-applies a coupon or withdrawal, or response timing reveals
+  success/failure or existence.
+notes:
+  - Concurrent requests are load; agree count and window with the owner.
+finding_kinds: [process-timing]
+steps:
+  - summary: Measure timing differences and look for a race window (manual)
+    evidence: [process-timing-tests]
+    operation: >-
+      Measure response times for different outcomes (success vs. failure, exists vs.
+      absent) and see whether they distinguish states. In a time-dependent function
+      (booking, stock, coupon) try to exploit a timing window. Record the statistics in
+      process-timing-tests.
+    load_note: Concurrent requests add load; agree the count and window with the owner (relates to WSTG-BUSL-05).
+  - summary: Judge process timing
+    evidence: [process-timing-tests]
+    ai_task: >-
+      From step 1 decide whether timing is abusable or leaky. Verdict: fail when timing
+      reveals an outcome or a window/race grants an advantage (double application); pass
+      when operations are exclusive and timing is uniform; "-" when process-timing-tests is
+      missing.

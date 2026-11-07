@@ -1,0 +1,34 @@
+id: WSTG-CLNT-01
+overview: >-
+  Check for DOM-based XSS: whether a client-side source (location.hash, query,
+  document.referrer) flows unsanitised into a dangerous sink (innerHTML, document.write,
+  eval) so a payload runs in the DOM without the server being involved.
+pass: >-
+  Client-side sources are not passed unprocessed to HTML or script sinks; payloads are
+  shown as text.
+fail: >-
+  A URL fragment or query reaches a DOM sink and a script executes.
+notes:
+  - The server response can be harmless and the issue still exist; a fragment never reaches the server log.
+  - State which sink fired, to separate CLNT-01 from INPV-01.
+finding_kinds: [dom-xss]
+steps:
+  - summary: Find source-to-sink patterns in the client JavaScript
+    auto_run: true
+    evidence: [site-assets]
+    command: >-
+      grep -rhnoiE '(location\.(hash|search|href)|document\.(referrer|URL|cookie)|innerHTML|outerHTML|document\.write|eval|setTimeout|setInterval|Function\()'
+      {ev:site-assets}/site 2>/dev/null | sort | uniq -c | sort -rn | head -40 || echo "no obvious DOM source/sink in the collected scripts"
+  - summary: Drive a payload from a source into a sink in the browser (manual)
+    evidence: [dom-xss-tests]
+    operation: >-
+      For each source-to-sink path, send a payload through the source (for example
+      `#<img src=x onerror=alert(1)>` in the URL fragment) and confirm it fires in the DOM
+      without a server round-trip. Trace the path with DevTools (or DOM Invader). Record
+      the sink and a screenshot in dom-xss-tests.
+  - summary: Judge DOM-based XSS
+    evidence: [dom-xss-tests]
+    ai_task: >-
+      From step 2 decide whether a client-side source reaches a sink and executes. Verdict:
+      fail when a payload ran in the DOM (name the sink); pass when sources are sanitised
+      before sinks; "-" when dom-xss-tests is missing.

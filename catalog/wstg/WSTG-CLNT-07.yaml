@@ -1,0 +1,38 @@
+id: WSTG-CLNT-07
+overview: >-
+  Check that CORS headers do not allow untrusted origins, especially together with
+  credentials, which would let another site read authenticated responses.
+pass: >-
+  Access-Control-Allow-Origin names only trusted origins; credentialed responses never use
+  a wildcard, a reflected origin, or a null origin.
+fail: >-
+  The server reflects an arbitrary Origin (or allows null) while setting
+  Access-Control-Allow-Credentials: true.
+notes:
+  - Check the response headers of the real request, not only the preflight; a bare * without credentials is weaker but still review the allowed origins.
+finding_kinds: [cors-misconfiguration]
+steps:
+  - summary: Check the CORS response to an untrusted Origin
+    auto_run: true
+    evidence: [cors-probe]
+    command: >-
+      grep -iE 'access-control-allow-(origin|credentials):' {ev:cors-probe}/stdout.txt || echo "no CORS headers returned";
+      grep -qiE 'access-control-allow-origin:[[:space:]]*(https://wstg-cors-marker\.example|\*|null)' {ev:cors-probe}/stdout.txt
+      && grep -qiE 'access-control-allow-credentials:[[:space:]]*true' {ev:cors-probe}/stdout.txt
+      && echo "DANGER: reflected/wildcard/null Origin together with credentials=true" || echo "no reflected-origin-plus-credentials combination in the probe"
+  - summary: Confirm an untrusted origin can read sensitive data (manual)
+    evidence: [cors-tests]
+    operation: >-
+      For each API path, send a crafted Origin (and a null origin) and read the CORS
+      response headers (`curl -s -D - -o /dev/null -H 'Origin: https://evil.example'
+      {base_url}/api`). Confirm whether an untrusted origin can read sensitive data with
+      credentials, and list the allowed origins with a judgement of each. Record in
+      cors-tests.
+  - summary: Judge CORS configuration
+    evidence: [cors-tests, cors-probe]
+    ai_task: >-
+      From steps 1 and 2 decide whether CORS is too permissive. Verdict: fail when an
+      arbitrary or null Origin is allowed with credentials, or an untrusted origin can read
+      sensitive data; pass when only trusted origins are allowed and credentialed responses
+      are not wildcarded/reflected; "-" when neither the probe nor cors-tests shows CORS
+      headers.

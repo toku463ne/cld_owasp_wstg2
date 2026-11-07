@@ -1,0 +1,34 @@
+id: WSTG-CLNT-06
+overview: >-
+  Check whether JavaScript builds the URL of a loaded resource (script, iframe, image,
+  fetch target) from user-controlled data, so an attacker-controlled location can be
+  loaded.
+pass: >-
+  Resource locations are fixed or allow-listed.
+fail: >-
+  A parameter changes where a script or other resource is loaded from, pulling in external
+  or malicious content.
+notes:
+  - Check especially for a surviving JSONP endpoint.
+finding_kinds: [client-resource-manipulation]
+steps:
+  - summary: Find dynamic resource-URL construction in the scripts
+    auto_run: true
+    evidence: [site-assets]
+    command: >-
+      grep -rhnoiE '(\.src\s*=|createElement\(["'"'"'](script|iframe|img)|XMLHttpRequest|fetch\(|\.open\(["'"'"']GET|jsonp|callback=)'
+      {ev:site-assets}/site 2>/dev/null | sort | uniq -c | sort -rn | head -40 || echo "no obvious dynamic resource loading in the collected scripts"
+  - summary: Substitute an attacker-controlled resource location (manual)
+    evidence: [resource-manipulation-tests]
+    operation: >-
+      Where a resource URL is built from user data (script/img/iframe src, fetch/XHR
+      target, or a JSONP callback), try to substitute an external or malicious location and
+      see whether it loads. Record the parameter and loaded resource in
+      resource-manipulation-tests.
+  - summary: Judge client-side resource manipulation
+    evidence: [resource-manipulation-tests]
+    ai_task: >-
+      From step 2 decide whether a resource location is controllable. Verdict: fail when an
+      external/malicious resource could be loaded via user input (including JSONP); pass
+      when locations are fixed or allow-listed; "-" when resource-manipulation-tests is
+      missing.

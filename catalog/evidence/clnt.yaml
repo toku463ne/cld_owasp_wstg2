@@ -1,0 +1,135 @@
+# Evidence used by the Client-side (CLNT) scenarios.
+# Schema: see the comments at the top of core.yaml.
+# Most client-side issues are confirmed in a browser (DevTools) and so are manual; the
+# crawl's stored responses and site-assets hold the JavaScript to read, and one harmless
+# probe checks the CORS response headers.
+evidence:
+
+  - id: cors-probe
+    title: CORS response to an untrusted Origin
+    target_type: fqdn
+    kind: auto
+    level: light
+    description: >-
+      One GET to {base_url}/ and to {base_url}/api with an untrusted Origin header
+      (a marker domain), saving the response headers, so the auto-run step can see whether
+      the Origin is reflected into Access-Control-Allow-Origin together with
+      Access-Control-Allow-Credentials: true. Headers only; nothing is changed.
+    argv: [curl, -sS, -k, --max-time, "10", -D, -, -o, /dev/null,
+           -H, "Origin: https://wstg-cors-marker.example", "{base_url}/",
+           --next, -sS, -k, --max-time, "10", -D, -, -o, /dev/null,
+           -H, "Origin: https://wstg-cors-marker.example", "{base_url}/api"]
+    timeout: 60
+
+  - id: dom-xss-tests
+    title: DOM-based XSS / JavaScript execution tests
+    target_type: fqdn
+    kind: manual
+    description: >-
+      Per source-to-sink path found in the client JavaScript (location.hash, query,
+      document.referrer, postMessage into innerHTML, document.write, eval, setTimeout,
+      Function): the payload sent (for example in the URL fragment) and whether it executed
+      in the DOM without the server being involved, with the sink identified and a
+      screenshot. Covers WSTG-CLNT-01 and CLNT-02.
+
+  - id: html-injection-tests
+    title: HTML injection tests
+    target_type: fqdn
+    kind: manual
+    description: >-
+      Per input reflected as HTML, the tags injected (<h1>, <b>, a fake form or link) and
+      whether they were interpreted rather than shown as text, with a note on the
+      phishing/content-spoofing impact even when no script runs.
+
+  - id: client-redirect-tests
+    title: Client-side URL redirect tests
+    target_type: fqdn
+    kind: manual
+    description: >-
+      Per redirect-controlling parameter (next, url, return), the external targets tried
+      (//evil.example, https:evil.example, scheme-relative and encoded variants) and
+      whether the browser navigated off-site, with the request. Note any OAuth-token or
+      phishing impact.
+
+  - id: css-injection-tests
+    title: CSS injection tests
+    target_type: fqdn
+    kind: manual
+    description: >-
+      Per input reflected into a style attribute or <style>, the CSS injected (a closing
+      brace plus a rule, an attribute selector with a background request) and whether it
+      applied, including whether it could read and exfiltrate a value. A PoC is helpful.
+
+  - id: resource-manipulation-tests
+    title: Client-side resource manipulation tests
+    target_type: fqdn
+    kind: manual
+    description: >-
+      Per place where JavaScript builds a resource URL (script/img/iframe src, fetch/XHR
+      target) from user-controlled data: whether an external or malicious location can be
+      substituted and loaded, with the parameter and the loaded resource. Note any JSONP
+      endpoint.
+
+  - id: cors-tests
+    title: CORS configuration tests
+    target_type: fqdn
+    kind: manual
+    description: >-
+      Beyond the automated probe: for each API path, the CORS response to a crafted Origin
+      (and a null origin), and whether an untrusted origin can read sensitive data with
+      credentials. List the allowed origins and judge whether each is appropriate.
+
+  - id: flash-tests
+    title: Cross-site flashing tests
+    target_type: fqdn
+    kind: manual
+    description: >-
+      Whether any Flash (SWF) content remains and, if so, its allowScriptAccess/allowDomain
+      settings and whether FlashVars let script run or navigation be controlled. Usually
+      "no Flash content"; note it for removal if any remains.
+
+  - id: clickjacking-tests
+    title: Clickjacking tests
+    target_type: fqdn
+    kind: manual
+    description: >-
+      A proof-of-concept HTML page that frames a state-changing screen, and whether the
+      screen is displayed and operable inside the frame. Record which sensitive screens
+      lack X-Frame-Options or CSP frame-ancestors (from the response headers) and the PoC.
+
+  - id: websocket-tests
+    title: WebSocket tests
+    target_type: fqdn
+    kind: manual
+    description: >-
+      Per WebSocket endpoint (DevTools Network/WS): whether it uses wss://, whether the
+      handshake checks Origin and authenticates, and whether messages are authorised and
+      validated (intercepted and altered to test authorization bypass or injection).
+
+  - id: web-messaging-tests
+    title: Web messaging (postMessage) tests
+    target_type: fqdn
+    kind: manual
+    description: >-
+      Per message receiver (addEventListener('message')) found in the JavaScript: whether
+      it verifies event.origin before acting on the data (DOM write, eval, sensitive
+      action), and whether any sender uses targetOrigin "*" with sensitive data.
+
+  - id: browser-storage-tests
+    title: Browser storage tests
+    target_type: fqdn
+    kind: manual
+    description: >-
+      The contents of localStorage, sessionStorage, IndexedDB, and cookies (DevTools
+      Application) and whether any session token, personal data, or secret is stored in a
+      readable form, whether it survives logout, and whether it is trusted on read.
+
+  - id: xssi-tests
+    title: Cross-site script inclusion (XSSI) tests
+    target_type: fqdn
+    kind: manual
+    description: >-
+      Per authenticated endpoint returning JS or JSON: whether it can be loaded from an
+      external page with a <script src> and its data read (cookie-authenticated, JSONP, or
+      array-literal JSON), and whether X-Content-Type-Options: nosniff, a correct
+      Content-Type, and anti-CSRF protection are present.

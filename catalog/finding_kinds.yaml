@@ -283,3 +283,83 @@ kinds:
   - id: ssrf
     title: Server-side request forgery
     subject: "the input, for example `url parameter`, `image fetch`"
+
+  # ---- error handling ------------------------------------------------------
+  - id: error-information-disclosure
+    title: Error page discloses internal details
+    subject: "the trigger, for example `invalid id on /api/order`, `500 on /checkout`"
+
+  # ---- business logic ------------------------------------------------------
+  - id: business-logic-validation
+    title: Business data not validated server-side
+    subject: "the field and rule, for example `quantity negative`, `price client-set`"
+  - id: forgeable-request
+    title: Unintended parameter trusted from the client
+    subject: "the parameter, for example `price`, `role`, `userId`"
+  - id: integrity-check-missing
+    title: Missing server-side integrity check
+    subject: "the data, for example `unsigned total`, `jwt signature`"
+  - id: process-timing
+    title: Process timing abused or leaking information
+    subject: "the function, for example `login timing`, `coupon race`"
+  - id: function-limit-bypass
+    title: Use-count limit not enforced
+    subject: "the function, for example `coupon apply`, `otp attempts`"
+  - id: workflow-bypass
+    title: Workflow step skipped or reordered
+    subject: "the flow, for example `checkout before payment`"
+  - id: no-misuse-defense
+    title: No detection or response to application misuse
+    subject: "the behaviour, for example `rapid automated requests`"
+  - id: unrestricted-file-upload
+    title: Unexpected file type accepted on upload
+    subject: "the upload and type, for example `avatar .php`, `attachment .svg`"
+  - id: malicious-file-upload
+    title: Malicious file stored or executable
+    subject: "the upload, for example `web shell in /uploads`, `eicar not scanned`"
+
+  # ---- client-side ---------------------------------------------------------
+  - id: dom-xss
+    title: DOM-based cross-site scripting
+    subject: "the source and sink, for example `location.hash to innerHTML`"
+  - id: client-js-execution
+    title: Attacker-controlled JavaScript execution (client-side)
+    subject: "the sink, for example `eval`, `setTimeout`"
+  - id: html-injection
+    title: HTML injection
+    subject: "the input, for example `name field`"
+  - id: client-open-redirect
+    title: Client-side open redirect
+    subject: "the parameter, for example `next`, `url`"
+  - id: css-injection
+    title: CSS injection
+    subject: "the input, for example `theme parameter`"
+  - id: client-resource-manipulation
+    title: Client-side resource location controllable
+    subject: "the resource, for example `script src from parameter`"
+  - id: cors-misconfiguration
+    title: Overly permissive CORS configuration
+    subject: "the endpoint, for example `/api`"
+  - id: cross-site-flashing
+    title: Cross-site flashing in Flash content
+    subject: "the swf, for example `player.swf`"
+  - id: clickjacking
+    title: Page can be framed (clickjacking)
+    subject: "the page URL without query, for example `www.example.com/transfer`"
+  - id: websocket-weakness
+    title: WebSocket weakness (transport, origin, or authorization)
+    subject: "the endpoint, for example `wss://www.example.com/ws`"
+  - id: web-messaging-weakness
+    title: Unsafe postMessage handling
+    subject: "where, for example `message handler on dashboard`"
+  - id: browser-storage-sensitive-data
+    title: Sensitive data in browser storage
+    subject: "the item, for example `localStorage accessToken`"
+  - id: cross-site-script-inclusion
+    title: Cross-site script inclusion (XSSI)
+    subject: "the endpoint, for example `/api/user.json`"
+
+  # ---- api testing ---------------------------------------------------------
+  - id: graphql-exposure
+    title: GraphQL schema exposure or query abuse
+    subject: "the endpoint and issue, for example `/graphql introspection`, `/graphql no depth limit`"

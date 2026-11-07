@@ -134,6 +134,18 @@ def test_bare_host_arguments_are_checked(db, cfg):
                          today=date(2026, 6, 1))
 
 
+def test_header_values_are_not_treated_as_contacted_hosts(db, cfg):
+    # A URL/host inside a -H value is request content, not a connection target.
+    f = tm.create(db, cfg, "www.example.com", "fqdn")
+    s = make_scope(db, f)
+    tm.check_command(f, s, ["curl", "-H", "Origin: https://evil.example", "https://www.example.com/"],
+                     passive=False, today=date(2026, 6, 1))
+    # the connection host still is checked
+    with pytest.raises(tm.ScopeError, match="evil.example"):
+        tm.check_command(f, s, ["curl", "-H", "Origin: https://ok.example", "https://evil.example/"],
+                         passive=False, today=date(2026, 6, 1))
+
+
 def test_every_catalog_command_passes_a_standard_scope(db, cfg, tmp_path):
     """The real catalog's active commands only contact the target on 80/443."""
     from wstg import catalog as catmod

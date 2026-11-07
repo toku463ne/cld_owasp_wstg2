@@ -1,0 +1,26 @@
+id: WSTG-CLNT-03
+overview: >-
+  Check whether input is interpreted as HTML in the page, letting an attacker inject
+  markup (fake forms, links) even if no script runs, which enables content spoofing and
+  phishing.
+pass: >-
+  Tags in input are escaped and shown as text.
+fail: >-
+  Arbitrary tags are interpreted, so fake content can be injected (reportable even without
+  script execution).
+notes:
+  - Report HTML injection even when it does not reach XSS; the impact is content spoofing plus luring.
+finding_kinds: [html-injection]
+steps:
+  - summary: Inject HTML tags into reflected inputs (manual)
+    evidence: [html-injection-tests]
+    operation: >-
+      Into inputs reflected into the page send `<h1>test</h1>`, `<b>`, and a fake form or
+      link, and check whether the tags are interpreted rather than shown as text, in both
+      body and attribute contexts. Record in html-injection-tests.
+  - summary: Judge HTML injection
+    evidence: [html-injection-tests]
+    ai_task: >-
+      From step 1 decide whether input is interpreted as HTML. Verdict: fail when injected
+      tags render (content spoofing/phishing), noting if it can reach XSS; pass when tags
+      are escaped; "-" when html-injection-tests is missing.

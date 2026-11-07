@@ -1,0 +1,31 @@
+id: WSTG-CLNT-04
+overview: >-
+  Check for client-side open redirects: whether a redirect target taken from client input
+  can be set to an external site, enabling phishing or OAuth-token theft.
+pass: >-
+  The redirect target is restricted to an allow-list or relative paths.
+fail: >-
+  A value such as ?next=//evil.example sends the browser to an external site.
+notes:
+  - Post-login redirect is the typical entry point.
+finding_kinds: [client-open-redirect]
+steps:
+  - summary: Find redirect-controlling parameters
+    auto_run: true
+    evidence: [katana-crawl]
+    command: >-
+      grep -oiE '[?&](next|url|return|returnto|redirect|redirect_uri|dest|destination|continue|goto|target|r|u)=[^&"'"'"'<> ]*'
+      {ev:katana-crawl}/katana.txt 2>/dev/null | sort -u | head -40 || echo "no redirect parameter in the crawl"
+  - summary: Point the redirect at an external site (manual)
+    evidence: [client-redirect-tests]
+    operation: >-
+      For each redirect parameter send external targets and bypass variants (`//evil.example`,
+      `https:evil.example`, scheme-relative, encoded) and check whether the browser
+      navigates off-site. Consider OAuth-token or phishing impact. Record in
+      client-redirect-tests.
+  - summary: Judge client-side URL redirect
+    evidence: [client-redirect-tests]
+    ai_task: >-
+      From step 2 decide whether an open redirect exists. Verdict: fail when the browser was
+      sent to an external domain from a client-controlled value; pass when targets are
+      allow-listed or relative; "-" when client-redirect-tests is missing.

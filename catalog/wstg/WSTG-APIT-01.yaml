@@ -1,0 +1,38 @@
+id: WSTG-APIT-01
+overview: >-
+  Check a GraphQL endpoint (and, by the same approach, REST APIs) for schema exposure
+  through introspection, abusable query cost (deep nesting, batching), and missing
+  field-level authorization.
+pass: >-
+  Introspection is disabled in production, query depth/complexity/count are capped, and
+  authorization is enforced per field.
+fail: >-
+  Introspection exposes the whole schema, deep or batched queries cause a DoS-equivalent
+  load, or data can be read without authorization.
+notes:
+  - Treat REST APIs in the same frame; report authorization gaps together with the ATHZ findings.
+finding_kinds: [graphql-exposure]
+steps:
+  - summary: Check whether introspection is enabled
+    auto_run: true
+    evidence: [graphql-introspection]
+    command: >-
+      cat {ev:graphql-introspection}/stdout.txt;
+      grep -rliE '__schema|"types"|"queryType"' {ev:graphql-introspection}/bodies 2>/dev/null
+      | sed 's#.*/##' || echo "no introspection response (schema not exposed on the probed endpoints)"
+  - summary: Test authorization and query cost limits (manual)
+    evidence: [graphql-tests]
+    operation: >-
+      On each live GraphQL endpoint, from the schema list the sensitive queries/mutations
+      and try calling them without authorization; then test cost limits with deep nesting
+      and aliased/batched queries, ramping the depth gradually. Record what succeeded in
+      graphql-tests.
+    load_note: Deep-nesting / alias-heavy queries are the GraphQL DoS case; raise depth gradually and stop at proof.
+  - summary: Judge GraphQL / API exposure
+    evidence: [graphql-tests, graphql-introspection]
+    ai_task: >-
+      From steps 1 and 2 decide whether the API is over-exposed. Verdict: fail when
+      introspection exposes the schema in production, deep/batched queries reach a
+      DoS-equivalent load, or data is readable without authorization; pass when
+      introspection is off, cost is capped, and authorization is per field; "-" when
+      neither the probe nor graphql-tests shows a GraphQL endpoint.

@@ -1,0 +1,37 @@
+id: WSTG-ERRH-01
+overview: >-
+  Check that error responses do not disclose internal details. A generic error page
+  should be returned for abnormal input, with no stack trace, SQL error, internal path,
+  debug output, or product version (WSTG-ERRH-02, stack traces, is merged here in v4.2).
+pass: >-
+  Abnormal input returns a generic error page across 4xx and 5xx and across the API and
+  front-end, with no stack trace, SQL error, internal path, or version.
+fail: >-
+  An exception stack trace, SQL error, internal path, or debug/version information is
+  shown in an error response.
+notes:
+  - Check both 4xx and 5xx, and both the API (JSON) and the front-end (HTML).
+finding_kinds: [error-information-disclosure]
+steps:
+  - summary: Scan automatic error responses for leak markers
+    auto_run: true
+    evidence: [error-probes]
+    command: >-
+      cat {ev:error-probes}/stdout.txt;
+      grep -rhinE 'exception|stack ?trace|at [a-z0-9_.]+\(|Traceback|ORA-[0-9]|PDOException|SQL syntax|syntax error|/var/www|/usr/local|C:\\\\|Warning:|Fatal error|line [0-9]+ of'
+      {ev:error-probes}/bodies 2>/dev/null | head -40 || echo "no leak marker in the automatic error bodies"
+  - summary: Trigger errors by hand across 4xx/5xx and API/front-end (manual)
+    evidence: [error-handling-tests]
+    operation: >-
+      For each endpoint, cause errors on purpose: a type mismatch, a missing or malformed
+      id, an oversized value, and broken JSON. Look at the response body for a stack trace,
+      a SQL error, an internal path, debug output, or a product version, across 4xx and 5xx
+      and across the API and the front-end. Record the leaking endpoints in
+      error-handling-tests.
+  - summary: Judge error handling
+    evidence: [error-handling-tests, error-probes]
+    ai_task: >-
+      From steps 1 and 2 decide whether error responses disclose internal details. Verdict:
+      fail when any error shows a stack trace, SQL error, internal path, debug output, or
+      version; pass when all errors return generic pages; "-" when neither the probe bodies
+      nor error-handling-tests are present. List each disclosing endpoint.

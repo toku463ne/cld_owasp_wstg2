@@ -1,0 +1,33 @@
+# Evidence used by the Error Handling (ERRH) scenario.
+# Schema: see the comments at the top of core.yaml.
+evidence:
+
+  - id: error-probes
+    title: Error responses to malformed requests
+    target_type: fqdn
+    kind: auto
+    level: light
+    description: >-
+      A few harmless requests that commonly trigger an error, saved one body per path
+      under bodies/ with a "code content-type URL" line in stdout.txt: a random
+      non-existent path, an encoded-traversal path, a single quote in a query, and a
+      likely-but-absent API path. The auto-run step scans the bodies for stack-trace, SQL,
+      and internal-path markers. Nothing is changed on the server.
+    argv: [curl, -sS, -k, --max-time, "10", --create-dirs,
+           -w, "%{http_code} %{content_type} %{url_effective}\n",
+           -o, "{out}/bodies/notfound.html", "{base_url}/wstg-no-such-path-404",
+           -o, "{out}/bodies/traversal.html", "{base_url}/%c0%ae%c0%ae/",
+           -o, "{out}/bodies/quote.html", "{base_url}/?id=%27",
+           -o, "{out}/bodies/api.html", "{base_url}/api/wstg-no-such-endpoint"]
+    files: [bodies]
+    timeout: 120
+
+  - id: error-handling-tests
+    title: Error handling tests
+    target_type: fqdn
+    kind: manual
+    description: >-
+      Per error triggered by hand (a type mismatch, a missing or malformed id, an oversized
+      value, broken JSON) across 4xx and 5xx and across the API (JSON) and the front-end
+      (HTML): the response and whether it disclosed a stack trace, a SQL error, an internal
+      path, debug output, or a product version. List the endpoints and inputs that leak.

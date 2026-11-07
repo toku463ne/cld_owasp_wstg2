@@ -1,0 +1,35 @@
+id: WSTG-BUSL-09
+overview: >-
+  Check that malicious files cannot be stored and executed: an executable or web shell is
+  not kept, or if kept is not runnable from the web, and that malware scanning and
+  isolation are in place.
+pass: >-
+  Executable or malicious files are not stored, or cannot be executed from the web, and a
+  malware scan (for example catching EICAR) and a separated store are present.
+fail: >-
+  A web shell can be stored and executed, or an EICAR test file is stored without being
+  scanned.
+notes:
+  - Never use real malware; prove with EICAR and harmless scripts only.
+finding_kinds: [malicious-file-upload]
+steps:
+  - summary: Upload harmless test specimens and check handling (manual)
+    evidence: [upload-malicious-tests]
+    operation: >-
+      Upload harmless specimens: the EICAR test string, a benign web shell, an oversized
+      file, and a docx/svg with an XXE payload. Check whether each is stored, scanned,
+      size/type-checked, and isolated from the web root. Record in upload-malicious-tests.
+    load_note: Use only harmless specimens (EICAR, benign scripts); never real malware. Keep any oversized file modest.
+  - summary: Check whether a stored file is executable from the web (manual)
+    evidence: [upload-malicious-tests]
+    operation: >-
+      Request a stored test file over the web (for example `curl` to its URL) and check
+      whether it executes rather than being served as inert content. Add the result to
+      upload-malicious-tests.
+  - summary: Judge malicious-file upload
+    evidence: [upload-malicious-tests]
+    ai_task: >-
+      From steps 1 and 2 decide whether malicious files are handled safely. Verdict: fail
+      when a web shell was stored and executed or EICAR was stored without scanning; pass
+      when executables are blocked or non-executable and scanning/isolation are present;
+      "-" when upload-malicious-tests is missing.

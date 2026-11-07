@@ -1,0 +1,26 @@
+id: WSTG-BUSL-07
+overview: >-
+  Check that the application detects and responds to misuse (rapid repeats, out-of-order
+  actions, bulk or automated requests) with logging, rate limiting, blocking, or alerts.
+pass: >-
+  Abnormal usage is detected and met with a record, rate limit, block, or alert.
+fail: >-
+  Obvious attack patterns can be repeated with no detection or response.
+notes:
+  - Whether detection fired usually needs the owner's logs; keep the interview answer in evidence too.
+finding_kinds: [no-misuse-defense]
+steps:
+  - summary: Attempt abnormal usage and check the response (manual)
+    evidence: [misuse-defense-tests]
+    operation: >-
+      Perform abnormal usage within what the target can bear (rapid repeats, out-of-order
+      actions, bulk requests, automated tooling) and check whether the application detects,
+      logs, rate-limits, or blocks it. Ask the owner about monitoring and alerting. Record
+      it, including the absence of any defence, in misuse-defense-tests.
+    load_note: Rapid or bulk requests are effectively a load test; ramp up gradually and stay within what the target can bear.
+  - summary: Judge misuse defences
+    evidence: [misuse-defense-tests]
+    ai_task: >-
+      From step 1 decide whether misuse is detected and resisted. Verdict: fail when clear
+      attack patterns drew no detection, record, limit, or block; pass when the application
+      actively detects and responds; "-" when misuse-defense-tests is missing.

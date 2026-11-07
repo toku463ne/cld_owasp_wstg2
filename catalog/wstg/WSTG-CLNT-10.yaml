@@ -1,0 +1,34 @@
+id: WSTG-CLNT-10
+overview: >-
+  Check WebSocket endpoints for secure transport, an origin check and authentication at
+  the handshake, and per-message authorization and input validation.
+pass: >-
+  wss:// is used, the handshake checks Origin and authenticates, and each message is
+  authorised and validated.
+fail: >-
+  Plain ws:// is used, there is no Origin check (cross-site WebSocket hijacking), or
+  messages are unauthorised so another user's data can be obtained.
+notes:
+  - Per-message authorization gaps are easy to miss; test actions after the connection.
+finding_kinds: [websocket-weakness]
+steps:
+  - summary: Find WebSocket usage in the client scripts
+    auto_run: true
+    evidence: [site-assets]
+    command: >-
+      grep -rhnoiE '(new WebSocket\(|wss?://[^ "'"'"'<>]+)' {ev:site-assets}/site 2>/dev/null | sort -u | head
+      || echo "no WebSocket usage in the collected scripts (check DevTools Network/WS)"
+  - summary: Inspect the handshake and message authorization (manual)
+    evidence: [websocket-tests]
+    operation: >-
+      In DevTools Network/WS confirm whether the endpoint uses wss://, whether the handshake
+      checks Origin and authenticates, and intercept and alter messages to test per-message
+      authorization and input validation (for example reaching another user's data). Record
+      in websocket-tests.
+  - summary: Judge WebSocket security
+    evidence: [websocket-tests]
+    ai_task: >-
+      From step 2 decide whether the WebSocket is secure. Verdict: fail when transport is
+      plain ws://, there is no Origin check (hijacking), or messages are unauthorised or
+      unvalidated; pass when transport, handshake checks, and per-message authorization are
+      in place; "-" when websocket-tests is missing.

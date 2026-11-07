@@ -1,0 +1,34 @@
+id: WSTG-BUSL-06
+overview: >-
+  Check whether workflow steps can be skipped or performed out of order to reach a state
+  that should require the earlier steps (for example confirming before payment).
+pass: >-
+  Each step verifies the server-side prerequisite state; skipping or reordering is
+  refused.
+fail: >-
+  A later state can be reached without the earlier steps (finalised without payment or
+  approval), or reordering creates an inconsistent state.
+notes:
+  - Try the three patterns: back button, direct link, parallel tabs.
+finding_kinds: [workflow-bypass]
+steps:
+  - summary: List the steps of each multi-step flow from the crawl
+    auto_run: true
+    evidence: [katana-crawl]
+    command: >-
+      grep -oiE '/(cart|checkout|payment|confirm|review|approve|step[0-9]?|wizard|apply|complete|finish)[^ "'"'"'<>]*'
+      {ev:katana-crawl}/katana.txt 2>/dev/null | sort -u | head -40 || echo "no obvious workflow path in the crawl"
+  - summary: Skip, reorder, and revisit steps (manual)
+    evidence: [workflow-tests]
+    operation: >-
+      In each multi-step flow (apply/approve/confirm, cart/checkout), try to skip a step by
+      direct URL, go back after completion, and run steps in parallel tabs. Check whether an
+      invalid final state is reached (confirmed without payment, finalised without approval)
+      or the state becomes inconsistent. Record in workflow-tests.
+  - summary: Judge workflow circumvention
+    evidence: [workflow-tests]
+    ai_task: >-
+      From step 2 decide whether the workflow can be circumvented. Verdict: fail when a
+      later state was reached without the required earlier steps or reordering created an
+      invalid state; pass when each step verifies its prerequisite server-side; "-" when
+      workflow-tests is missing.

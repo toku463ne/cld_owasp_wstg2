@@ -1,0 +1,34 @@
+id: WSTG-BUSL-01
+overview: >-
+  Check that business data (amounts, quantities, dates, states) is validated on the
+  server, not only in the client, so values that break business rules are rejected.
+pass: >-
+  Business constraints (range, type, consistency) are enforced server-side; impossible
+  values are refused even when client validation is bypassed.
+fail: >-
+  A negative quantity, extreme amount, past date, or inconsistent total is accepted and
+  changes the business result.
+notes:
+  - Client-only validation is always a fail; send the request directly to confirm.
+finding_kinds: [business-logic-validation]
+steps:
+  - summary: List the forms and fields carrying business data
+    auto_run: true
+    evidence: [katana-crawl]
+    command: >-
+      grep -rhoiE '<input[^>]*name=["'"'"']?[A-Za-z0-9_.-]+' {ev:katana-crawl}/responses 2>/dev/null | sort -u | head -40
+      || echo "no form fields in the crawl"
+  - summary: Send out-of-range values with client validation bypassed (manual)
+    evidence: [logic-validation-tests]
+    operation: >-
+      For each business value (amount, quantity, date, state), bypass the client validation
+      and send impossible values directly (negative, zero, excessive, past date, a total
+      that does not match its line items). Record what the server accepted and the business
+      effect in logic-validation-tests.
+  - summary: Judge business-logic data validation
+    evidence: [logic-validation-tests]
+    ai_task: >-
+      From step 2 decide whether the server validates business data. Verdict: fail when an
+      out-of-range or inconsistent value was accepted and changed the result, or validation
+      is client-only; pass when the server enforces the constraints; "-" when
+      logic-validation-tests is missing.
