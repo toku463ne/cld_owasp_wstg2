@@ -64,3 +64,13 @@ def test_config_file_inside_repo_refused(tmp_path):
 def test_bad_network(tmp_path):
     with pytest.raises(config.ConfigError, match="WSTG_ALLOWED_NETWORKS"):
         config.load(env_for(tmp_path, WSTG_ALLOWED_NETWORKS="not-a-net"))
+
+
+def test_default_config_file_is_used_when_wstg_config_is_unset(tmp_path, monkeypatch):
+    f = tmp_path / ".config" / "wstg2" / "wstg2.env"
+    f.parent.mkdir(parents=True)
+    f.write_text(f"WSTG_EVIDENCE_ROOT={tmp_path}/e\nWSTG_DB_PATH={tmp_path}/d.db\n")
+    monkeypatch.setenv("HOME", str(tmp_path))
+    for k in [k for k in __import__("os").environ if k.startswith("WSTG_")]:
+        monkeypatch.delenv(k)
+    assert config.load().evidence_root == tmp_path / "e"

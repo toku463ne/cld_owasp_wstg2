@@ -82,6 +82,7 @@ Last updated: 2026-11-07
 - Test tools: `catalog/tools.yaml` (command, apt or npm package); `catalog-check` fails when an automatic evidence command is not listed. `wstg tools-check [--packages apt|npm] [--strict]`. The setup script installs them (apt, retried one by one on failure; npm into `~/.local` through `WSTG_HTTP_PROXY`) and prints the check. User units put `~/.local/bin` on PATH.
 - Proxy (from a Kali check: `openssl s_client` timed out behind the proxy): evidence `proxy_args` replace the argv element `{proxy_args}` only when `WSTG_HTTP_PROXY` is set (`{proxy_url}`, `{proxy_hostport}`); the scope check runs without them; credentials in the proxy URL are masked in the recorded command. `direct: true` marks tools that cannot use a proxy (whois, traceroute, nmap, sslscan); their failure message says so.
 - Evidence page: a missing tool or refused command creates no version, so the page shows the last job attempt (status and message).
+- CLI reads `~/.config/wstg2/wstg2.env` when `WSTG_CONFIG` is unset (found on Kali: `tools-check --remote` failed with "WSTG_EVIDENCE_ROOT is not set").
 - Jump host (`WSTG_DIRECT_SSH`, key auth, `BatchMode`, strict host keys): `direct` evidence (whois, traceroute, nmap, sslscan) runs there over SSH in a `mktemp` folder with `timeout`; output files come back with tar (safe extraction), the folder is removed, cancel/timeout kill the remote process. `wstg tools-check --remote`. New `dns-rdap` evidence (RDAP over HTTPS through the proxy) in INFO-01 step 1.
 
 ### Open items carried forward

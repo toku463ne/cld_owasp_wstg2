@@ -99,7 +99,7 @@ Settings come from a KEY=VALUE file outside the repo named by `WSTG_CONFIG`
 (example: `docs/examples/wstg2.env.example`; keys are listed in `src/wstg/config.py`).
 
 ```bash
-export WSTG_CONFIG=~/.config/wstg2/wstg2.env
+export WSTG_CONFIG=~/.config/wstg2/wstg2.env   # optional: this file is the default
 
 scripts/setup-kali.sh [--no-packages] [--dry-run]   # set up / update a Kali host (see README.md)
 

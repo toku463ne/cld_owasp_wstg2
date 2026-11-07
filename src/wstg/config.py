@@ -4,7 +4,8 @@ Settings come from environment variables, optionally pre-loaded from a
 KEY=VALUE file named by WSTG_CONFIG. The file itself must be outside the
 repository. Explicit environment variables win over the file.
 
-    WSTG_CONFIG             path to a KEY=VALUE file (optional)
+    WSTG_CONFIG             path to a KEY=VALUE file (optional; default
+                            ~/.config/wstg2/wstg2.env when that file exists)
     WSTG_EVIDENCE_ROOT      absolute path of the evidence root (required)
     WSTG_DB_PATH            absolute path of the SQLite database (required)
     WSTG_SECRET_KEY         Flask session key, or
@@ -142,9 +143,17 @@ def _int(env: dict[str, str], name: str, default: int) -> int:
         raise ConfigError(f"{name} must be a number") from None
 
 
+def default_config_file() -> Path:
+    return Path.home() / ".config" / "wstg2" / "wstg2.env"
+
+
 def load(env: dict[str, str] | None = None, check_repo: bool = True) -> Config:
+    from_process = env is None
     env = dict(os.environ if env is None else env)
     cfg_file = env.get("WSTG_CONFIG")
+    if not cfg_file and from_process and default_config_file().is_file():
+        # The file setup-kali.sh writes, so commands work without exporting WSTG_CONFIG.
+        cfg_file = str(default_config_file())
     if cfg_file:
         cfg_path = Path(cfg_file)
         root = repo_root()

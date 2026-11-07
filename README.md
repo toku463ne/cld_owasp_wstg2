@@ -156,7 +156,7 @@ address is the jump host's; announce that address to the target's administrator.
 ## Commands
 
 ```bash
-export WSTG_CONFIG=~/.config/wstg2/wstg2.env
+export WSTG_CONFIG=~/.config/wstg2/wstg2.env   # optional: this file is the default
 
 uv run wstg check-config                  # show settings; fails if data paths are inside the repo
 uv run wstg migrate                       # create data dirs, apply migrations (backs up the DB first)
