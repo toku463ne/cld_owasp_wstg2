@@ -1,0 +1,54 @@
+# Evidence used by the Authorization (ATHZ) scenarios.
+# Schema: see the comments at the top of core.yaml.
+# Authorization testing replays requests with the sessions of different roles and
+# sends payloads (traversal, object references) to the target, and so touches other
+# test users' data. It cannot be driven blindly by the tool, so these are manual and
+# use dedicated test accounts and test data only. The role matrix (WSTG-IDNT-01) and
+# the per-role HAR files (har-browse) are the inputs.
+evidence:
+
+  - id: traversal-tests
+    title: Directory traversal and file inclusion tests
+    target_type: fqdn
+    kind: manual
+    description: >-
+      One text item per file-naming parameter tested (for example file, page, path,
+      lang, template, include): the traversal and inclusion payloads sent (../ sequences,
+      absolute paths, encoded variants such as %2e%2e%2f and double encoding, a trailing
+      extension or null byte) and the response for each. Record only that an out-of-scope
+      file could be read or included; keep the content of any sensitive file to the
+      minimum needed to prove it, as a path reference.
+
+  - id: authz-bypass-tests
+    title: Authorization-schema bypass tests
+    target_type: fqdn
+    kind: manual
+    description: >-
+      One text item per request from the role matrix (WSTG-IDNT-01) replayed with a lower
+      role's session and with no session: the request (method and path), the session used,
+      and the response status and whether the action succeeded. Include high-privilege
+      endpoints found only in the HTML, JavaScript, or API definitions (hidden in the UI)
+      replayed with a low-privilege session. A 200 that performs the action is a bypass; a
+      hidden menu item alone is not.
+
+  - id: privilege-escalation-tests
+    title: Privilege escalation tests
+    target_type: fqdn
+    kind: manual
+    description: >-
+      One text item per escalation attempt, grouped as horizontal (another user of the
+      same role) and vertical (a higher role): the value changed (a role or group
+      parameter, a cookie, a JWT claim such as role or isAdmin), the request replayed with
+      a low-privilege session, and whether the higher-privilege function or another user's
+      resource was reached. Use dedicated test accounts and test data only.
+
+  - id: idor-tests
+    title: Insecure direct object reference tests
+    target_type: fqdn
+    kind: manual
+    description: >-
+      One text item per object-reference parameter tested (for example id, order id, a
+      file name, a numeric or UUID path segment): the reference changed to another test
+      user's value, the method used (GET, POST, JSON body, multipart), and whether the
+      other user's data could be read, updated, or deleted. Test between dedicated test
+      accounts only, never real data; keep retrieved data to a summary.

@@ -9,7 +9,7 @@ Last updated: 2026-11-08
 | # | Milestone | Status | Notes |
 |---|---|---|---|
 | M0 | Skeleton | **Done** (`5d9c082`) | 23 tests pass; CLI and waitress server checked by hand |
-| M1 | Catalog | **In progress** | Index (97), schema and validator, INFO + CONF + IDNT + CRYP + ATHN scenarios (39); ATHZ onwards pending |
+| M1 | Catalog | **In progress** | Index (97), schema and validator, INFO + CONF + IDNT + CRYP + ATHN + ATHZ scenarios (43); SESS onwards pending |
 | M2 | Targets and main page | **Done** | Targets, scope records and check, selector, tabs, WSTG index |
 | M3 | WSTG page | **Done** | Overview, criteria, steps, verdict/reset, commands, evidence (view, edit, collected date), findings, AI prompt |
 | M4 | Manual evidence | **Done** (browser paste to be checked on Kali) | Versioned store, capture box, upload, text, edit/remove as new versions |
@@ -86,6 +86,13 @@ Last updated: 2026-11-08
 - `tests/test_athn.py`: ATHN-01 and ATHN-10 auto-run against synthetic evidence (HTTP form served without redirect flagged, dead endpoints dropped), every ATHN page renders. `catalog-check` clean (39 scenarios, 64 evidence); full suite 164 passed.
 - Not run against any host; `login-http` and `alt-auth-endpoints` argv (curl `--next` chains) and the manual-step commands still to be checked against a lab target on Kali.
 
+### M1 ATHZ delivered
+- `catalog/evidence/athz.yaml`: four manual evidence (traversal-tests, authz-bypass-tests, privilege-escalation-tests, idor-tests). Authorization testing replays requests with each role's session and sends payloads that touch other test users' data, so it cannot be driven blindly by the tool; the role matrix (WSTG-IDNT-01) and the per-role HAR (har-browse) are the inputs, and every active step uses dedicated test accounts and test data with a load note.
+- Scenarios WSTG-ATHZ-01 to 04 (`catalog/wstg/`): auto-run steps read only the crawl and collected pages to surface candidates — file-naming parameters for ATHZ-01, admin-like and UI-hidden endpoints for ATHZ-02, role-carrying fields for ATHZ-03, object-reference parameters and numeric path segments for ATHZ-04. The actual replays and payloads are manual steps with concrete curl examples; each test ends with an `ai_task` verdict (ATHZ-01 and ATHZ-03 report their two sub-kinds / directions separately).
+- 5 finding kinds added (path-traversal, file-inclusion, authorization-bypass, privilege-escalation, insecure-direct-object-reference).
+- `tests/test_athz.py`: ATHZ-01 and ATHZ-04 candidate extraction against synthetic crawl output (file params vs. id= distinguished; numeric references vs. static assets), every ATHZ page renders. `catalog-check` clean (43 scenarios, 68 evidence); full suite 170 passed.
+- Not run against any host; the manual-step commands (traversal/IDOR curl, role replays) to be checked against a lab target on Kali.
+
 ### M8 (pulled forward) delivered
 - `scripts/setup-kali.sh`: apt base packages, uv, data dirs (`/srv/wstg2/{evidence,db}`), config file and secret key generated once, `uv sync`, `check-config`, `migrate`, first admin, systemd user service `wstg2-web` (restarted on every run, lingering), nginx site rendered from `deploy/nginx/wstg2.conf.template` (port and allow list from the config), `nginx -t` with rollback, smoke test. Options `--no-packages`, `--no-nginx`, `--no-systemd`, `--dry-run`. Rerun after `git pull` to update a Kali host.
 - New config key `WSTG_WEB_PORT` (default 8083), read by the setup script only.
@@ -121,7 +128,7 @@ Last updated: 2026-11-08
 
 ### Open items carried forward
 - Check on Kali: katana `-sr -srd` (store responses) and the responses folder layout; gitleaks package and `detect --no-git --redact --report-format json` output fields (RuleID, File, StartLine, Match); the jump host (Ubuntu 24.04) with real whois/traceroute/nmap/sslscan; RDAP for the target's TLD; the proxy options of each tool (openssl, testssl, whatweb, nikto, ffuf, katana, subfinder, wafw00f) behind the real proxy; Kali package names in `catalog/tools.yaml` (katana, padbuster, theharvester); browser clipboard paste into the capture box, the worker with real tools against a lab target (tool options such as katana `-ct`), backup.
-- M1: the remaining categories (ATHZ, SESS, INPV, ERRH, BUSL, CLNT, APIT).
+- M1: the remaining categories (SESS, INPV, ERRH, BUSL, CLNT, APIT).
 - Check on Kali: the ATHN `login-http` and `alt-auth-endpoints` curl `--next` chains against a lab target, and the manual-step commands (force browsing, cache-header loop, enumeration curl).
 - Check on Kali: the CONF evidence against a lab target (content-ffuf and backup-ffuf run time, Nikto JSON layout read by `jq '.. | objects | select(has("msg"))'`).
 - M9: headless-browser HAR recording (needs a decision on adding Playwright and a browser), HAR analysis (cookies, headers, parameters) to replace manual Burp checks.

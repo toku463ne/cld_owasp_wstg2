@@ -1,0 +1,45 @@
+id: WSTG-ATHZ-02
+overview: >-
+  Check whether authorization is enforced on the server for every request, by replaying
+  the functions of higher roles with a lower role's session and with no session. A
+  function hidden in the UI is not protected unless its endpoint also refuses the request.
+pass: >-
+  Every higher-privilege request replayed with a lower-privilege or anonymous session is
+  refused (401/403); authorization does not depend on the UI hiding the function.
+fail: >-
+  A lower-privilege or unauthenticated session can perform an administrative or other
+  higher-role request (a hidden menu or disabled button whose endpoint still executes).
+notes:
+  - The most common case is UI-only control with no server-side authorization on the API; always test per request, not per screen.
+  - Use the role matrix from WSTG-IDNT-01 as the list of requests to replay, plus endpoints found only in the HTML, JavaScript, or API definitions.
+finding_kinds: [authorization-bypass]
+steps:
+  - summary: List higher-privilege endpoints, including ones hidden in the UI
+    auto_run: true
+    evidence: [katana-crawl, site-assets]
+    command: >-
+      grep -rhoiE '/(admin|manage|console|internal|config|settings|users?|roles?|api)[^ "'"'"'<>]*'
+      {ev:katana-crawl}/katana.txt {ev:katana-crawl}/responses {ev:site-assets}/site 2>/dev/null
+      | sort -u | head -80 || echo "no admin-like endpoints found in the crawl or assets"
+  - summary: Replay each higher-role request with a lower role's session (manual)
+    evidence: [authz-bypass-tests, role-matrix]
+    operation: >-
+      For each row of the role matrix (WSTG-IDNT-01) that belongs to a higher role, replay
+      the exact request (method, path, body) with a lower role's session cookie, for
+      example in the browser's "Edit and Resend" or `curl -sk -i -b "SESSION=..."
+      -X POST "{base_url}/admin/..."`. Record the status and whether the action succeeded
+      in authz-bypass-tests. A 200 that performs the action is a bypass.
+  - summary: Call UI-hidden endpoints directly with a low-privilege session (manual)
+    evidence: [authz-bypass-tests]
+    operation: >-
+      Take the admin-like endpoints from step 1 (and any admin URL or API path in the
+      HTML, JavaScript, or API definitions) that a low role is not shown, and send them
+      with the low role's session. Then resend with no session cookie at all. Record each
+      result in authz-bypass-tests.
+  - summary: Judge authorization bypass
+    evidence: [authz-bypass-tests, role-matrix]
+    ai_task: >-
+      From steps 2 and 3 decide whether authorization can be bypassed. Verdict: fail when a
+      lower-privilege or anonymous session performed a higher-role request (including a
+      UI-hidden endpoint whose server still executed it); pass when every such request was
+      refused with 401/403; "-" when authz-bypass-tests is missing.

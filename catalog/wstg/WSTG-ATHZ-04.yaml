@@ -1,0 +1,45 @@
+id: WSTG-ATHZ-04
+overview: >-
+  Check whether an object reference (an ID, a file name, a path segment) can be changed
+  to another user's value to read, update, or delete data that should be reachable only
+  by its owner (insecure direct object reference).
+pass: >-
+  Changing an object reference to another user's value is refused (403/404); the server
+  checks ownership for every reference and for every method.
+fail: >-
+  A sequential ID, UUID, or encoded reference can be changed to another user's value to
+  read, update, or delete their data, through any method or representation.
+notes:
+  - Test update and delete references too, not only reads, and keep it between dedicated test accounts; never touch real data.
+  - Check that the ownership check is consistent across methods (GET, POST, JSON body, multipart) and representations.
+finding_kinds: [insecure-direct-object-reference]
+steps:
+  - summary: Find object-reference parameters and path segments (candidates)
+    auto_run: true
+    evidence: [katana-crawl]
+    command: >-
+      grep -oiE '[?&](id|uid|user|user_?id|account|order|order_?id|doc|document|file|invoice|key|ref|pid|gid|num|no)=[0-9a-zA-Z._-]+'
+      {ev:katana-crawl}/katana.txt 2>/dev/null | sort -u | head -40;
+      grep -oiE '/[a-z]+/[0-9]{2,}(/|$)' {ev:katana-crawl}/katana.txt 2>/dev/null | sort -u | head -40
+  - summary: Change references to another test user's value (read) (manual)
+    evidence: [idor-tests]
+    operation: >-
+      With two dedicated test accounts, note an object reference that belongs to user A
+      (for example `/orders/1001` or `?id=1001`) and, as user B, request user A's value,
+      for example `curl -sk -i -b "SESSION=<B>" "{base_url}/orders/1001"`. Try sequential
+      and UUID references and a small, bounded set of neighbours. Record whether user A's
+      data was returned in idor-tests.
+    load_note: Enumerating IDs sends many requests and touches other accounts' resources; keep the count small and use test accounts only.
+  - summary: Try update and delete, and other methods and representations (manual)
+    evidence: [idor-tests]
+    operation: >-
+      Repeat for update and delete references, and vary the method and representation (GET,
+      POST, JSON body, multipart) to see whether the ownership check is applied
+      consistently. Record each result in idor-tests, between test accounts only.
+  - summary: Judge insecure direct object references
+    evidence: [idor-tests]
+    ai_task: >-
+      From steps 2 and 3 decide whether object references are protected. Verdict: fail when
+      changing a reference to another user's value read, updated, or deleted their data
+      through any method; pass when every cross-user reference was refused (403/404)
+      consistently; "-" when idor-tests is missing.

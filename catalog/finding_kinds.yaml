@@ -172,3 +172,20 @@ kinds:
   - id: weaker-alternative-channel
     title: Weaker authentication in an alternative channel
     subject: "the channel or endpoint, for example `api /api/v1/login`, `mobile`"
+
+  # ---- authorization -------------------------------------------------------
+  - id: path-traversal
+    title: Directory traversal
+    subject: "the parameter, for example `file`, `page`"
+  - id: file-inclusion
+    title: Local or remote file inclusion
+    subject: "the parameter, for example `template`, `include`"
+  - id: authorization-bypass
+    title: Authorization can be bypassed
+    subject: "the function and method, for example `POST /admin/users`"
+  - id: privilege-escalation
+    title: Privilege escalation
+    subject: "the direction and target, for example `vertical to admin`, `horizontal user :id`"
+  - id: insecure-direct-object-reference
+    title: Insecure direct object reference
+    subject: "the reference and method, for example `GET /orders/:id`, `parameter id`"

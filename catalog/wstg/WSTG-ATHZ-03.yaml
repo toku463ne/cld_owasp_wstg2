@@ -1,0 +1,46 @@
+id: WSTG-ATHZ-03
+overview: >-
+  Check whether a user can raise their privileges: horizontally, to another user of the
+  same role, or vertically, to a higher role, by tampering with a value that carries the
+  role or by invoking a privilege-granting function directly.
+pass: >-
+  Changing a role or privilege value (parameter, cookie, or JWT claim) is rejected by the
+  server, and ownership and approval checks cannot be skipped.
+fail: >-
+  Tampering with a role parameter, cookie, or JWT claim, or calling a privilege-granting
+  API directly, raises the user's privileges, or an owner or approval check can be
+  skipped to act on another user's resource.
+notes:
+  - Record horizontal (another user) and vertical (a higher role) escalation separately; it makes the report clearer.
+  - A JWT whose signature is not verified, or that accepts alg=none, is a common vertical escalation; check the token handling.
+finding_kinds: [privilege-escalation]
+steps:
+  - summary: Find values that carry a role or privilege (candidates)
+    auto_run: true
+    evidence: [katana-crawl, auth-pages]
+    command: >-
+      grep -rhoiE '(role|is_?admin|is_?staff|group|privilege|level|acl|permission|usertype|account_?type|admin)["'"'"']?\s*[=:]'
+      {ev:katana-crawl}/responses {ev:auth-pages}/pages 2>/dev/null | sort | uniq -c | sort -rn | head -40
+      || echo "no obvious role-carrying field found in the collected pages (check the HAR and JWT claims)"
+  - summary: Tamper with the role value and replay with a low-privilege session (manual)
+    evidence: [privilege-escalation-tests]
+    operation: >-
+      With a low-privilege test account, change a value that marks the role or privilege
+      (a parameter, a cookie, or a JWT claim such as role or isAdmin, and check whether the
+      JWT signature is verified or alg=none is accepted) to an administrator value and
+      replay the request. Record each attempt in privilege-escalation-tests.
+  - summary: Call higher-privilege functions and skip ownership checks (manual)
+    evidence: [privilege-escalation-tests, role-matrix]
+    operation: >-
+      Replay administrator-only functions (from the role matrix) with the low-privilege
+      session, and try to act on another test user's resource by skipping an owner or
+      approval check. Note both horizontal and vertical results in
+      privilege-escalation-tests, using test accounts and test data only.
+  - summary: Judge privilege escalation
+    evidence: [privilege-escalation-tests]
+    ai_task: >-
+      From steps 2 and 3 decide whether privileges can be raised. Verdict: fail when
+      tampering with a role value or claim, calling a privilege-granting function, or
+      skipping an ownership check raised privileges or reached another user's resource;
+      pass when every attempt was rejected server-side; "-" when
+      privilege-escalation-tests is missing. State horizontal and vertical separately.

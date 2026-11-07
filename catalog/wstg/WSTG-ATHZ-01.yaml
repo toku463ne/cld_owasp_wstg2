@@ -1,0 +1,48 @@
+id: WSTG-ATHZ-01
+overview: >-
+  Check whether a parameter that names a file or path lets a request read or include a
+  file outside the intended directory, through traversal sequences, absolute paths,
+  encoded variants, or file inclusion.
+pass: >-
+  File and path parameters are validated or normalised (for example an allow-list) and a
+  reference outside the intended directory is refused.
+fail: >-
+  A traversal sequence (../, ..\\), an absolute path, an encoded variant (%2e%2e%2f,
+  double-encoded %252e, ....//), or a trailing extension or null byte reads an
+  out-of-scope file, or an include parameter executes an arbitrary file.
+notes:
+  - Record only that an out-of-scope file could be read; keep the content of any sensitive file to the minimum needed to prove it, as a path reference.
+  - Use documentation paths only as a proof target where possible; do not pull real secrets out of the system.
+finding_kinds: [path-traversal, file-inclusion]
+steps:
+  - summary: Find parameters and paths that name a file (candidates from the crawl)
+    auto_run: true
+    evidence: [katana-crawl]
+    command: >-
+      grep -oiE '[?&](file|path|page|lang|template|include|doc|document|download|dir|folder|name|img|image|url|load|read|view)=[^&"'"'"'<> ]*'
+      {ev:katana-crawl}/katana.txt 2>/dev/null | sort -u | head -60 || echo "no file-naming parameter seen in the crawl (look in the HAR and forms)"
+  - summary: Send traversal and inclusion payloads to each file parameter (manual)
+    evidence: [traversal-tests]
+    operation: >-
+      For each candidate parameter, try out-of-directory references and record the
+      response, for example `curl -sk -i "{base_url}/page?file=../../../../etc/passwd"`
+      and the encoded variants `%2e%2e%2f`, double-encoded `%252e%252e%252f`, `....//`,
+      an absolute path, and a trailing `%00.png`. A response containing the file's
+      content is a traversal. Save each request and response in traversal-tests.
+    load_note: Sending many traversal variants (for example with a fuzzer) can trip a WAF and fill error logs; send a small set by hand first.
+  - summary: Check for file inclusion (configuration, source, or code execution) (manual)
+    evidence: [traversal-tests]
+    operation: >-
+      Where a parameter selects a page or template, try to include a configuration file
+      or source file, and (only with the owner's agreement) a file that would prove code
+      execution. Note whether the include runs or merely displays the file. Add the result
+      to traversal-tests.
+  - summary: Judge directory traversal and file inclusion
+    evidence: [traversal-tests, katana-crawl]
+    ai_task: >-
+      From steps 2 and 3 decide whether any file parameter reads or includes an
+      out-of-scope file. Verdict: fail when a traversal sequence, absolute path, encoded
+      variant, or inclusion payload returned an out-of-directory file or executed one;
+      pass when every parameter normalised or refused the reference; "-" when
+      traversal-tests is missing. Report a traversal and a code-executing inclusion
+      separately.
