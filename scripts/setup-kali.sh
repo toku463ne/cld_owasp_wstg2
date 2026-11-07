@@ -267,16 +267,25 @@ step "Smoke test"
 if [ "$DRY" = 0 ]; then
   if [ "$SYSTEMD" = 1 ]; then
     code=000
-    for _ in $(seq 1 15); do
-      code=$(curl -s --noproxy '*' --max-time 5 -o /dev/null -w '%{http_code}' "http://127.0.0.1:$APP_PORT/login" || true)
+    printf 'waiting for the app on 127.0.0.1:%s ' "$APP_PORT"
+    for _ in $(seq 1 10); do
+      code=$(curl -s --noproxy '*' --connect-timeout 2 --max-time 3 -o /dev/null -w '%{http_code}' "http://127.0.0.1:$APP_PORT/login" || true)
       [ "$code" = 200 ] && break
+      # Stop waiting if the service already gave up.
+      systemctl --user is-failed --quiet wstg2-web.service && break
+      printf '.'
       sleep 1
     done
+    echo
     echo "app   http://127.0.0.1:$APP_PORT/login -> HTTP $code"
-    [ "$code" = 200 ] || echo "warning: app not answering; see: journalctl --user -u wstg2-web -n 50"
+    if [ "$code" != 200 ]; then
+      echo "warning: app not answering (000 = nothing listening or no reply). Service state and log:"
+      systemctl --user status wstg2-web.service --no-pager -n 0 2>&1 | sed 's/^/  /' || true
+      journalctl --user -u wstg2-web.service -n 30 --no-pager 2>&1 | sed 's/^/  /' || true
+    fi
   fi
   if [ "$NGINX" = 1 ]; then
-    code=$(curl -s --noproxy '*' --max-time 5 -o /dev/null -w '%{http_code}' "http://127.0.0.1:$WEB_PORT/login" || true)
+    code=$(curl -s --noproxy '*' --connect-timeout 2 --max-time 3 -o /dev/null -w '%{http_code}' "http://127.0.0.1:$WEB_PORT/login" || true)
     echo "nginx http://127.0.0.1:$WEB_PORT/login -> HTTP $code"
     [ "$code" = 200 ] || echo "warning: expected 200 (403 means 127.0.0.0/8 is not in WSTG_ALLOWED_NETWORKS; 502 means the app is down)"
   fi
