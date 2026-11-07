@@ -183,3 +183,22 @@ def test_info05_scans_pages_crawl_and_har(admin_client, cfg, db, site, tmp_path,
     prompt = page[page.index('id="ai-prompt"'):]
     assert "aws-access-token" in prompt and "/api/v2/users" in prompt and "served by 10.1.2.3" in prompt
     assert "admin panel at intra.corp" not in prompt and har_key not in prompt
+
+
+@pytest.mark.parametrize("pause,text", [
+    (0, "WSTG_PAUSE is not set: this run goes at full speed."),
+    (1, "WSTG_PAUSE is set to 1: this run adds -delay 1 -c 1 -p 1."),
+])
+def test_heavy_confirm_shows_the_pause_in_effect(cfg, db, site, pause, text):
+    import dataclasses
+    from wstg import users
+    from wstg.web import create_app
+    from conftest import ADMIN_PW, login
+    users.add(db, "admin", ADMIN_PW, "admin", actor="test")
+    app = create_app(dataclasses.replace(cfg, pause=pause), db)
+    app.config["TESTING"] = True
+    c = app.test_client()
+    login(c, "admin", ADMIN_PW)
+    for url in ("/t/www.example.com/auto", "/t/www.example.com/evidence/katana-crawl"):
+        page = c.get(url).get_data(as_text=True)
+        assert text in page, url

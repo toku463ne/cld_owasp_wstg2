@@ -119,7 +119,7 @@ def create_app(cfg: Config, db: dbmod.Database | None = None, cat: catmod.Catalo
     @app.context_processor
     def inject():
         return {"user": g.get("user"), "csrf": session.get("csrf", ""),
-                "can_write": users.can_write(g.get("user"))}
+                "can_write": users.can_write(g.get("user")), "pause": cfg.pause}
 
     @app.route("/login", methods=["GET", "POST"])
     def login():
