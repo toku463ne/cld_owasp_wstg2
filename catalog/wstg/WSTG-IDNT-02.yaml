@@ -1,0 +1,53 @@
+id: WSTG-IDNT-02
+overview: >-
+  Check that self-registration (where the application offers it) verifies who registers,
+  cannot give a privileged role, and resists duplicate and automated registrations.
+pass: >-
+  Registration needs a verified e-mail (or another proof the business requires), cannot
+  set a role or other privileged attribute, refuses duplicates (including case and space
+  variants), and is protected against mass registration (CAPTCHA or rate limit).
+fail: >-
+  A registration request with an added role parameter gives a privileged role, an account
+  works before verification where verification is required, the same e-mail or user name
+  can register twice, or nothing limits automated registration.
+notes:
+  - Whether verification or approval is required depends on the business; compare with the owner's specification.
+  - Register only test accounts with addresses the tester controls, and tell the owner which accounts to delete afterwards.
+  - "Without Burp: replay a request with the browser's developer tools (Firefox: Network, right-click, Edit and Resend; Chrome: Copy as cURL, then edit and run it in a terminal)."
+finding_kinds: [registration-weakness, unprotected-path]
+steps:
+  - summary: Find the registration pages (common paths)
+    auto_run: true
+    evidence: [auth-pages]
+    command: grep -iE '/(register|signup|sign_up|account/register|user/register|users/sign_up)|action=register' {ev:auth-pages}/stdout.txt
+  - summary: Find registration links in the crawl
+    auto_run: true
+    evidence: [katana-crawl]
+    command: grep -iE 'regist|sign-?up|sign_up|join|enrol|create-?account|new-?account|invite' {ev:katana-crawl}/katana.txt | sed -E 's#\?.*##' | sort -u | head -50
+  - summary: Read the fields of the registration forms
+    auto_run: true
+    evidence: [auth-pages]
+    command: >-
+      cd {ev:auth-pages}/pages && grep -HoiE '<form[^>]*>|<input[^>]*name=[^>]*>|<select[^>]*name=[^>]*>|<textarea[^>]*name=[^>]*>'
+      register.html signup.html account-register.html user-register.html users-sign_up.html wp-register.html 2>/dev/null
+      | sed -E 's/(value=)("[^"]{20,}"|'"'"'[^'"'"']{20,}'"'"')/\1"…"/I' || echo "no registration form found"
+  - summary: Test the registration process
+    evidence: [registration-tests]
+    operation: >-
+      With test e-mail addresses: (1) register, then register again with the same e-mail
+      and user name, also in upper case and with a trailing space; (2) before confirming
+      the e-mail, try to log in and use the application; (3) replay the registration
+      request with added fields such as role=admin, is_admin=true, admin=1, group=1,
+      account_type=admin, verified=true (form or JSON, matching the request), and check
+      the new account's role; (4) submit the form 10 times quickly and see whether a
+      CAPTCHA, rate limit, or block appears. Record each check in registration-tests.
+    load_note: Creates test accounts; tell the owner which ones to delete. Step (4) sends 10 registrations.
+  - summary: Judge the registration process
+    evidence: [registration-tests, auth-pages]
+    ai_task: >-
+      From the form fields (step 3) and registration-tests, list each weakness:
+      privileged attribute accepted, account usable before verification, duplicates
+      (exact or variant), missing bot protection; and hidden or role-like fields in the
+      form. Verdict: fail when a privileged attribute is accepted, verification can be
+      skipped where required, or duplicates are accepted; pass when the process has none
+      of these or there is no self-registration; "-" when registration-tests is missing.

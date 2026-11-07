@@ -1,0 +1,65 @@
+id: WSTG-IDNT-04
+overview: >-
+  Check whether the login, password reset, and registration functions, or public pages
+  and APIs, reveal which user names exist, and whether user names can be guessed.
+pass: >-
+  Login, password reset, and registration answer the same way (message, status, size,
+  and time) for existing and non-existing user names, and no page or API lists user
+  names.
+fail: >-
+  A message, status, size, redirect, or response time differs between existing and
+  non-existing user names, or a page or API (for example WordPress /wp-json/wp/v2/users
+  or ?author=1) lists user names.
+notes:
+  - Use a test account as the existing user, never a real user's name.
+  - Response time differences often come from hashing the password only for existing users. Compare several attempts each and look at the averages.
+  - Registration that says "this e-mail is already registered" is a common, sometimes accepted, enumeration; report it with the business reason the owner gives.
+finding_kinds: [account-enumeration]
+steps:
+  - summary: Find the login, password reset, and registration pages
+    auto_run: true
+    evidence: [auth-pages]
+    command: grep -vE '^(404|000) ' {ev:auth-pages}/stdout.txt || echo "none of the common paths answered"
+  - summary: Check public user lists (WordPress REST users, author archives)
+    auto_run: true
+    evidence: [auth-pages]
+    command: >-
+      grep -E 'wp-json/wp/v2/users|author=1' {ev:auth-pages}/stdout.txt;
+      jq -r '.[]? | [(.id|tostring), (.slug // ""), (.name // "")] | @tsv' {ev:auth-pages}/pages/wp-users.json 2>/dev/null || echo "no WordPress user list"
+  - summary: Find user names and e-mail addresses shown in public pages (naming patterns)
+    auto_run: true
+    evidence: [site-assets, http-root-https]
+    command: >-
+      grep -rhoiE '[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}' {ev:http-root-https}/body.html {ev:site-assets}/site
+      | grep -viE '@[0-9]x\.|\.(png|jpe?g|gif|svg|webp)$|example\.(com|org|net)$' | tr 'A-Z' 'a-z' | sort | uniq -c | sort -rn | head -50
+  - summary: Find user name paths in the crawl (profiles, authors)
+    auto_run: true
+    evidence: [katana-crawl]
+    command: >-
+      grep -oiE '/(users?|profiles?|members?|authors?|people|staff|~)[/=][^/?#"]+' {ev:katana-crawl}/katana.txt | sort -u | head -50;
+      grep -rhoiE '[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}' {ev:katana-crawl}/responses
+      | grep -viE '@[0-9]x\.|\.(png|jpe?g|gif|svg|webp)$|example\.(com|org|net)$' | tr 'A-Z' 'a-z' | sort | uniq -c | sort -rn | head -50
+  - summary: Compare the answers for an existing and a non-existing user name
+    evidence: [enum-tests]
+    command: >-
+      u={base_url}/login; ok=TEST_ACCOUNT_NAME; ng=wstg-nouser-$RANDOM;
+      for n in 1 2 3 4 5; do for name in "$ok" "$ng"; do printf '%s ' "$name";
+      curl -sk -m 15 -o body.tmp -w '%{http_code} %{size_download} %{time_total} %{redirect_url} ' --data-urlencode "username=$name" --data-urlencode 'password=Wrong-Pass-1' "$u";
+      sed -E 's/[A-Za-z0-9+/=_-]{20,}//g' body.tmp | md5sum | cut -c1-8; done; done | tee enum-login.txt
+    operation: >-
+      Set u to the form's action URL and the field names to the form's (step 1 pages, or the
+      request in the developer tools). Forms with a CSRF token or JavaScript login need the
+      browser instead: try the test account and an unknown name with a wrong password and
+      screenshot both messages. Repeat for password reset (enter each name) and
+      registration (use each name or e-mail). Upload the outputs or screenshots as
+      enum-tests. Same message, code, size, and body hash, and similar times, mean no
+      enumeration.
+    load_note: Five failed logins on the test account; check the lockout threshold first (a lockout is also a result, WSTG-ATHN-03).
+  - summary: Judge account enumeration
+    evidence: [enum-tests, auth-pages]
+    ai_task: >-
+      From steps 2 to 5, list each way to tell existing user names (function, what
+      differs: message, code, size, redirect, time with the averages, or a public list) and
+      the naming pattern of user names or e-mails seen in public pages. Verdict: fail when
+      any function or page reveals existing user names; pass when none does; "-" when
+      enum-tests is missing.

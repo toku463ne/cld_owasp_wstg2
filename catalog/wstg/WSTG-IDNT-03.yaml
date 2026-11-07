@@ -1,0 +1,54 @@
+id: WSTG-IDNT-03
+overview: >-
+  Check who can create, change, disable, and delete accounts, whether that needs
+  approval, and whether disabling an account really ends its access.
+pass: >-
+  Only defined roles can provision accounts, with approval where the owner requires it,
+  no role can create an account with more rights than its own, leavers are disabled
+  promptly, and a disabled account's open sessions stop working.
+fail: >-
+  A role can create or promote accounts beyond its own rights or without approval, a
+  disabled account's session or token still works, or there is no de-provisioning
+  process.
+notes:
+  - This test is mostly about the owner's process; interview notes and documents are the main evidence.
+  - Coordinate step 3 with the owner, who disables the test account.
+finding_kinds: [provisioning-weakness, unprotected-path]
+steps:
+  - summary: Get the provisioning and de-provisioning process from the owner
+    evidence: [provisioning-process]
+    operation: >-
+      Ask the owner: who can create, change roles, disable, and delete accounts (and in
+      which screen or tool); whether approval is required; how leavers and role changes are
+      handled and how quickly; whether accounts are reviewed periodically. Save the notes as
+      provisioning-process.
+  - summary: Find the user management functions
+    auto_run: true
+    evidence: [katana-crawl]
+    command: grep -iE '/(users?|accounts?|members?|staff|roles?|permissions?|groups?)(/|$|\?)|usermanag|user-manag|admin/user' {ev:katana-crawl}/katana.txt | sed -E 's#\?.*##' | sort -u | head -50
+  - summary: Check that a disabled account's session stops working
+    evidence: [provisioning-process]
+    command: >-
+      c='SESSION_COOKIE_NAME=VALUE'; p=/PATH-ONLY-A-LOGGED-IN-USER-SEES;
+      for n in 1 2 3; do echo "$(date +%T) $(curl -sk -m 15 -o /dev/null -w '%{http_code} %{size_download} %{redirect_url}' -b "$c" "{base_url}$p")"; sleep 20; done
+    operation: >-
+      Log in with a test account, copy its session cookie (developer tools, Storage or
+      Application tab) into c and a logged-in page into p, and run the command once (codes
+      of a working session). Ask the owner to disable the account, then run it again: a 200
+      with the same size means the session still works. Do the same with an API token if the
+      application issues them. Record the output in provisioning-process.
+  - summary: Check that a role cannot create or promote accounts beyond its own rights
+    evidence: [provisioning-process, role-matrix]
+    operation: >-
+      With each role that can manage users (from role-matrix), create a test account and
+      try to give it a higher role than the creator's, and try to change the creator's own
+      role. Replay the user creation request with a lower role's session. Record the
+      results in provisioning-process.
+  - summary: Judge the provisioning process
+    evidence: [provisioning-process, role-matrix]
+    ai_task: >-
+      From provisioning-process (and role-matrix), list each gap in the account life cycle:
+      creation without approval where required, promotion beyond the creator's rights,
+      sessions or tokens that survive disabling, no leaver process or review. Verdict: fail
+      when any of these is shown; pass when the process and the checks show none; "-" when
+      provisioning-process is missing.

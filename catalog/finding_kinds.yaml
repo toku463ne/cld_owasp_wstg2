@@ -83,6 +83,23 @@ kinds:
     title: Cloud storage readable or writable anonymously
     subject: "the bucket or container, as its host and path, for example `examplebucket.s3.amazonaws.com`"
 
+  # ---- identity management -------------------------------------------------
+  - id: role-separation
+    title: Role has more permissions than defined, or roles are not defined
+    subject: "the role and the function, for example `member user management`, or `no role definitions`"
+  - id: registration-weakness
+    title: Weakness in self-registration
+    subject: "the weakness, for example `role parameter accepted`, `no e-mail verification`, `duplicate accounts`, `no bot protection`"
+  - id: provisioning-weakness
+    title: Weakness in account provisioning or de-provisioning
+    subject: "the weakness, for example `session survives disabling`, `promotion beyond own role`, `no leaver process`"
+  - id: account-enumeration
+    title: Existing user names can be identified
+    subject: "the function, for example `login`, `password reset`, `registration`, `wp-json users`"
+  - id: weak-username-policy
+    title: Guessable user names or user name variants accepted
+    subject: "the weakness, for example `case variants accepted`, `first.last pattern`"
+
   # ---- cryptography --------------------------------------------------------
   - id: tls-weak-protocol
     title: Obsolete TLS or SSL protocol accepted

@@ -1,0 +1,91 @@
+# Evidence used by the Identity Management (IDNT) scenarios (also read by ATHN).
+# Schema: see the comments at the top of core.yaml.
+evidence:
+
+  # ---- FQDN targets: light ---------------------------------------------------
+
+  - id: auth-pages
+    title: Login, registration, and password reset pages
+    target_type: fqdn
+    kind: auto
+    level: light
+    description: >-
+      One GET per common login, registration, and password reset path, and per public
+      user list of common CMSs (WordPress REST users, ?author=1). stdout.txt has
+      "code size content-type URL -> redirect" per path; bodies are under pages/ (forms
+      and their fields). No form is submitted.
+    argv: [curl, -sS, -k, --max-time, "10", --create-dirs,
+           -w, "%{http_code} %{size_download} %{content_type} %{url_effective} -> %{redirect_url}\n",
+           -o, "{out}/pages/login.html", "{base_url}/login",
+           -o, "{out}/pages/signin.html", "{base_url}/signin",
+           -o, "{out}/pages/account-login.html", "{base_url}/account/login",
+           -o, "{out}/pages/user-login.html", "{base_url}/user/login",
+           -o, "{out}/pages/users-sign_in.html", "{base_url}/users/sign_in",
+           -o, "{out}/pages/auth-login.html", "{base_url}/auth/login",
+           -o, "{out}/pages/register.html", "{base_url}/register",
+           -o, "{out}/pages/signup.html", "{base_url}/signup",
+           -o, "{out}/pages/account-register.html", "{base_url}/account/register",
+           -o, "{out}/pages/user-register.html", "{base_url}/user/register",
+           -o, "{out}/pages/users-sign_up.html", "{base_url}/users/sign_up",
+           -o, "{out}/pages/forgot-password.html", "{base_url}/forgot-password",
+           -o, "{out}/pages/password-reset.html", "{base_url}/password/reset",
+           -o, "{out}/pages/account-recover.html", "{base_url}/account/recover",
+           -o, "{out}/pages/user-password.html", "{base_url}/user/password",
+           -o, "{out}/pages/users-password-new.html", "{base_url}/users/password/new",
+           -o, "{out}/pages/wp-register.html", "{base_url}/wp-login.php?action=register",
+           -o, "{out}/pages/wp-lostpassword.html", "{base_url}/wp-login.php?action=lostpassword",
+           -o, "{out}/pages/wp-users.json", "{base_url}/wp-json/wp/v2/users",
+           -o, "{out}/pages/author-1.html", "{base_url}/?author=1"]
+    files: [pages]
+    timeout: 300
+
+  # ---- FQDN targets: manual --------------------------------------------------
+
+  - id: role-definitions
+    title: Role definitions from the owner
+    target_type: fqdn
+    kind: manual
+    description: >-
+      The application's roles and what each may do, as the system owner defines them
+      (specification, permission table, or interview notes with the date and who
+      answered): role name, how a user gets it, functions and data it may use.
+
+  - id: role-matrix
+    title: Role and permission matrix (tested)
+    target_type: fqdn
+    kind: manual
+    description: >-
+      Text table: one row per function or screen (method and path), one column per role,
+      each cell "allowed", "denied", or "not tested", as seen with a test account of each
+      role. Mark cells that differ from role-definitions. Input for the authorization
+      tests (WSTG-ATHZ).
+
+  - id: registration-tests
+    title: Registration and user name tests
+    target_type: fqdn
+    kind: manual
+    description: >-
+      One text item per check of the registration process (duplicate registration, use
+      before verification, extra role parameters, bot protection, user name variants):
+      what was sent, the answer, and the result, with screenshots where useful. Write
+      "no self-registration" as text when the application has none.
+
+  - id: provisioning-process
+    title: Account provisioning and de-provisioning process
+    target_type: fqdn
+    kind: manual
+    description: >-
+      Interview notes or documents from the owner (with the date and who answered): who
+      can create, change, disable, and delete accounts; the approval needed; how leavers
+      and role changes are handled and how fast; periodic account reviews; plus the
+      results of the tester's checks (screenshots or text).
+
+  - id: enum-tests
+    title: Account enumeration tests
+    target_type: fqdn
+    kind: manual
+    description: >-
+      Output of the comparison command of WSTG-IDNT-04 step 4 (enum-login.txt and the
+      same for password reset and registration), or screenshots of the messages shown for
+      an existing and a non-existing user name, with the user names used (a test
+      account, never a real user's).

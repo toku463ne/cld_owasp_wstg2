@@ -1,0 +1,46 @@
+id: WSTG-IDNT-05
+overview: >-
+  Check whether user names follow a guessable pattern (e-mail, first.last, employee
+  number) and whether the application treats variants of a user name (case, spaces,
+  look-alike characters) as different accounts.
+pass: >-
+  User names cannot be guessed from public information, or guessing does not help
+  because enumeration (WSTG-IDNT-04) and password guessing (WSTG-ATHN-03) are prevented;
+  case, space, and look-alike variants of an existing name are refused.
+fail: >-
+  User names follow a public pattern and can also be enumerated, or a variant of an
+  existing user name (Admin, " admin", a Cyrillic "а") can be registered as another
+  account.
+notes:
+  - Report together with WSTG-IDNT-04; the risk comes from the combination.
+finding_kinds: [weak-username-policy, account-enumeration]
+steps:
+  - summary: Find user name and e-mail patterns in public pages
+    auto_run: true
+    evidence: [site-assets, http-root-https]
+    command: >-
+      grep -rhoiE '[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}' {ev:http-root-https}/body.html {ev:site-assets}/site
+      | grep -viE '@[0-9]x\.|\.(png|jpe?g|gif|svg|webp)$|example\.(com|org|net)$' | tr 'A-Z' 'a-z'
+      | sed -E 's/^[a-z]+\.[a-z]+@/first.last@/; s/^[a-z]@?[a-z]+@/initial+last@/; s/^[0-9]+@/number@/' | sort | uniq -c | sort -rn | head -20
+  - summary: Read the user name rules of the registration and login forms
+    auto_run: true
+    evidence: [auth-pages]
+    command: >-
+      cd {ev:auth-pages}/pages && grep -HoiE '<input[^>]*name="?(user|login|email|account|id)[^>]*>' * 2>/dev/null || echo "no user name field found"
+  - summary: Test user name variants
+    evidence: [registration-tests]
+    operation: >-
+      Where accounts can be created (self-registration or an admin screen, with the
+      owner's agreement): register user names that differ from an existing test account
+      only by case (TestUser), a leading or trailing space, a dot or plus in the e-mail
+      local part, or a look-alike character (Cyrillic "а" for "a"). Check whether each is
+      refused or becomes a separate account, and whether logging in with a variant opens
+      the original account. Record the results in registration-tests.
+  - summary: Judge the user name policy
+    evidence: [registration-tests, enum-tests]
+    ai_task: >-
+      From steps 1 to 3 (and enum-tests of WSTG-IDNT-04), describe the user name pattern
+      (e-mail, first.last, number, free choice) and whether it can be guessed from public
+      pages, and list variants accepted as separate accounts. Verdict: fail when a variant
+      is accepted as a separate account, or the pattern is guessable and enumeration is
+      possible; pass otherwise; "-" when registration-tests is missing.

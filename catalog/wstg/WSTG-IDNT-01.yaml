@@ -1,0 +1,64 @@
+id: WSTG-IDNT-01
+overview: >-
+  Establish the application's roles and what each may do, and check that the permissions
+  seen with a test account of each role match the owner's definitions. The result (role
+  matrix) is the input of the authorization tests (WSTG-ATHZ).
+pass: >-
+  The owner's role definitions exist, and each role's functions and data, as seen with a
+  test account, match them; no role has more than it should by default.
+fail: >-
+  There are no role definitions, or a role can use functions or data beyond its
+  definition (for example a normal user reaches user management), or roles are not
+  separated at all.
+notes:
+  - Ask for one test account per role. Never use real users' accounts.
+  - Hidden menu items are not separation; whether a hidden function really refuses a role is tested in WSTG-ATHZ-02. Here, record what each role is shown and can do.
+finding_kinds: [role-separation, unprotected-path, hidden-function]
+steps:
+  - summary: Get the role definitions from the owner
+    evidence: [role-definitions]
+    operation: >-
+      Ask the system owner for the list of roles (for example administrator, operator,
+      member, guest), how a user gets each role, and the functions and data each may use.
+      Save the document or interview notes as role-definitions.
+  - summary: Record one HAR per role while using every function the role is shown
+    evidence: [har-browse]
+    operation: >-
+      Log in with the test account of each role in turn and record a HAR (see har-browse)
+      while opening every menu item and screen the role is shown, without changing real
+      data. Upload one HAR per role with the caption "logged in as ROLE" (and one
+      "anonymous").
+  - summary: List the paths each role used (from the HAR files)
+    auto_run: true
+    evidence: [har-browse]
+    command: >-
+      cd {ev:har-browse}/items/ && perl -MJSON::PP -e '
+      sub rd { local $/; open my $f, "<", $_[0] or return undef; my $t = <$f>; return eval { decode_json($t) } }
+      my $m = rd("../meta.json") or die "no meta.json\n";
+      for my $it (@{$m->{"items"} || []}) {
+        next unless $it->{"file"} =~ /\.har$/i;
+        my $h = rd("../" . $it->{"file"}) or next;
+        print "== ", ($it->{"caption"} || $it->{"name"} || $it->{"file"}), "\n";
+        my %s;
+        for my $e (@{$h->{"log"}->{"entries"} || []}) {
+          my $u = $e->{"request"}->{"url"} // ""; $u =~ s/[?#].*//;
+          next if $u =~ /\.(js|mjs|css|png|jpe?g|gif|svg|ico|webp|woff2?|ttf|eot|map)$/i;
+          $u =~ s#^https?://{fqdn}(:\d+)?##; $u =~ s#/\d+(?=/|$)#/:id#g; $u =~ s#/[0-9a-f-]{32,36}(?=/|$)#/:id#gi;
+          $s{($e->{"request"}->{"method"} // "?") . " " . $u}++ }
+        print "$_\n" for sort keys %s; print "\n" }'
+  - summary: Draft the role matrix and compare it with the definitions
+    evidence: [role-definitions, har-browse, role-matrix]
+    ai_task: >-
+      From role-definitions and the HAR summaries (one HAR per role, see the captions),
+      draft the role matrix: one row per function (method and path, grouped by screen),
+      one column per role, "used" when the role's HAR has the request, "-" otherwise. Mark
+      rows where a role used a function its definition does not give it, and functions
+      that only an administrator should have but a lower role was shown. Verdict: fail when
+      a role has more than its definition or there are no definitions; pass when every role
+      matches; "-" when role-definitions or a role's HAR is missing.
+  - summary: Save the checked role matrix
+    evidence: [role-matrix]
+    operation: >-
+      Check the AI's draft against the screens, fill in what the HAR did not cover, and
+      save the table as role-matrix. WSTG-ATHZ-02 and ATHZ-03 replay each row with the
+      other roles' sessions.
