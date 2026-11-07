@@ -330,3 +330,18 @@ def load(root: Path | None = None) -> Catalog:
     if problems:
         raise CatalogError(problems)
     return Catalog(wstg_version=version, tests=tests, evidence=evidence, scenarios=scenarios)
+
+
+# --------------------------------------------------------------------------
+# Rendering
+
+
+def render(text: str, values: dict[str, str], evidence_paths: dict[str, str] | None = None) -> str:
+    """Fill in known placeholders. Unknown names and other braces stay as they are."""
+    def sub(m: re.Match) -> str:
+        return values.get(m.group(1), m.group(0))
+
+    out = PLACEHOLDER_RE.sub(sub, text)
+    if evidence_paths is not None:
+        out = EV_REF_RE.sub(lambda m: evidence_paths.get(m.group(1), m.group(0)), out)
+    return out

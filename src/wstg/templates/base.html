@@ -3,10 +3,22 @@
 <title>{% block title %}WSTG Runner{% endblock %}</title>
 <meta name="csrf" content="{{ csrf }}">
 <link rel="stylesheet" href="{{ static_url('style.css') }}">
+<script src="{{ static_url('app.js') }}" defer></script>
 </head><body>
 <header class="top">
   <a class="brand" href="{{ url_for('index') }}">WSTG Runner</a>
-  {% block header_left %}{% endblock %}
+  {% if user %}
+  <div class="target-select">
+    <select aria-label="Test target" data-nav>
+      {% if not target %}<option value="">Select a target</option>{% endif %}
+      {% for t in all_targets %}
+      <option value="{{ url_for('wstg_index', name=t.name) }}" {{ 'selected' if target and t.id == target.id }}>
+        {{ '   ' if t.parent_id }}{{ t.name }} ({{ t.type }})</option>
+      {% endfor %}
+    </select>
+    {% if can_write %}<a class="btn" href="{{ url_for('target_new', parent=target.domain if target else None) }}" title="Add a test target">+</a>{% endif %}
+  </div>
+  {% endif %}
   <span class="sp"></span>
   {% if user %}
     {% if can_write %}<a href="{{ url_for('admin_users') }}">Users</a>{% endif %}

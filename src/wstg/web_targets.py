@@ -1,0 +1,190 @@
+"""Target pages: target selector, the four main tabs, settings (scope), WSTG pages.
+
+URLs: /t/<target>/ (WSTG index), /t/<target>/findings, /t/<target>/manual,
+/t/<target>/auto, /t/<target>/settings, /t/<target>/wstg/<test id>.
+"""
+
+from __future__ import annotations
+
+import re
+
+from flask import Flask, abort, flash, g, redirect, render_template, request, session, url_for
+from markupsafe import Markup, escape
+
+from . import catalog as catmod
+from . import db as dbmod
+from . import targets as tmod
+from . import users
+from .config import Config
+from .web import admin_required, login_required
+
+_TICKS_RE = re.compile(r"`([^`]+)`")
+
+
+def ticks(text: str) -> Markup:
+    """Escape text and show `code` spans as <code>."""
+    return Markup(_TICKS_RE.sub(lambda m: f"<code>{m.group(1)}</code>", str(escape(text or ""))))
+
+
+def register(app: Flask, cfg: Config, db: dbmod.Database, cat: catmod.Catalog) -> None:
+    app.jinja_env.filters["ticks"] = ticks
+
+    def load_target(name: str) -> tmod.Target:
+        t = tmod.get(db, name)
+        if not t:
+            abort(404)
+        g.target = t
+        session["target"] = t.name
+        return t
+
+    def tests_for(t: tmod.Target) -> list[catmod.Test]:
+        return [x for x in cat.tests.values() if t.type in x.target_types]
+
+    @app.context_processor
+    def inject_targets():
+        if g.get("user") is None:
+            return {}
+        return {"all_targets": tmod.list_all(db), "target": g.get("target")}
+
+    @app.get("/")
+    @login_required
+    def index():
+        last = session.get("target")
+        if last and tmod.get(db, last):
+            return redirect(url_for("wstg_index", name=last))
+        all_t = tmod.list_all(db)
+        if all_t:
+            return redirect(url_for("wstg_index", name=all_t[0].name))
+        return render_template("index.html")
+
+    # ---- targets ----------------------------------------------------------
+
+    @app.route("/targets/new", methods=["GET", "POST"])
+    @admin_required
+    def target_new():
+        domains = [t for t in tmod.list_all(db) if t.type == "domain"]
+        form = request.form if request.method == "POST" else {
+            "type": request.args.get("type", "fqdn"), "parent": request.args.get("parent", "")}
+        if request.method == "POST":
+            try:
+                t = tmod.create(db, cfg, form.get("name", ""), form.get("type", ""),
+                                parent=form.get("parent") or None, description=form.get("description", ""),
+                                actor=g.user["username"])
+                session["target"] = t.name
+                flash(f"Target {t.name} created. Set its scope record before running commands.")
+                return redirect(url_for("target_settings", name=t.name))
+            except tmod.TargetError as e:
+                flash(str(e))
+        return render_template("target_new.html", domains=domains, form=form)
+
+    @app.route("/t/<name>/settings", methods=["GET", "POST"])
+    @login_required
+    def target_settings(name: str):
+        t = load_target(name)
+        if request.method == "POST":
+            if not users.can_write(g.user):
+                abort(403)
+            try:
+                tmod.update_description(db, t, request.form.get("description", ""), g.user["username"])
+                tmod.update_scope(
+                    db, t, allowed_hosts=request.form.get("allowed_hosts", ""),
+                    allowed_ports=request.form.get("allowed_ports", ""),
+                    base_url=request.form.get("base_url", ""),
+                    authorization_ref=request.form.get("authorization_ref", ""),
+                    valid_from=request.form.get("valid_from", ""),
+                    valid_until=request.form.get("valid_until", ""), actor=g.user["username"])
+                flash("Saved.")
+                return redirect(url_for("target_settings", name=t.name))
+            except tmod.TargetError as e:
+                flash(str(e))
+            t = load_target(name)
+        scope = tmod.get_scope(db, t)
+        return render_template("target_settings.html", tab="settings", scope=scope,
+                               problems=tmod.scope_problems(scope),
+                               evidence_dir=tmod.evidence_dir(cfg, t))
+
+    # ---- main tabs --------------------------------------------------------
+
+    @app.get("/t/<name>/")
+    @login_required
+    def wstg_index(name: str):
+        t = load_target(name)
+        vs = tmod.verdicts(db, t)
+        rows = []
+        for test in tests_for(t):
+            sc = cat.scenarios.get(test.id)
+            st = None if test.merged_into else tmod.status(len(sc.steps) if sc else 0, vs.get(test.id, {}))
+            rows.append({"test": test, "scenario": sc, "status": st})
+        counts = {s: sum(1 for r in rows if r["status"] == s) for s in ("-", "started", "pass", "fail")}
+        scope_problems = tmod.scope_problems(tmod.get_scope(db, t))
+        return render_template("wstg_index.html", tab="index", rows=rows, counts=counts,
+                               scope_problems=scope_problems)
+
+    @app.get("/t/<name>/findings")
+    @login_required
+    def findings_tab(name: str):
+        load_target(name)
+        return render_template("tab_placeholder.html", tab="findings", what="Findings", milestone="M6")
+
+    @app.get("/t/<name>/manual")
+    @login_required
+    def manual_tab(name: str):
+        load_target(name)
+        return render_template("tab_placeholder.html", tab="manual", what="Manual evidence", milestone="M4")
+
+    @app.get("/t/<name>/auto")
+    @login_required
+    def auto_tab(name: str):
+        t = load_target(name)
+        evs = [e for e in cat.evidence.values() if e.kind == "auto" and e.target_type == t.type]
+        return render_template("auto_tab.html", tab="auto", evidence=evs, cat=cat,
+                               scope_problems=tmod.scope_problems(tmod.get_scope(db, t)))
+
+    # ---- WSTG page --------------------------------------------------------
+
+    @app.get("/t/<name>/wstg/<test_id>")
+    @login_required
+    def wstg_page(name: str, test_id: str):
+        t = load_target(name)
+        test = cat.tests.get(test_id)
+        if not test:
+            abort(404)
+        if test.merged_into:
+            flash(f"{test.id} is merged into {test.merged_into} in WSTG v4.2.")
+            return redirect(url_for("wstg_page", name=t.name, test_id=test.merged_into))
+        sc = cat.scenarios.get(test_id)
+        scope = tmod.get_scope(db, t)
+        values = tmod.placeholder_values(cfg, t, scope)
+        ev_paths = {}
+        for e in cat.evidence.values():
+            owner = tmod.evidence_owner(t, e.target_type)
+            if owner:
+                ev_paths[e.id] = str(tmod.evidence_dir(cfg, owner) / e.id / "latest")
+        steps = []
+        vs = tmod.verdicts(db, t, test_id).get(test_id, {})
+        for i, st in enumerate(sc.steps if sc else (), 1):
+            steps.append({
+                "n": i, "step": st, "verdict": vs.get(i, "-"),
+                "command": catmod.render(st.command, values, ev_paths),
+                "operation": catmod.render(st.operation, values, ev_paths),
+                "evidence": [{"ev": cat.evidence[eid], "owner": tmod.evidence_owner(t, cat.evidence[eid].target_type),
+                              "used_by": [x for x in cat.tests_using(eid) if x != test_id]}
+                             for eid in st.evidence],
+            })
+        st_value = tmod.status(len(steps), vs) if sc else "-"
+        return render_template("wstg_page.html", tab="index", test=test, scenario=sc, steps=steps,
+                               status=st_value, applicable=t.type in test.target_types)
+
+    @app.post("/t/<name>/wstg/<test_id>/steps/<int:n>")
+    @admin_required
+    def wstg_step_verdict(name: str, test_id: str, n: int):
+        t = load_target(name)
+        sc = cat.scenarios.get(test_id)
+        if not sc or not 1 <= n <= len(sc.steps):
+            abort(404)
+        verdict = "-" if "reset" in request.form else request.form.get("verdict", "-")
+        try:
+            tmod.set_verdict(db, t, test_id, n, verdict, g.user["username"])
+        except tmod.TargetError as e:
+            flash(str(e))
+        return redirect(url_for("wstg_page", name=t.name, test_id=test_id) + f"#step-{n}")

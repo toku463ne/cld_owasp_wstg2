@@ -21,6 +21,7 @@ from pathlib import Path
 from flask import Flask, abort, flash, g, redirect, render_template, request, session, url_for
 from werkzeug.middleware.proxy_fix import ProxyFix
 
+from . import catalog as catmod
 from . import db as dbmod
 from . import users
 from .config import Config
@@ -54,13 +55,15 @@ def admin_required(fn):
     return login_required(wrapper)
 
 
-def create_app(cfg: Config, db: dbmod.Database | None = None) -> Flask:
+def create_app(cfg: Config, db: dbmod.Database | None = None, cat: catmod.Catalog | None = None) -> Flask:
     if not cfg.secret_key:
         raise RuntimeError("WSTG_SECRET_KEY (or WSTG_SECRET_KEY_FILE) is not set")
     db = db or dbmod.Database(cfg.db_path)
     pending = dbmod.pending_migrations(db)
     if pending:
         raise RuntimeError(f"database has pending migrations ({', '.join(v for v, _ in pending)}); run `wstg migrate`")
+
+    cat = cat or catmod.load()
 
     app = Flask(__name__)
     app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
@@ -77,6 +80,7 @@ def create_app(cfg: Config, db: dbmod.Database | None = None) -> Flask:
     )
     app.extensions["wstg.cfg"] = cfg
     app.extensions["wstg.db"] = db
+    app.extensions["wstg.catalog"] = cat
 
     static_versions: dict[str, str] = {}
 
@@ -138,11 +142,6 @@ def create_app(cfg: Config, db: dbmod.Database | None = None) -> Flask:
         session.clear()
         return redirect(url_for("login"))
 
-    @app.get("/")
-    @login_required
-    def index():
-        return render_template("index.html")
-
     @app.get("/admin/users")
     @admin_required
     def admin_users():
@@ -167,6 +166,9 @@ def create_app(cfg: Config, db: dbmod.Database | None = None) -> Flask:
         except users.UserError as e:
             flash(str(e))
         return redirect(url_for("admin_users"))
+
+    from . import web_targets
+    web_targets.register(app, cfg, db, cat)
 
     @app.errorhandler(400)
     @app.errorhandler(403)

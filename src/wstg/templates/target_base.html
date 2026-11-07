@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}{{ target.name }} · WSTG Runner{% endblock %}
+{% block body %}
+<div class="target-head">
+  <h2>{{ target.name }} <span class="chip">{{ target.type }}</span></h2>
+  {% if target.parent_name %}<span class="muted">in <a href="{{ url_for('wstg_index', name=target.parent_name) }}">{{ target.parent_name }}</a></span>{% endif %}
+  <span class="sp"></span>
+  <a href="{{ url_for('target_settings', name=target.name) }}" class="{{ 'on' if tab == 'settings' }}">Settings and scope</a>
+</div>
+<nav class="tabs">
+  <a href="{{ url_for('wstg_index', name=target.name) }}" class="{{ 'on' if tab == 'index' }}">WSTG index</a>
+  <a href="{{ url_for('findings_tab', name=target.name) }}" class="{{ 'on' if tab == 'findings' }}">Findings</a>
+  <a href="{{ url_for('manual_tab', name=target.name) }}" class="{{ 'on' if tab == 'manual' }}">Manual evidence</a>
+  <a href="{{ url_for('auto_tab', name=target.name) }}" class="{{ 'on' if tab == 'auto' }}">Automatic evidence</a>
+</nav>
+{% block content %}{% endblock %}
+{% endblock %}

@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}New target · WSTG Runner{% endblock %}
+{% block body %}
+<h2>New test target</h2>
+<form method="post" class="stack" action="{{ url_for('target_new') }}">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <p><label>Type
+    <select name="type">
+      <option value="domain" {{ 'selected' if form.get('type') == 'domain' }}>domain: the domain itself (passive checks only), e.g. example.com</option>
+      <option value="fqdn" {{ 'selected' if form.get('type') != 'domain' }}>FQDN: a web server, e.g. www.example.com</option>
+    </select></label></p>
+  <p><label>Name <input name="name" required value="{{ form.get('name', '') }}" placeholder="www.example.com" autocomplete="off"></label></p>
+  <p><label>Parent domain (FQDN only)
+    <select name="parent">
+      <option value="">(none)</option>
+      {% for d in domains %}<option value="{{ d.name }}" {{ 'selected' if form.get('parent') == d.name }}>{{ d.name }}</option>{% endfor %}
+    </select></label>
+    <span class="muted">An FQDN target can read the evidence of its parent domain.</span></p>
+  <p><label>Description <textarea name="description" rows="2">{{ form.get('description', '') }}</textarea></label></p>
+  <p><button>Create</button></p>
+</form>
+{% endblock %}

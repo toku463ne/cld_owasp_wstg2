@@ -15,7 +15,7 @@ def test_login_and_logout(app):
     r = login(c, "admin", ADMIN_PW)
     assert r.status_code == 302
     page = c.get("/").get_data(as_text=True)
-    assert "WSTG index" in page and "admin" in page
+    assert "No test targets yet" in page and "admin" in page
     token = csrf_of(c)
     assert c.post("/logout", data={"csrf": token}).status_code == 302
     assert c.get("/").status_code == 302

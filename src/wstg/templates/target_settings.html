@@ -1,0 +1,30 @@
+{% extends "target_base.html" %}
+{% block content %}
+{% if problems %}<div class="warnbox">Commands are refused until this is fixed: {{ problems | join('; ') }}.</div>
+{% else %}<div class="okbox">The scope record allows commands today.</div>{% endif %}
+<form method="post" class="stack" action="{{ url_for('target_settings', name=target.name) }}">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <fieldset {{ 'disabled' if not can_write }}>
+  <p><label>Description <textarea name="description" rows="2">{{ target.description }}</textarea></label></p>
+  <h3>Scope record</h3>
+  <p><label>Authorization reference (contract, approval mail, ticket)
+    <input name="authorization_ref" value="{{ scope.authorization_ref }}" size="60"></label></p>
+  <p><label>Valid from <input name="valid_from" type="date" value="{{ scope.valid_from or '' }}"></label>
+     <label>Valid until <input name="valid_until" type="date" value="{{ scope.valid_until or '' }}"></label></p>
+  {% if target.type == 'fqdn' %}
+  <p><label>Base URL <input name="base_url" value="{{ scope.base_url }}" size="40" placeholder="https://{{ target.name }}"></label>
+    <span class="muted">Scheme, host, and port used for {base_url} and {port} in commands.</span></p>
+  <p><label>Allowed hosts (one per line; <code>*.example.com</code> matches subdomains)
+    <textarea name="allowed_hosts" rows="3">{{ scope.allowed_hosts | join('\n') }}</textarea></label></p>
+  <p><label>Allowed ports (comma-separated) <input name="allowed_ports" value="{{ scope.allowed_ports | join(',') }}"></label></p>
+  {% else %}
+  <input type="hidden" name="allowed_hosts" value="{{ scope.allowed_hosts | join('\n') }}">
+  <input type="hidden" name="allowed_ports" value="">
+  <input type="hidden" name="base_url" value="">
+  <p class="muted">A domain target runs passive commands only (DNS, WHOIS, certificate logs, archives); no hosts or ports are contacted.</p>
+  {% endif %}
+  {% if can_write %}<p><button>Save</button></p>{% endif %}
+  </fieldset>
+</form>
+<p class="muted">Last changed {{ scope.updated_at }} by {{ scope.updated_by }}. Evidence folder: <code>{{ evidence_dir }}</code></p>
+{% endblock %}

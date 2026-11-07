@@ -1,0 +1,19 @@
+{% extends "target_base.html" %}
+{% block content %}
+{% if scope_problems %}
+<div class="warnbox">The scope record does not allow commands yet: {{ scope_problems | join('; ') }}.
+  <a href="{{ url_for('target_settings', name=target.name) }}">Edit the scope</a></div>
+{% endif %}
+<p class="muted">Collection (full / light, resumable) comes in milestone M5. These are the automatic evidence definitions for {{ target.type }} targets.</p>
+<table>
+  <tr><th>Evidence</th><th>Level</th><th>Command</th><th>Used by</th></tr>
+  {% for e in evidence %}
+  <tr>
+    <td><b>{{ e.title }}</b><br><code class="muted">{{ e.id }}</code></td>
+    <td class="nowrap">{{ e.level }}{% if e.heavy %} <span class="chip warn">heavy</span>{% endif %}{% if e.passive %} <span class="chip">passive</span>{% endif %}</td>
+    <td><code>{{ e.argv | join(' ') }}</code>{% if e.load_note %}<div class="note">{{ e.load_note }}</div>{% endif %}</td>
+    <td>{% for tid in cat.tests_using(e.id) %}<a href="{{ url_for('wstg_page', name=target.name, test_id=tid) }}">{{ tid }}</a>{{ ' ' }}{% endfor %}</td>
+  </tr>
+  {% endfor %}
+</table>
+{% endblock %}

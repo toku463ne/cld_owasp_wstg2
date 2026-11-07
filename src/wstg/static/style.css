@@ -40,3 +40,37 @@ form.stack label { display: block; }
 .login input { width: 100%; }
 form.inline { display: inline; }
 @media (max-width: 700px) { main { padding: 12px; } }
+.btn { display: inline-block; background: var(--surface); border: 1px solid var(--line); border-radius: 4px; padding: 3px 10px; color: var(--fg); }
+.btn:hover { text-decoration: none; background: var(--th); }
+.sp { flex: 1; }
+.target-head, .wstg-head, .step-head { display: flex; gap: 12px; align-items: baseline; flex-wrap: wrap; }
+.target-head h2, .wstg-head h2 { margin: 4px 0; }
+.target-head a.on { font-weight: 600; color: var(--fg); }
+.nowrap { white-space: nowrap; }
+.small { font-size: 12px; }
+.hidden { display: none; }
+code, pre { font: 13px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+code { background: var(--th); padding: 0 3px; border-radius: 3px; }
+.status { display: inline-block; min-width: 56px; text-align: center; font-size: 12px; font-weight: 600;
+  padding: 1px 8px; border-radius: 10px; border: 1px solid var(--line); }
+.status.s-none { color: var(--muted); }
+.status.s-started { color: var(--warn); border-color: var(--warn); }
+.status.s-pass { color: var(--ok); border-color: var(--ok); }
+.status.s-fail { color: var(--bad); border-color: var(--bad); }
+tr.merged td { color: var(--muted); }
+.warnbox, .okbox { border: 1px solid var(--warn); border-radius: 4px; padding: 6px 10px; margin: 8px 0; }
+.okbox { border-color: var(--ok); }
+.note { font-size: 13px; color: var(--muted); margin-top: 4px; }
+.note.warn { color: var(--warn); border-left: 3px solid var(--warn); padding-left: 8px; }
+.chip.warn { color: var(--warn); border-color: var(--warn); }
+.criteria { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.criteria h4 { margin: 4px 0; }
+h4.ok { color: var(--ok); } h4.bad { color: var(--bad); }
+section.step, section.overview, section.findings-box { background: var(--surface); border: 1px solid var(--line);
+  border-radius: 6px; padding: 8px 14px; margin: 10px 0; }
+section.step h4 { margin: 6px 0; }
+.cmd { display: flex; gap: 6px; align-items: flex-start; }
+.cmd pre { flex: 1; margin: 6px 0; padding: 8px; background: var(--th); border-radius: 4px; overflow-x: auto; white-space: pre-wrap; word-break: break-all; }
+fieldset { border: none; padding: 0; margin: 0; }
+textarea { width: 100%; max-width: 700px; }
+@media (max-width: 700px) { .criteria { grid-template-columns: 1fr; } }

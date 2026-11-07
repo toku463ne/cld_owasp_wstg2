@@ -1,0 +1,25 @@
+{% extends "target_base.html" %}
+{% block content %}
+{% if scope_problems %}
+<div class="warnbox">The scope record does not allow commands yet: {{ scope_problems | join('; ') }}.
+  <a href="{{ url_for('target_settings', name=target.name) }}">Edit the scope</a></div>
+{% endif %}
+<p class="muted">
+  {% for s, n in counts.items() %}<span class="status s-{{ s if s != '-' else 'none' }}">{{ s }}</span> {{ n }}{{ ' · ' if not loop.last }}{% endfor %}
+  {% if target.type == 'fqdn' %} · Domain-only tests are on the parent domain target.{% endif %}
+</p>
+<table class="index">
+  <tr><th>ID</th><th>Test</th><th>OWASP</th><th>Status</th></tr>
+  {% for r in rows %}
+  <tr class="{{ 'merged' if r.test.merged_into }}">
+    <td class="nowrap">
+      {% if r.test.merged_into %}{{ r.test.id }}{% else %}<a href="{{ url_for('wstg_page', name=target.name, test_id=r.test.id) }}">{{ r.test.id }}</a>{% endif %}
+    </td>
+    <td><b>{{ r.test.title }}</b>{% if not r.scenario and not r.test.merged_into %} <span class="chip">no scenario yet</span>{% endif %}<br>
+      <span class="muted">{{ r.test.summary }}</span></td>
+    <td><a href="{{ r.test.owasp_url }}" target="_blank" rel="noopener noreferrer">WSTG</a></td>
+    <td class="nowrap">{% if r.status %}<span class="status s-{{ r.status if r.status != '-' else 'none' }}">{{ r.status }}</span>{% else %}<span class="muted">merged into {{ r.test.merged_into }}</span>{% endif %}</td>
+  </tr>
+  {% endfor %}
+</table>
+{% endblock %}
