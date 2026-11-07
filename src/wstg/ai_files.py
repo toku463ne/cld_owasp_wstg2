@@ -41,12 +41,17 @@ Each file in `prompts/` is the AI prompt of one OWASP WSTG test on {target}
 
 For each prompt file `prompts/WSTG-XXXX-NN.md`:
 
-1. Read the prompt and follow it. You may read the evidence folders it lists for
+1. Skip it when `answers/WSTG-XXXX-NN.json` already exists and is newer than the prompt.
+2. Read the prompt and follow it. You may read the evidence folders it lists for
    more detail. Do not read or copy `*.har` files: they hold cookies and tokens.
-2. Write the answer to `answers/WSTG-XXXX-NN.json` (same name, `.json`): the JSON
-   object the prompt asks for, `{{"wstg_review": {{...}}}}`, filled in. Keep
-   "test" and "target" as given; one entry per step.
-3. Do not change anything else in the evidence folders.
+   Do not send any request to the target or its hosts.
+3. A missing or failed collection is never a pass: use "-" when the evidence is
+   missing or not enough to decide.
+4. Write the answer to `answers/WSTG-XXXX-NN.json` (same name, `.json`): only the
+   JSON object the prompt asks for, `{{"wstg_review": {{...}}}}`, filled in, as valid
+   JSON without code fences or other text. Keep "test" and "target" as given; one
+   entry per step; "findings" with full CVSS 3.1 vectors, or [] when there is none.
+5. Do not change anything else in the evidence folders.
 
 Then import the answers: the "Import AI answers" button on the WSTG index tab, or
 `uv run wstg ai-import {target}`.

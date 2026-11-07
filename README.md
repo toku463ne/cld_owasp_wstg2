@@ -106,6 +106,46 @@ curl -s --noproxy '*' --max-time 5 -o /dev/null -w '%{http_code}\n' http://127.0
    `_ai/answers/WSTG-XXXX-NN.json`. *Import AI answers* (or `uv run wstg ai-import TARGET
    [--findings]`) imports them all; files already imported are skipped.
 
+### Prompt for an AI agent (bulk review)
+
+After *Save all AI prompts* (or `uv run wstg ai-prompts TARGET`), start an AI agent that can read
+and write local files (for example Claude Code on the Kali host) and give it the prompt below.
+Replace `EVIDENCE_ROOT` with the value of `WSTG_EVIDENCE_ROOT` (for example `/srv/wstg2/evidence`)
+and `TARGET` with the target name, or keep `*` to review every target that has saved prompts.
+Use an AI service the engagement allows: the prompts and evidence hold customer data.
+
+```text
+You are reviewing the results of an authorized OWASP WSTG v4.2 web security test.
+
+Folders: EVIDENCE_ROOT/TARGET/_ai/ (TARGET may be *: then do every folder
+EVIDENCE_ROOT/*/_ai/ that has a prompts/ folder). Each has README.md, prompts/, answers/.
+
+For every file prompts/WSTG-XXXX-NN.md in those folders:
+
+1. Skip it when answers/WSTG-XXXX-NN.json already exists and is newer than the prompt.
+2. Read the whole prompt and follow it. It holds the pass/fail criteria, the steps with
+   the tester's verdicts, command outputs, evidence excerpts, and the JSON template.
+3. Judge from the prompt and the evidence folders it lists at the end. You may open
+   files there for detail. Never open *.har files (they hold cookies and tokens).
+4. Do not send any request to the target or its hosts. Public references (NVD, vendor
+   advisories) may be used if your tools allow it; cite them in the reason.
+5. A missing or failed collection is never a pass: use "-" when the evidence is missing
+   or not enough to decide. For steps with "YOUR TASK for this step", do that task.
+6. Write answers/WSTG-XXXX-NN.json: only the filled-in JSON object of the template,
+   {"wstg_review": {...}}, as valid UTF-8 JSON (no code fences, no comments, no other
+   text). Keep "test" and "target" exactly as given and one entry per step. Put each
+   distinct problem in "findings" with a full CVSS 3.1 vector, without repeating
+   findings the prompt lists as already recorded; use [] when there is none.
+7. Write nothing else and change, move, or delete no other file.
+
+At the end, print a table: target, test, overall verdict, number of findings, and the
+prompts you skipped or could not answer, with the reason.
+```
+
+Then import the answers: *Import AI answers* on the WSTG index tab, or
+`uv run wstg ai-import TARGET [--findings]`. Check the verdicts and the proposed findings on each
+WSTG page; the AI's verdicts are marked "AI" and findings it created are by `ai:<user>`.
+
 ## Configuration
 
 `WSTG_CONFIG` names a KEY=VALUE file outside the repository. Keys are documented in
