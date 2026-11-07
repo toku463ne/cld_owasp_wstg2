@@ -9,7 +9,7 @@ Last updated: 2026-11-08
 | # | Milestone | Status | Notes |
 |---|---|---|---|
 | M0 | Skeleton | **Done** (`5d9c082`) | 23 tests pass; CLI and waitress server checked by hand |
-| M1 | Catalog | **In progress** | Index (97), schema and validator, INFO + CONF + IDNT + CRYP + ATHN + ATHZ + SESS scenarios (52); INPV onwards pending |
+| M1 | Catalog | **In progress** | Index (97), schema and validator, INFO + CONF + IDNT + CRYP + ATHN + ATHZ + SESS + INPV scenarios (70); ERRH onwards pending |
 | M2 | Targets and main page | **Done** | Targets, scope records and check, selector, tabs, WSTG index |
 | M3 | WSTG page | **Done** | Overview, criteria, steps, verdict/reset, commands, evidence (view, edit, collected date), findings, AI prompt |
 | M4 | Manual evidence | **Done** (browser paste to be checked on Kali) | Versioned store, capture box, upload, text, edit/remove as new versions |
@@ -101,6 +101,14 @@ Last updated: 2026-11-08
 - Note: a step that references several evidence ids runs its auto-run command only when all are collected (analysis.run marks it "missing" otherwise); SESS reuses this as IDNT-04 does, relying on the light evidence being collected together.
 - Not run against any host; the manual-step commands to be checked against a lab target on Kali.
 
+### M1 INPV delivered
+- 18 scenarios WSTG-INPV-01 to 19 (`catalog/wstg/`); INPV-03 (HTTP verb tampering) stays merged into CONF-06 and redirects there. Covers reflected/stored XSS, HPP, SQL/LDAP/XML(+XXE)/SSI/XPath/mail/code/command/format-string/template injection, incubated vulnerabilities, HTTP splitting/smuggling, raw-request handling, Host header injection, and SSRF.
+- Injection is active and context-specific, so the actual payloads are manual steps with concrete curl/sqlmap/ncat examples against a scoped test target and test data; heavy or disruptive ones carry load notes (sqlmap, request smuggling, oversized raw requests). Auto-run steps read only the crawl to surface candidate inputs (parameter names, form fields, URL-taking/command-building/evaluation/mail/XML parameters, .shtml pages). Each test ends with an `ai_task` verdict; INPV-07 and INPV-15 report their two sub-kinds separately.
+- One harmless light auto evidence added, `host-header-probe` (`catalog/evidence/inpv.yaml`): a single GET with a forged Host/X-Forwarded-Host marker; INPV-17 step 1 auto-run greps the saved headers/body for the marker to flag Host-header trust. Passes the standard scope check (the marker is a header value, not a contacted host). The 18 manual evidence are also in inpv.yaml, each keeping retrieved data to a summary and test data removable.
+- 20 finding kinds added (reflected-xss, stored-xss, http-parameter-pollution, sql-injection, ldap-injection, xml-injection, xxe, ssi-injection, xpath-injection, mail-injection, code-injection, command-injection, format-string-injection, incubated-vulnerability, http-response-splitting, http-request-smuggling, request-parsing-weakness, host-header-injection, server-side-template-injection, ssrf); INPV-11 also reuses file-inclusion, INPV-16 reuses unprotected-path.
+- `tests/test_inpv.py`: INPV-01/19 candidate extraction (parameter vs URL-taking parameter), INPV-17 probe reflection, every INPV page renders, INPV-03 redirects to CONF-06. `catalog-check` clean (70 scenarios, 95 evidence); full suite 204 passed.
+- Not run against any host; all injection payloads/commands to be exercised against a lab target on Kali.
+
 ### M8 (pulled forward) delivered
 - `scripts/setup-kali.sh`: apt base packages, uv, data dirs (`/srv/wstg2/{evidence,db}`), config file and secret key generated once, `uv sync`, `check-config`, `migrate`, first admin, systemd user service `wstg2-web` (restarted on every run, lingering), nginx site rendered from `deploy/nginx/wstg2.conf.template` (port and allow list from the config), `nginx -t` with rollback, smoke test. Options `--no-packages`, `--no-nginx`, `--no-systemd`, `--dry-run`. Rerun after `git pull` to update a Kali host.
 - New config key `WSTG_WEB_PORT` (default 8083), read by the setup script only.
@@ -136,7 +144,7 @@ Last updated: 2026-11-08
 
 ### Open items carried forward
 - Check on Kali: katana `-sr -srd` (store responses) and the responses folder layout; gitleaks package and `detect --no-git --redact --report-format json` output fields (RuleID, File, StartLine, Match); the jump host (Ubuntu 24.04) with real whois/traceroute/nmap/sslscan; RDAP for the target's TLD; the proxy options of each tool (openssl, testssl, whatweb, nikto, ffuf, katana, subfinder, wafw00f) behind the real proxy; Kali package names in `catalog/tools.yaml` (katana, padbuster, theharvester); browser clipboard paste into the capture box, the worker with real tools against a lab target (tool options such as katana `-ct`), backup.
-- M1: the remaining categories (INPV, ERRH, BUSL, CLNT, APIT).
+- M1: the remaining categories (ERRH, BUSL, CLNT, APIT).
 - Check on Kali: the ATHN `login-http` and `alt-auth-endpoints` curl `--next` chains against a lab target, and the manual-step commands (force browsing, cache-header loop, enumeration curl).
 - Check on Kali: the CONF evidence against a lab target (content-ffuf and backup-ffuf run time, Nikto JSON layout read by `jq '.. | objects | select(has("msg"))'`).
 - M9: headless-browser HAR recording (needs a decision on adding Playwright and a browser), HAR analysis (cookies, headers, parameters) to replace manual Burp checks.

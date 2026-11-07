@@ -1,0 +1,43 @@
+id: WSTG-INPV-01
+overview: >-
+  Check whether input from the URL or a form is reflected into the response without
+  context-appropriate encoding, so a payload runs as script (reflected XSS). Test every
+  reflection context: HTML body, attribute, JavaScript, and URL.
+pass: >-
+  Reflected input is encoded for its output context, so a payload is shown as text and
+  never executes.
+fail: >-
+  Reflected input runs as script in any context (HTML, attribute, JavaScript, or URL),
+  including through case, encoding, or event-handler filter bypasses.
+notes:
+  - Vary the payload by output context; a partial WAF block is mitigation, not a fix.
+  - Confirm in the browser that JavaScript actually executes before reporting.
+finding_kinds: [reflected-xss]
+steps:
+  - summary: List parameters and form fields that may be reflected
+    auto_run: true
+    evidence: [katana-crawl]
+    command: >-
+      grep -oE '[?&][A-Za-z0-9_.-]+=' {ev:katana-crawl}/katana.txt 2>/dev/null | tr -d '?&=' | sort | uniq -c | sort -rn | head -40;
+      grep -rhoiE '<(input|textarea|select)[^>]*name=["'"'"']?[A-Za-z0-9_.-]+' {ev:katana-crawl}/responses 2>/dev/null | sort -u | head -40
+  - summary: Inject XSS payloads per context and check reflection (manual)
+    evidence: [xss-reflected-tests]
+    operation: >-
+      For each parameter, send a context payload and look for it unencoded in the response,
+      for example `curl -sk -G "{base_url}/search" --data-urlencode 'q=<script>alert(1)</script>'`
+      and, for an attribute or JS context, `"><img src=x onerror=alert(1)>` or
+      `';alert(1);//`. Try case, encoding, and event-handler variants against any filter.
+      Record each in xss-reflected-tests.
+  - summary: Confirm execution in the browser (manual)
+    evidence: [xss-reflected-tests]
+    operation: >-
+      Open the reflecting URL in the inspection browser and confirm the script actually
+      runs (the alert fires); screenshot it into xss-reflected-tests. Reflection that is
+      encoded and only shown as text is not a finding.
+  - summary: Judge reflected XSS
+    evidence: [xss-reflected-tests]
+    ai_task: >-
+      From steps 2 and 3 decide whether reflected input executes. Verdict: fail when a
+      payload runs as script in any context (confirmed in the browser); pass when every
+      reflection is encoded for its context; "-" when xss-reflected-tests is missing. Note
+      the parameter and context for each.

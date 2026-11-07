@@ -1,0 +1,37 @@
+id: WSTG-INPV-19
+overview: >-
+  Check whether the server can be made to send requests to arbitrary destinations
+  (server-side request forgery): internal addresses, the cloud metadata endpoint, or
+  external hosts, through an input that takes a URL or host.
+pass: >-
+  URL and host inputs are restricted by an allow-list, so internal addresses and the
+  metadata endpoint cannot be reached and arbitrary outbound requests are refused.
+fail: >-
+  The server reaches an internal address, 169.254.169.254, or localhost, or makes an
+  arbitrary outbound request (DNS/HTTP), including via scheme or notation tricks.
+notes:
+  - Prove a blind SSRF with an out-of-band callback log (an interaction host you control).
+finding_kinds: [ssrf]
+steps:
+  - summary: Find inputs that take a URL or host
+    auto_run: true
+    evidence: [katana-crawl]
+    command: >-
+      grep -oiE '[?&](url|uri|link|image|img|src|dest|target|host|domain|callback|webhook|feed|proxy|fetch|next|redirect|path|file)=[^&"'"'"'<> ]*'
+      {ev:katana-crawl}/katana.txt 2>/dev/null | sort -u | head -40 || echo "no obvious URL-taking parameter in the crawl"
+  - summary: Point the server at internal and metadata targets (manual)
+    evidence: [ssrf-tests]
+    operation: >-
+      Into each URL/host input send `http://169.254.169.254/` (cloud metadata),
+      `http://127.0.0.1:<port>/` and `http://10.x` (internal), and try `file://` and
+      `gopher://`. Attempt filter bypasses (an open redirect, DNS rebinding, alternative
+      notation such as `http://0x7f000001`). For a blind case, point it at an out-of-band
+      host you control and watch its log. Record in ssrf-tests.
+  - summary: Judge server-side request forgery
+    evidence: [ssrf-tests]
+    ai_task: >-
+      From step 2 decide whether the server can be made to send requests. Verdict: fail when
+      it reached an internal address, the metadata endpoint, or localhost, or made an
+      arbitrary outbound request (including via scheme/notation bypass or an out-of-band
+      callback); pass when URL/host inputs are allow-listed and internal targets are
+      refused; "-" when ssrf-tests is missing.

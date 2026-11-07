@@ -1,0 +1,35 @@
+id: WSTG-INPV-04
+overview: >-
+  Check how the application and any front-end (WAF, load balancer) handle a repeated
+  parameter. A difference in which value each uses (HTTP parameter pollution) can bypass
+  validation or authorization.
+pass: >-
+  Duplicate parameters are rejected, or every component on the path uses the same value,
+  so no component can be fed a different value.
+fail: >-
+  The front-end and the application pick different values from a duplicated parameter, so
+  a validation or authorization check can be passed with one value while another is used.
+notes:
+  - The point is the discrepancy between the front-end and the back-end; record both responses side by side.
+finding_kinds: [http-parameter-pollution]
+steps:
+  - summary: List parameters to try polluting
+    auto_run: true
+    evidence: [katana-crawl]
+    command: >-
+      grep -oE '[?&][A-Za-z0-9_.-]+=' {ev:katana-crawl}/katana.txt 2>/dev/null | tr -d '?&=' | sort | uniq -c | sort -rn | head -40
+      || echo "no parameters seen in the crawl"
+  - summary: Send duplicated parameters and see which value wins (manual)
+    evidence: [hpp-tests]
+    operation: >-
+      For each parameter send it twice and observe which value the server uses, for example
+      `curl -sk -i "{base_url}/x?id=1&id=2"`; also place the duplicate across the query and
+      the body, and mix array notation (`id[]`). Note the rule (first wins, last wins,
+      concatenated) and whether the front-end and application differ. Record in hpp-tests.
+  - summary: Judge HTTP parameter pollution
+    evidence: [hpp-tests]
+    ai_task: >-
+      From step 2 decide whether a pollution discrepancy is exploitable. Verdict: fail when
+      the front-end and application use different values from a duplicated parameter so a
+      check can be bypassed or a different value injected; pass when duplicates are rejected
+      or interpreted consistently; "-" when hpp-tests is missing.

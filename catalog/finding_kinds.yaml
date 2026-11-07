@@ -221,3 +221,65 @@ kinds:
   - id: session-hijacking
     title: Session token reusable from another device or network
     subject: "the session token, for example `cookie sessionid`"
+
+  # ---- input validation ----------------------------------------------------
+  - id: reflected-xss
+    title: Reflected cross-site scripting
+    subject: "the parameter and context, for example `q html body`, `ref attribute`"
+  - id: stored-xss
+    title: Stored cross-site scripting
+    subject: "where it is stored and fires, for example `comment shown on article`"
+  - id: http-parameter-pollution
+    title: HTTP parameter pollution
+    subject: "the parameter, for example `id`"
+  - id: sql-injection
+    title: SQL injection
+    subject: "the input and type, for example `id error-based`, `search blind time`"
+  - id: ldap-injection
+    title: LDAP injection
+    subject: "the input, for example `login username`"
+  - id: xml-injection
+    title: XML injection
+    subject: "the input, for example `soap body`"
+  - id: xxe
+    title: XML external entity processing (XXE)
+    subject: "the input, for example `upload docx`, `api xml body`"
+  - id: ssi-injection
+    title: Server-side include injection
+    subject: "the input and page, for example `name field on page.shtml`"
+  - id: xpath-injection
+    title: XPath injection
+    subject: "the input, for example `login username`"
+  - id: mail-injection
+    title: IMAP/SMTP header or command injection
+    subject: "the field, for example `contact form subject`"
+  - id: code-injection
+    title: Code injection
+    subject: "the input and language, for example `preview php`"
+  - id: command-injection
+    title: OS command injection
+    subject: "the input, for example `host parameter`"
+  - id: format-string-injection
+    title: Format string injection
+    subject: "the input, for example `name field`"
+  - id: incubated-vulnerability
+    title: Incubated (stored then later triggered) vulnerability
+    subject: "the stored input and trigger, for example `profile value run by admin batch`"
+  - id: http-response-splitting
+    title: HTTP response splitting (CRLF injection)
+    subject: "the parameter reflected into a header, for example `redirect`"
+  - id: http-request-smuggling
+    title: HTTP request smuggling
+    subject: "the discrepancy, for example `CL.TE`, `TE.CL`"
+  - id: request-parsing-weakness
+    title: Weak handling of raw or malformed requests
+    subject: "the case, for example `oversized header`, `duplicate header`"
+  - id: host-header-injection
+    title: Host header injection
+    subject: "where it is reflected, for example `password reset link`, `absolute url`"
+  - id: server-side-template-injection
+    title: Server-side template injection
+    subject: "the input, for example `name field`"
+  - id: ssrf
+    title: Server-side request forgery
+    subject: "the input, for example `url parameter`, `image fetch`"

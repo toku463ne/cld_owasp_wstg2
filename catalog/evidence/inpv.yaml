@@ -1,0 +1,206 @@
+# Evidence used by the Input Validation (INPV) scenarios.
+# Schema: see the comments at the top of core.yaml.
+# Injection testing sends payloads to the target's inputs; which input and which
+# payload depend on the context, and some payloads are destructive or heavy. The tool
+# does not inject blindly: the candidate inputs are surfaced from the crawl, and the
+# payloads are sent by the tester with the concrete commands shown, against a test
+# target in scope, using test data. Only one harmless, deterministic probe (the Host
+# header) is automated.
+evidence:
+
+  - id: host-header-probe
+    title: Host header reflection probe
+    target_type: fqdn
+    kind: auto
+    level: light
+    description: >-
+      One GET to {base_url}/ with a crafted Host header (and X-Forwarded-Host) set to a
+      marker value, saving the response headers (stdout.txt) and body (body.html). Lets
+      the auto-run step check whether the marker is reflected into a Location, an absolute
+      URL, or the body, which would mean the application trusts the Host header. Sends one
+      request and changes nothing.
+    argv: [curl, -sS, -k, --max-time, "15", -D, -, -o, "{out}/body.html",
+           -H, "Host: wstg-host-marker.example", -H, "X-Forwarded-Host: wstg-xfh-marker.example",
+           "{base_url}/"]
+    files: [body.html]
+    timeout: 60
+
+  - id: xss-reflected-tests
+    title: Reflected XSS tests
+    target_type: fqdn
+    kind: manual
+    description: >-
+      Per parameter tested, the payload sent for the reflection context (HTML body,
+      attribute, JavaScript, URL) and whether it was reflected unencoded and executed in
+      the browser (an alert actually firing), with a screenshot. Note filter-bypass
+      variants tried (case, encoding, event handlers).
+
+  - id: xss-stored-tests
+    title: Stored XSS tests
+    target_type: fqdn
+    kind: manual
+    description: >-
+      Per stored input (comment, profile, post), the payload stored and where it fired on
+      display (which page, which user, admin screens, generated PDF/email), whether
+      escaping happens at storage or display, and a screenshot of execution. Record the
+      test data entered so it can be removed after testing.
+
+  - id: hpp-tests
+    title: HTTP parameter pollution tests
+    target_type: fqdn
+    kind: manual
+    description: >-
+      Per parameter, the requests sent with the parameter repeated (query and body, array
+      notation) and which value each component (front proxy/WAF and the application) used,
+      and whether a validation or authorization check could be bypassed by the difference.
+
+  - id: sqli-tests
+    title: SQL injection tests
+    target_type: fqdn
+    kind: manual
+    description: >-
+      Per parameter/header/cookie, the payloads sent (quote to raise an error, boolean
+      true/false pair, time-based delay) and the error, response difference, or timing
+      observed, plus the sqlmap summary if run (with the agreed risk/level). Keep any
+      retrieved data to a summary only.
+
+  - id: ldap-injection-tests
+    title: LDAP injection tests
+    target_type: fqdn
+    kind: manual
+    description: >-
+      Per LDAP-backed input (login, user search), the payloads sent (*, )(uid=*),
+      *)(|(uid=*) and whether the filter broke to return all entries or bypass
+      authentication, with the response or error (LDAP error code).
+
+  - id: xml-injection-tests
+    title: XML injection and XXE tests
+    target_type: fqdn
+    kind: manual
+    description: >-
+      Per XML input (API body, SOAP, SAML, uploaded docx/svg), the payloads sent
+      (structure-breaking characters; an external-entity DOCTYPE reading a documentation
+      file; an http:// entity for SSRF) and whether the structure could be changed, a file
+      read, or an outbound request made. Prove an entity resolves without exfiltrating
+      real secrets.
+
+  - id: ssi-injection-tests
+    title: SSI injection tests
+    target_type: fqdn
+    kind: manual
+    description: >-
+      Per input reflected into an SSI-enabled page (.shtml or configured), the directives
+      injected (an include of a file, an exec of a harmless command) and whether the
+      server interpreted them, with the output.
+
+  - id: xpath-injection-tests
+    title: XPath injection tests
+    target_type: fqdn
+    kind: manual
+    description: >-
+      Per input that reaches an XPath query (often XML-backed login or search), the
+      payloads sent (' or '1'='1, x' or name()=') and whether authentication was bypassed
+      or all nodes returned, with the response or error.
+
+  - id: mail-injection-tests
+    title: IMAP/SMTP injection tests
+    target_type: fqdn
+    kind: manual
+    description: >-
+      Per mail-related input (contact form subject/recipient, mailbox search), the CRLF
+      and command payloads sent (%0d%0a, an added To:/Bcc:, an SMTP/IMAP command) and
+      whether a header could be added or mail relayed. Do not actually send spam; stop at
+      proof.
+
+  - id: code-injection-tests
+    title: Code injection tests
+    target_type: fqdn
+    kind: manual
+    description: >-
+      Per input that may be evaluated (eval, deserialization, template, file include),
+      the language-specific payload sent and whether it executed, confirmed with a
+      harmless command (sleep/ping-equivalent) or an out-of-band DNS/HTTP callback. Keep
+      proof minimal; never run destructive code.
+
+  - id: command-injection-tests
+    title: OS command injection tests
+    target_type: fqdn
+    kind: manual
+    description: >-
+      Per input that builds an OS command, the separators and payloads sent (; id, | id,
+      $(id), && id, & whoami) and whether a harmless command ran, confirmed by output,
+      timing (; sleep 5), or an out-of-band callback. Only harmless commands (id/whoami);
+      never destructive ones.
+
+  - id: format-string-tests
+    title: Format string injection tests
+    target_type: fqdn
+    kind: manual
+    description: >-
+      Per input that may reach a native format function, the specifiers sent (%s%s%s,
+      %x%x%x, %n) and whether memory contents leaked or the component crashed. Mainly for
+      apps with C/C++ native parts; rare in pure web apps.
+
+  - id: incubated-tests
+    title: Incubated vulnerability tests
+    target_type: fqdn
+    kind: manual
+    description: >-
+      The scenario where input that is harmless at storage fires later through another
+      path (a stored value executed by a batch, report, admin screen, or external
+      integration): what was stored, which later process triggered it, and the effect,
+      with the fire point (admin or external raises severity).
+
+  - id: http-smuggling-tests
+    title: HTTP splitting and smuggling tests
+    target_type: fqdn
+    kind: manual
+    description: >-
+      The CRLF response-splitting attempts (payload reflected into a response header) and
+      the request-smuggling probes (Content-Length vs Transfer-Encoding discrepancy),
+      with the requests and the responses from front and back, and whether cache poisoning
+      or an authorization bypass followed. Agree the window first; smuggling can affect
+      other users.
+    load_note: Request smuggling can affect other users of the same front-end; agree the test window with the owner before sending these probes.
+
+  - id: raw-request-tests
+    title: Raw and malformed request handling tests
+    target_type: fqdn
+    kind: manual
+    description: >-
+      The raw requests sent to the server (unusual methods, duplicate headers, malformed
+      line endings, oversized headers raised gradually, an invalid Host) and the server's
+      handling, checked against the front-end configuration from the owner, to see whether
+      a front-end restriction can be passed.
+    load_note: Oversized or malformed requests consume parser resources and can destabilise the server; raise sizes gradually.
+
+  - id: host-header-tests
+    title: Host header injection tests
+    target_type: fqdn
+    kind: manual
+    description: >-
+      Beyond the automated probe: whether a forged Host (or X-Forwarded-Host) reaches a
+      password-reset link or other generated URL so it can be pointed at an attacker
+      domain, and whether it poisons a cache. Record the request and where the forged
+      value appears.
+
+  - id: ssti-tests
+    title: Server-side template injection tests
+    target_type: fqdn
+    kind: manual
+    description: >-
+      Per input that may reach a template, the test expressions sent ({{7*7}}, ${7*7},
+      #{7*7}, <%= 7*7 %>) and whether they evaluated (returning 49), the engine identified,
+      and how far it reached (internal variables, command execution). Stop at proving
+      evaluation unless deeper proof is agreed.
+
+  - id: ssrf-tests
+    title: Server-side request forgery tests
+    target_type: fqdn
+    kind: manual
+    description: >-
+      Per input that takes a URL or host (url, image, webhook), the targets requested
+      (cloud metadata 169.254.169.254, internal 127.0.0.1/10.x, file:// and gopher://
+      schemes) and whether the server fetched them, plus filter-bypass attempts (redirects,
+      DNS rebinding, alternative notations). A blind SSRF is proved with an out-of-band
+      callback log.

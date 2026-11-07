@@ -1,0 +1,36 @@
+id: WSTG-INPV-14
+overview: >-
+  Check for incubated vulnerabilities: input that is harmless when stored but fires later
+  through another path, such as a stored payload executed by a batch job, report, admin
+  screen, or external integration.
+pass: >-
+  Input is validated and encoded both when stored and when used, so no later path trusts
+  the stored value.
+fail: >-
+  A value harmless at storage fires later on another path (batch, report, admin screen,
+  or external system).
+notes:
+  - This is found by following business flows, not single-request tests; combine a storage weakness with a later trusted use.
+  - A fire point on an admin screen or an external integration raises severity.
+finding_kinds: [incubated-vulnerability]
+steps:
+  - summary: Map store-then-use paths from the flows and crawl
+    auto_run: true
+    evidence: [katana-crawl]
+    command: >-
+      grep -oiE '/(upload|import|report|export|batch|admin|notify|webhook|queue|job|print|pdf)[^ "'"'"'<>]*'
+      {ev:katana-crawl}/katana.txt 2>/dev/null | sort -u | head -40 || echo "no obvious later-processing path in the crawl"
+  - summary: Store a benign-looking payload and trigger the later path (manual)
+    evidence: [incubated-tests]
+    operation: >-
+      Store a value that is inert at input but dangerous when later trusted (for example a
+      payload that a reporting or admin batch renders without encoding), then trigger that
+      later process and observe whether it fires. Combine a storage weakness with a
+      downstream trusted use. Record the chain in incubated-tests.
+  - summary: Judge incubated vulnerability
+    evidence: [incubated-tests]
+    ai_task: >-
+      From step 2 decide whether a stored value fires on a later path. Verdict: fail when a
+      value harmless at storage was executed or misused by a batch, report, admin screen,
+      or external system; pass when input is validated and encoded at storage and use; "-"
+      when incubated-tests is missing. Note the fire point (admin/external raises severity).

@@ -1,0 +1,36 @@
+id: WSTG-INPV-02
+overview: >-
+  Check whether input stored by the application is later rendered to users without
+  encoding, so it runs as script on another screen or user (stored XSS). Trace the
+  store-then-display path, including admin screens and generated documents.
+pass: >-
+  Stored input is encoded when displayed, so it is shown as text wherever it appears.
+fail: >-
+  A stored value executes as script when displayed to another user or on an admin screen
+  (execution on an admin screen raises severity).
+notes:
+  - Record the test data entered and remove it after testing where possible.
+  - Check every display path of a stored value: other users, admin screens, notifications, generated PDF or email.
+finding_kinds: [stored-xss]
+steps:
+  - summary: List stored-input features and where values are displayed
+    auto_run: true
+    evidence: [katana-crawl]
+    command: >-
+      grep -rhoiE '<form[^>]*(method=["'"'"']?post)[^>]*>' {ev:katana-crawl}/responses 2>/dev/null | head -20;
+      grep -oiE '/(comment|post|profile|message|review|feedback|note|upload)[^ "'"'"'<>]*' {ev:katana-crawl}/katana.txt 2>/dev/null | sort -u | head -40
+      || echo "no obvious stored-input feature in the crawl"
+  - summary: Store a payload and find where it fires (manual)
+    evidence: [xss-stored-tests]
+    operation: >-
+      In each stored-input feature (comment, profile, post) save an XSS payload with a test
+      account, then view it on the display path and other users' and admin screens, and in
+      any generated PDF or email. Note whether escaping is at storage or display and whether
+      a path misses it. Screenshot any execution into xss-stored-tests.
+  - summary: Judge stored XSS
+    evidence: [xss-stored-tests]
+    ai_task: >-
+      From step 2 decide whether a stored value executes on display. Verdict: fail when a
+      stored payload runs as script for another user or on an admin screen; pass when stored
+      values are encoded on every display path; "-" when xss-stored-tests is missing. State
+      whose screen fires (admin raises severity).

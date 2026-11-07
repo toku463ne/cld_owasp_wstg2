@@ -1,0 +1,34 @@
+id: WSTG-INPV-10
+overview: >-
+  Check whether a mail-related function lets IMAP/SMTP commands or extra mail headers be
+  injected through input, typically a contact form, enabling header forgery or relay.
+pass: >-
+  CR/LF characters are stripped or rejected, so no extra header or command can be added.
+fail: >-
+  A newline in a subject or recipient adds a header (To:/Bcc:) or an SMTP/IMAP command, or
+  enables third-party relay.
+notes:
+  - Contact forms are the typical entry point; relay is serious (spam abuse).
+  - Prove the injection; do not actually send spam.
+finding_kinds: [mail-injection]
+steps:
+  - summary: Find mail-related inputs
+    auto_run: true
+    evidence: [katana-crawl]
+    command: >-
+      grep -oiE '/(contact|feedback|inquiry|support|mail|subscribe|invite)[^ "'"'"'<>]*' {ev:katana-crawl}/katana.txt 2>/dev/null | sort -u | head;
+      grep -rhoiE '<input[^>]*name=["'"'"']?(email|to|subject|name|message|cc|bcc)[^ "'"'"'>]*' {ev:katana-crawl}/responses 2>/dev/null | sort -u | head
+      || echo "no obvious mail form in the crawl"
+  - summary: Inject CRLF and mail headers (manual)
+    evidence: [mail-injection-tests]
+    operation: >-
+      Into the subject or recipient fields send CRLF payloads (`%0d%0a`) with an added
+      `To:`/`Bcc:` header or an SMTP/IMAP command, and check whether the extra header or
+      command took effect. Stop at proof; do not relay real spam. Record in
+      mail-injection-tests.
+  - summary: Judge IMAP/SMTP injection
+    evidence: [mail-injection-tests]
+    ai_task: >-
+      From step 2 decide whether mail headers or commands can be injected. Verdict: fail
+      when a newline added a header or command or enabled relay; pass when CR/LF are
+      stripped or rejected; "-" when mail-injection-tests is missing.

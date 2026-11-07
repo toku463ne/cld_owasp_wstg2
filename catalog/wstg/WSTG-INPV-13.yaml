@@ -1,0 +1,31 @@
+id: WSTG-INPV-13
+overview: >-
+  Check whether input is passed to a format-string function so format specifiers are
+  interpreted, leaking memory or crashing the process. Mainly relevant to applications
+  with native C/C++ components.
+pass: >-
+  Specifiers such as %s and %x are treated as literal characters.
+fail: >-
+  A format specifier leaks memory contents or crashes the component.
+notes:
+  - Rare in pure web apps; focus where native components exist.
+finding_kinds: [format-string-injection]
+steps:
+  - summary: Identify components with possible native format handling (manual)
+    evidence: [whatweb, format-string-tests]
+    operation: >-
+      From the technology fingerprint (whatweb/wappalyzer) note any native C/C++ component
+      or CGI that formats user input (logging, error messages, printf-style output).
+      Record the candidates in format-string-tests.
+  - summary: Inject format specifiers (manual)
+    evidence: [format-string-tests]
+    operation: >-
+      Into candidate inputs send `%s%s%s%s`, `%x%x%x`, and `%n` and observe whether stack
+      values leak into the response or the component crashes. Record the input and response
+      in format-string-tests.
+  - summary: Judge format string injection
+    evidence: [format-string-tests]
+    ai_task: >-
+      From step 2 decide whether specifiers are interpreted. Verdict: fail when a specifier
+      leaked memory or crashed the component; pass when specifiers are treated as literal
+      text; "-" when format-string-tests is missing.

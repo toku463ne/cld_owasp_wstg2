@@ -1,0 +1,31 @@
+id: WSTG-INPV-06
+overview: >-
+  Check whether input reaches an LDAP filter's structure (login or user search), so
+  special characters can break the filter to bypass authentication or return all entries.
+pass: >-
+  Special characters (* ( ) \\ NUL) are escaped, so the LDAP filter is not altered by
+  input.
+fail: >-
+  A payload such as * or )(uid=*) returns all entries or bypasses authentication.
+notes:
+  - Both login and search screens can be entry points.
+finding_kinds: [ldap-injection]
+steps:
+  - summary: Find inputs that may reach an LDAP query
+    auto_run: true
+    evidence: [katana-crawl, auth-pages]
+    command: >-
+      grep -oiE '/(login|signin|search|directory|people|users?|lookup)[^ "'"'"'<>]*' {ev:katana-crawl}/katana.txt 2>/dev/null | sort -u | head;
+      grep -rhoiE '<input[^>]*name=["'"'"']?(user|login|uid|search|q|name)[^ "'"'"'>]*' {ev:auth-pages}/pages 2>/dev/null | sort -u | head
+  - summary: Inject LDAP metacharacters (manual)
+    evidence: [ldap-injection-tests]
+    operation: >-
+      In each LDAP-backed input send `*`, `)(uid=*)`, and `*)(|(uid=*` and watch for all
+      entries returned or authentication bypassed, and for an LDAP error code in the
+      response. Record requests and responses in ldap-injection-tests.
+  - summary: Judge LDAP injection
+    evidence: [ldap-injection-tests]
+    ai_task: >-
+      From step 2 decide whether the LDAP filter can be broken. Verdict: fail when a payload
+      returned all entries or bypassed authentication; pass when special characters are
+      escaped and the filter holds; "-" when ldap-injection-tests is missing.

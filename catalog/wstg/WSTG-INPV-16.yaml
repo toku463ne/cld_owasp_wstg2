@@ -1,0 +1,37 @@
+id: WSTG-INPV-16
+overview: >-
+  Check how the server and any front-end handle raw and malformed incoming requests
+  (unusual methods, duplicate or malformed headers, oversized headers, an invalid Host),
+  to find where a front-end restriction can be passed or the parser misbehaves.
+pass: >-
+  Internal and management requests are reliably blocked at the front-end, and malformed
+  requests are rejected cleanly.
+fail: >-
+  A path-normalisation difference or a crafted header lets a request pass the front-end
+  restriction and reach internal functions, or the parser produces an abnormal response.
+notes:
+  - This needs the front-end configuration from the owner to avoid false judgements; check against it.
+  - Raise header sizes gradually; malformed or oversized requests can destabilise the parser.
+finding_kinds: [request-parsing-weakness, unprotected-path]
+steps:
+  - summary: Get the front-end configuration and internal paths to test (manual)
+    evidence: [firewall-rules, raw-request-tests]
+    operation: >-
+      From the owner, get the front-end (reverse proxy, WAF, LB) configuration: which paths
+      and methods are meant to be blocked, and which are internal-only. List the requests to
+      try (internal paths, blocked methods) in raw-request-tests, noting the expected block.
+  - summary: Send raw and malformed requests and observe handling (manual)
+    evidence: [raw-request-tests]
+    operation: >-
+      With `curl` or `ncat`, send raw requests that probe parsing: unusual methods, duplicate
+      headers, malformed line endings, an invalid Host, and headers whose size is raised
+      gradually. Also try path-normalisation variants of a blocked internal path. Record
+      the responses in raw-request-tests and compare with the expected front-end block.
+    load_note: Oversized or malformed requests consume parser resources and can destabilise the server; raise sizes gradually and watch the response.
+  - summary: Judge raw request handling
+    evidence: [raw-request-tests]
+    ai_task: >-
+      From steps 1 and 2 decide whether the front-end restrictions hold. Verdict: fail when
+      a crafted or normalised request passed a front-end restriction to reach an internal
+      function, or the parser gave an abnormal response that could be abused; pass when all
+      such requests were blocked or rejected cleanly; "-" when raw-request-tests is missing.

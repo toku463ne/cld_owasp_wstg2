@@ -1,0 +1,35 @@
+id: WSTG-INPV-17
+overview: >-
+  Check whether the application trusts the Host header (or X-Forwarded-Host): if a forged
+  value is reflected into links, absolute URLs, password-reset URLs, or a cache key, it
+  can redirect users or poison a cache.
+pass: >-
+  A forged Host is ignored for link generation, redirects, reset URLs, and cache keys;
+  only allowed hosts are used.
+fail: >-
+  A forged Host appears in a generated URL (especially a password-reset link) or
+  influences a cached response.
+notes:
+  - Try X-Forwarded-Host and similar headers as well as Host.
+finding_kinds: [host-header-injection]
+steps:
+  - summary: Check whether the forged Host marker is reflected
+    auto_run: true
+    evidence: [host-header-probe]
+    command: >-
+      grep -inE 'wstg-host-marker|wstg-xfh-marker' {ev:host-header-probe}/stdout.txt {ev:host-header-probe}/body.html
+      || echo "the forged Host marker was not reflected in the headers or body"
+  - summary: Check the password-reset link and other generated URLs (manual)
+    evidence: [host-header-tests]
+    operation: >-
+      Request a password reset with the Host (and X-Forwarded-Host) set to an attacker
+      value and check whether the reset link in the email points at that domain. Check
+      other absolute URLs and routing, and whether a forged Host poisons a cached response.
+      Record the request and where the forged value appears in host-header-tests.
+  - summary: Judge Host header injection
+    evidence: [host-header-tests, host-header-probe]
+    ai_task: >-
+      From steps 1 and 2 decide whether the Host header is trusted. Verdict: fail when a
+      forged Host (or X-Forwarded-Host) appears in a generated URL (especially a reset link)
+      or poisons a cache; pass when it is ignored and only allowed hosts are used; "-" when
+      neither the probe reflected a marker nor host-header-tests was captured.

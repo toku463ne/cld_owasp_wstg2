@@ -1,0 +1,34 @@
+id: WSTG-INPV-12
+overview: >-
+  Check whether input becomes part of an operating-system command, so command separators
+  can run additional commands.
+pass: >-
+  Commands run without a shell, or arguments are validated against an allow-list, so
+  separators have no effect.
+fail: >-
+  A separator (; | && $() backticks) runs an injected command, shown by output, timing,
+  or an out-of-band callback.
+notes:
+  - Never use destructive commands; prove with id/whoami or a delay only.
+  - A successful case is RCE; report it at the highest priority.
+finding_kinds: [command-injection]
+steps:
+  - summary: Find inputs that may build an OS command
+    auto_run: true
+    evidence: [katana-crawl]
+    command: >-
+      grep -oiE '[?&](cmd|command|exec|host|ip|ping|target|domain|url|file|name|path|dns|action)=[^&"'"'"'<> ]*'
+      {ev:katana-crawl}/katana.txt 2>/dev/null | sort -u | head -40 || echo "no obvious command-building parameter in the crawl"
+  - summary: Inject command separators (manual)
+    evidence: [command-injection-tests]
+    operation: >-
+      Into candidate inputs send `; id`, `| id`, `$(id)`, backtick id, and `&& id` (and
+      `& whoami`, `| whoami` for Windows). Where no output returns, use a delay (`; sleep 5`)
+      or an out-of-band callback (`; nslookup <your-host>`). Use only harmless commands.
+      Record requests and evidence of execution in command-injection-tests.
+  - summary: Judge OS command injection
+    evidence: [command-injection-tests]
+    ai_task: >-
+      From step 2 decide whether an injected command ran. Verdict: fail when a separator ran
+      a command (output, timing, or callback); pass when separators have no effect; "-" when
+      command-injection-tests is missing. Report as RCE where execution was proved.

@@ -1,0 +1,40 @@
+id: WSTG-INPV-15
+overview: >-
+  Check for HTTP response splitting (CRLF injected into a response header) and request
+  smuggling (a Content-Length vs Transfer-Encoding discrepancy between the front-end and
+  back-end).
+pass: >-
+  CR/LF cannot be injected into headers, and Content-Length and Transfer-Encoding are
+  handled consistently along the whole path.
+fail: >-
+  A CRLF splits a header/response, or a CL/TE discrepancy lets a request be smuggled past
+  the front-end.
+notes:
+  - Smuggling can affect other users of the same front-end; agree the window with the owner before testing.
+  - The result depends on the CDN/LB in front; record the configuration and the exact discrepancy.
+finding_kinds: [http-response-splitting, http-request-smuggling]
+steps:
+  - summary: Find parameters reflected into response headers (splitting candidates)
+    auto_run: true
+    evidence: [katana-crawl, http-redirect-chain]
+    command: >-
+      grep -oiE '[?&](url|return|redirect|next|dest|location|goto|continue|r|u)=[^&"'"'"'<> ]*'
+      {ev:katana-crawl}/katana.txt 2>/dev/null | sort -u | head;
+      head -10 {ev:http-redirect-chain}/stdout.txt 2>/dev/null
+  - summary: Try CRLF response splitting and CL/TE smuggling (manual)
+    evidence: [http-smuggling-tests]
+    operation: >-
+      Into a parameter reflected into a header (for example a redirect target) inject CRLF
+      (`%0d%0a`) and check for an added header or a split response. Separately, send
+      requests with conflicting Content-Length and Transfer-Encoding and compare the
+      front-end and back-end responses for a smuggling discrepancy. Record requests and
+      both responses in http-smuggling-tests.
+    load_note: Request smuggling can affect other users of the same front-end; agree the test window with the owner before sending these probes.
+  - summary: Judge HTTP splitting and smuggling
+    evidence: [http-smuggling-tests]
+    ai_task: >-
+      From step 2 decide whether splitting or smuggling is possible. Verdict: fail when CRLF
+      split a header/response or a CL/TE discrepancy smuggled a request (note any cache
+      poisoning or authorization bypass that followed); pass when CR/LF are rejected and
+      CL/TE are handled consistently; "-" when http-smuggling-tests is missing. Report
+      splitting and smuggling separately.

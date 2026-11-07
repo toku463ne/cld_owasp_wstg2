@@ -1,0 +1,34 @@
+id: WSTG-INPV-11
+overview: >-
+  Check whether input is evaluated as server-side code (through eval, deserialization,
+  templates, or file inclusion), which allows arbitrary execution.
+pass: >-
+  Input does not reach a code-evaluation path, or is strictly validated where it does.
+fail: >-
+  A fragment of input is evaluated as code, running arbitrary logic (including execution
+  through local or remote file inclusion).
+notes:
+  - Confirm execution with a harmless command (sleep/ping-equivalent) or an out-of-band callback; keep proof minimal.
+  - A successful case is RCE; report it at the highest priority.
+finding_kinds: [code-injection, file-inclusion]
+steps:
+  - summary: Find inputs that may reach an evaluation or include path
+    auto_run: true
+    evidence: [katana-crawl]
+    command: >-
+      grep -oiE '[?&](eval|code|exec|func|callback|template|tpl|page|file|include|path|lang|module)=[^&"'"'"'<> ]*'
+      {ev:katana-crawl}/katana.txt 2>/dev/null | sort -u | head -40 || echo "no obvious evaluation/include parameter in the crawl"
+  - summary: Inject language-specific code (manual)
+    evidence: [code-injection-tests]
+    operation: >-
+      Into candidate inputs send language payloads such as `;phpinfo();`, `system('id')`,
+      or `__import__('os').popen('id').read()`, and for file inclusion a local or (if
+      allowed) remote path. Confirm execution with a harmless command, timing, or an
+      out-of-band DNS/HTTP callback. Keep proof minimal and record in code-injection-tests.
+  - summary: Judge code injection
+    evidence: [code-injection-tests]
+    ai_task: >-
+      From step 2 decide whether input is executed as code. Verdict: fail when a payload ran
+      (confirmed by output, timing, or callback), including execution via file inclusion;
+      pass when input never reaches evaluation or is strictly validated; "-" when
+      code-injection-tests is missing. Report as RCE where execution was proved.

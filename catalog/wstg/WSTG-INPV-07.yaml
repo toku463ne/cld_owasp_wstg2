@@ -1,0 +1,38 @@
+id: WSTG-INPV-07
+overview: >-
+  Check whether XML input is parsed in a way that lets its structure be changed or an
+  external entity be resolved (XXE), allowing file reads or outbound requests. XML inputs
+  include API and SOAP bodies, SAML, and uploaded docx/svg.
+pass: >-
+  External entities and DTDs are disabled and injected tags are neutralised; the parser
+  does not resolve external entities.
+fail: >-
+  An external entity reads a file or makes an outbound request (SSRF), or injected tags
+  change the parsed business values.
+notes:
+  - SOAP, SAML, and file uploads (docx, svg) are XML entry points too.
+  - Prove an entity resolves (for example by reading a documentation file); do not exfiltrate real secrets.
+finding_kinds: [xml-injection, xxe]
+steps:
+  - summary: Find XML entry points (content type, extensions, SOAP)
+    auto_run: true
+    evidence: [katana-crawl, har-browse]
+    command: >-
+      grep -oiE '/[^ "'"'"'<>]*\.(xml|svg|xsd|wsdl)' {ev:katana-crawl}/katana.txt 2>/dev/null | sort -u | head;
+      grep -rhoiE 'application/(xml|soap\+xml)|text/xml' {ev:katana-crawl}/responses 2>/dev/null | sort -u | head
+      || echo "no obvious XML endpoint in the crawl (check the HAR and upload features)"
+  - summary: Break structure and try XXE (manual)
+    evidence: [xml-injection-tests]
+    operation: >-
+      Into each XML input send structure-breaking characters (`<`, `>`, `]]>`), then an
+      external-entity document, for example a body with
+      `<!DOCTYPE x [<!ENTITY e SYSTEM "file:///etc/hostname">]>` referencing `&e;`, and an
+      `http://` entity to a host you control for SSRF. Note whether the structure changed,
+      a file was read, or an outbound request was made. Record in xml-injection-tests.
+  - summary: Judge XML injection and XXE
+    evidence: [xml-injection-tests]
+    ai_task: >-
+      From step 2 decide whether XML parsing is unsafe. Verdict: fail when an external
+      entity read a file or made an outbound request (XXE) or injected tags changed parsed
+      values; pass when entities and DTDs are disabled and tags are neutralised; "-" when
+      xml-injection-tests is missing. Report XXE separately from structural XML injection.

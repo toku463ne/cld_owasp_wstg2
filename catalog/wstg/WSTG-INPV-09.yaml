@@ -1,0 +1,30 @@
+id: WSTG-INPV-09
+overview: >-
+  Check whether input reaches an XPath query's structure (often an XML-backed login or
+  search), so it can bypass authentication or return all nodes.
+pass: >-
+  Special characters are escaped, so the XPath query structure is not changed by input.
+fail: >-
+  A payload such as ' or '1'='1 bypasses authentication or returns all nodes.
+notes:
+  - Occurs where XML is used as the user store; approach it like SQL injection.
+finding_kinds: [xpath-injection]
+steps:
+  - summary: Find inputs that may reach an XPath query
+    auto_run: true
+    evidence: [katana-crawl, auth-pages]
+    command: >-
+      grep -oiE '/(login|signin|search|auth)[^ "'"'"'<>]*' {ev:katana-crawl}/katana.txt 2>/dev/null | sort -u | head;
+      grep -rhoiE '<input[^>]*name=["'"'"']?(user|login|pass|q|search)[^ "'"'"'>]*' {ev:auth-pages}/pages 2>/dev/null | sort -u | head
+  - summary: Inject XPath payloads (manual)
+    evidence: [xpath-injection-tests]
+    operation: >-
+      In each candidate input send `' or '1'='1` and `x' or name()='` and check for
+      authentication bypass or all nodes returned, and look at true/false and error
+      differences for blind XPath injection. Record in xpath-injection-tests.
+  - summary: Judge XPath injection
+    evidence: [xpath-injection-tests]
+    ai_task: >-
+      From step 2 decide whether the XPath query can be altered. Verdict: fail when a
+      payload bypassed authentication or returned all nodes; pass when special characters
+      are escaped; "-" when xpath-injection-tests is missing.

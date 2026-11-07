@@ -1,0 +1,43 @@
+id: WSTG-INPV-05
+overview: >-
+  Check whether input reaches an SQL query's structure, in parameters, headers, or
+  cookies, through error-based, boolean, or time-based behaviour.
+pass: >-
+  Changing the input causes no structural change in errors, response, count, or timing;
+  parameterised queries are in use.
+fail: >-
+  The SQL behaviour can be controlled by input in any way: an error, a true/false
+  difference, or a timed delay.
+notes:
+  - Run sqlmap only within the agreed scope and load; agree before raising --risk/--level, keep --threads at 1, and use WSTG_PAUSE on weak targets.
+  - Keep any data retrieved as proof to a summary in the finding.
+finding_kinds: [sql-injection]
+steps:
+  - summary: List parameters that may reach a query
+    auto_run: true
+    evidence: [katana-crawl]
+    command: >-
+      grep -oE '[?&][A-Za-z0-9_.-]+=' {ev:katana-crawl}/katana.txt 2>/dev/null | tr -d '?&=' | sort | uniq -c | sort -rn | head -40
+      || echo "no parameters seen in the crawl"
+  - summary: Probe for error, boolean, and time-based injection (manual)
+    evidence: [sqli-tests]
+    operation: >-
+      For each parameter (and tested headers and cookies) send a quote to force an error,
+      a boolean pair (`1 AND 1=1` vs `1 AND 1=2`) for a true/false difference, and a delay
+      (`' OR SLEEP(5)-- `) for blind injection, adjusting for numeric or string context.
+      Record the error, response difference, or timing in sqli-tests.
+  - summary: Confirm with sqlmap within scope (manual)
+    evidence: [sqli-tests]
+    operation: >-
+      Where a parameter looks injectable, confirm with
+      `sqlmap -u "{base_url}/x?id=1" --batch --output-dir=OUTDIR ${WSTG_PAUSE:+--delay "$WSTG_PAUSE"} ${https_proxy:+--proxy="$https_proxy"}`
+      within the agreed scope. Keep --threads at 1 and set `export WSTG_PAUSE=2` on a weak
+      target. Save the summary (not bulk data) in sqli-tests.
+    load_note: sqlmap sends many requests and, for time-based tests, adds delays; even --batch is heavy. Keep --threads at 1, use WSTG_PAUSE on weak targets, and respect the agreed scope and window.
+  - summary: Judge SQL injection
+    evidence: [sqli-tests]
+    ai_task: >-
+      From steps 2 and 3 decide whether SQL behaviour is controllable by input. Verdict:
+      fail when an error-based, boolean, or time-based signal shows injection in any
+      parameter, header, or cookie; pass when input causes no structural change; "-" when
+      sqli-tests is missing. Note the input and injection type.

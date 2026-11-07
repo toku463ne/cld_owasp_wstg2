@@ -1,0 +1,35 @@
+id: WSTG-INPV-18
+overview: >-
+  Check whether input reaches a template engine and is evaluated as an expression
+  (server-side template injection), which can expose internal objects and lead to code
+  execution.
+pass: >-
+  Template expressions in input ({{7*7}} and the like) are shown as literal text.
+fail: >-
+  An expression is evaluated (returning 49), and deeper access reaches internal variables
+  or command execution.
+notes:
+  - Identify the engine after a positive result; stop at proving evaluation unless deeper proof is agreed, as it can be high-impact.
+  - Reflection targets include server-side templates for pages, email, and PDF.
+finding_kinds: [server-side-template-injection]
+steps:
+  - summary: Find inputs reflected by the server (template candidates)
+    auto_run: true
+    evidence: [katana-crawl]
+    command: >-
+      grep -oE '[?&][A-Za-z0-9_.-]+=' {ev:katana-crawl}/katana.txt 2>/dev/null | tr -d '?&=' | sort | uniq -c | sort -rn | head -40
+      || echo "no parameters seen in the crawl"
+  - summary: Inject template expressions (manual)
+    evidence: [ssti-tests]
+    operation: >-
+      Into candidate inputs send `{{7*7}}`, `${7*7}`, `#{7*7}`, and `<%= 7*7 %>` and check
+      whether any evaluates to `49`. If it does, identify the engine and, within the agreed
+      scope, test reaching internal variables or command execution with the engine's
+      payloads. Record in ssti-tests; keep proof minimal.
+  - summary: Judge server-side template injection
+    evidence: [ssti-tests]
+    ai_task: >-
+      From step 2 decide whether input is evaluated as a template expression. Verdict: fail
+      when an expression evaluated (49 returned), noting if it reached variables or command
+      execution; pass when expressions are shown as text; "-" when ssti-tests is missing.
+      Report as RCE where execution was proved.

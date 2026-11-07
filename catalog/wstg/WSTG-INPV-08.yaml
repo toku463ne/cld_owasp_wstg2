@@ -1,0 +1,31 @@
+id: WSTG-INPV-08
+overview: >-
+  Check whether server-side include (SSI) directives in input are interpreted by the
+  server, which can lead to file reads or command execution, typically on legacy .shtml
+  pages.
+pass: >-
+  SSI is disabled, or directives in input (<!--#exec ...-->) are treated as text.
+fail: >-
+  An injected SSI directive is interpreted, reading a file or running a command.
+notes:
+  - SSI is often left enabled on legacy environments; a successful exec is RCE-equivalent.
+finding_kinds: [ssi-injection]
+steps:
+  - summary: Look for SSI-enabled pages
+    auto_run: true
+    evidence: [katana-crawl]
+    command: >-
+      grep -oiE '/[^ "'"'"'<>]*\.s?html?' {ev:katana-crawl}/katana.txt 2>/dev/null | grep -iE '\.shtml' | sort -u | head
+      || echo "no .shtml page in the crawl (SSI may still be enabled elsewhere; confirm)"
+  - summary: Inject SSI directives (manual)
+    evidence: [ssi-injection-tests]
+    operation: >-
+      Into inputs reflected onto an SSI-enabled page send `<!--#include file="..."-->` and
+      `<!--#exec cmd="id"-->` and check whether the server interprets them (the file or the
+      command output appears). Record in ssi-injection-tests.
+  - summary: Judge SSI injection
+    evidence: [ssi-injection-tests]
+    ai_task: >-
+      From step 2 decide whether SSI directives are interpreted. Verdict: fail when an
+      injected directive read a file or ran a command; pass when SSI is disabled or
+      directives are shown as text; "-" when ssi-injection-tests is missing.
