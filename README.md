@@ -174,7 +174,7 @@ WSTG page; the AI's verdicts are marked "AI" and findings it created are by `ai:
 | `WSTG_WEB_PORT` | `8083` | nginx port (used by the setup script) |
 | `WSTG_HTTP_PROXY` | (empty) | proxy for collection commands, e.g. `http://127.0.0.1:8080`. Set as `http_proxy`/`https_proxy`; tools that ignore those get their own option (openssl `-proxy`, testssl `--proxy`, whatweb `--proxy`, nikto `-useproxy`, ffuf `-x`, katana/subfinder `-proxy`, wafw00f `-p`). whois, traceroute, nmap, and sslscan cannot use a proxy: set `WSTG_DIRECT_SSH` |
 | `WSTG_DIRECT_SSH` | (empty) | jump host (`user@host` or a `Host` alias of `~/.ssh/config`) that runs the tools which cannot use a proxy; see [Jump host](#jump-host-for-tools-that-cannot-use-the-proxy) |
-| `WSTG_PAUSE` | (empty = full speed) | seconds between requests for tools with a delay option: nikto `-Pause N`, ffuf `-p N -t 1`. Weak targets that reach CPU 100% or answer 502/503/504: start with `2`, raise to 3 to 5. nikto then runs for hours and stops at 235 minutes (recorded as incomplete) |
+| `WSTG_PAUSE` | (empty = full speed) | seconds between requests for tools with a delay option: nikto `-Pause N`, ffuf `-p N -t 1`, katana `-delay N -c 1 -p 1`. Weak targets that reach CPU 100% or answer 502/503/504: start with `2`, raise to 3 to 5. nikto then runs for hours and stops at 235 minutes (recorded as incomplete) |
 | `WSTG_JOB_STALE_SECONDS` | `120` | a running job without a worker heartbeat for this long is shown as stalled |
 | `WSTG_ALLOWED_NETWORKS` | `192.168.0.0/16,127.0.0.0/8` | client networks; enforced by nginx and the app |
 

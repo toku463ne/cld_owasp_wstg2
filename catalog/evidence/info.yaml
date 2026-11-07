@@ -143,12 +143,18 @@ evidence:
       katana.txt. Every response (request line, headers, body) is kept under responses/
       (katana -store-response), so pages and scripts can be scanned without new requests.
     argv: [katana, -u, "{base_url}/", -d, "3", -jc, -kf, "robotstxt,sitemapxml", -fs, fqdn,
-           -rl, "10", -c, "5", -ct, "1200", -silent, -nc, -o, "{out}/katana.txt",
-           -sr, -srd, "{out}/responses", "{proxy_args}"]
+           -rl, "10", -ct, "1200", -silent, -nc, -o, "{out}/katana.txt",
+           -sr, -srd, "{out}/responses", "{proxy_args}", "{pause_args}"]
     proxy_args: [-proxy, "{proxy_url}"]
+    pause_args: [-delay, "{pause}", -c, "1", -p, "1"]
     files: [katana.txt]
     timeout: 1800
-    load_note: Crawler; hundreds to thousands of GET requests at up to 10 per second, for at most 20 minutes. It follows links only (no form submission), but GET links that change state (logout, delete) are followed too.
+    load_note: >-
+      Crawler; hundreds to thousands of GET requests at up to 10 per second, for at most
+      20 minutes. With WSTG_PAUSE set, one request at a time with that many seconds between
+      requests (at most about 1200 URLs in the 20 minutes at 1 second). It follows links
+      only (no form submission), but GET links that change state (logout, delete) are
+      followed too.
 
   - id: wafw00f
     title: WAF detection (wafw00f)
