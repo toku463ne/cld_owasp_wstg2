@@ -142,7 +142,7 @@ evidence:
       endpoints parsed from JavaScript, robots.txt, and sitemap.xml. One URL per line in
       katana.txt. Every response (request line, headers, body) is kept under responses/
       (katana -store-response), so pages and scripts can be scanned without new requests.
-    argv: [katana, -u, "{base_url}/", -d, "3", -jc, -kf, "robotstxt,sitemapxml", -fs, fqdn,
+    argv: [katana, -u, "{base_url}/", -d, "3", -jc, -kf, all, -fs, fqdn,
            -rl, "10", -ct, "1200", -silent, -nc, -o, "{out}/katana.txt",
            -sr, -srd, "{out}/responses", "{proxy_args}", "{pause_args}"]
     proxy_args: [-proxy, "{proxy_url}"]
