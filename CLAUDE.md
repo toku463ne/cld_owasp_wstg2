@@ -91,6 +91,7 @@ Implementation plan and milestones: [`docs/PLAN.md`](docs/PLAN.md).
 - Keep steps small; write a short plan before larger changes.
 - When adding a dependency, prefer the standard library or small, common packages; record the choice.
 - Keep the **Commands** section below up to date as the project takes shape.
+- **Update `docs/PLAN.md` whenever progress is made**: the Progress table (status, commit), what was delivered, and open items carried forward. Commit it together with the work it describes.
 
 ## Commands
 

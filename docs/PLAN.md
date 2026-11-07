@@ -2,6 +2,38 @@
 
 Requirements: [`VISION.md`](../VISION.md). Working rules: [`CLAUDE.md`](../CLAUDE.md).
 
+## Progress
+
+Last updated: 2026-11-07
+
+| # | Milestone | Status | Notes |
+|---|---|---|---|
+| M0 | Skeleton | **Done** (`5d9c082`) | 23 tests pass; CLI and waitress server checked by hand |
+| M1 | Catalog | Next | Start with INFO/CONF/CRYP |
+| M2 | Targets and main page | Not started | |
+| M3 | WSTG page | Not started | |
+| M4 | Manual evidence | Not started | |
+| M5 | Automatic evidence | Not started | |
+| M6 | Findings | Not started | |
+| M7 | AI prompt | Not started | |
+| M8 | Deployment | Not started | |
+| M9 | More automation | Not started | |
+
+### M0 delivered
+- uv project (`src/wstg/`), Python 3.12, Flask + waitress, pytest.
+- Config from `WSTG_CONFIG` outside the repo; refuses config, evidence, or DB paths inside the repo (symlinks resolved).
+- SQLite with numbered migrations (`src/wstg/migrations/`), backup before migrating an existing schema, rollback on failure.
+- Users: admin / guest, 12+ character passwords, last active admin cannot be disabled, audit log.
+- Web: login/logout, CSRF on every POST (login included), server-side role checks, client network allowlist (default 192.168.0.0/16 + loopback), security headers (CSP, X-Frame-Options), open-redirect guard.
+- Main page shell (target selector + `+`, four tabs, all placeholders); admin user page.
+- CLI: `check-config`, `migrate`, `user-add`, `user-passwd`, `user-disable`, `user-list`, `serve`.
+- Fixed during smoke test: waitress dropped nginx's `X-Forwarded-For` by default, which would have made every client look like 127.0.0.1.
+
+### Open items carried forward
+- Login rate limiting is not implemented yet (consider in M8, or rely on nginx `limit_req`).
+- Session cookie is not `Secure` while the tool runs on plain HTTP (8083). Turn it on when moving to TLS on 443.
+- UI title is provisional ("WSTG Runner").
+
 ## Architecture
 
 ### Storage split
