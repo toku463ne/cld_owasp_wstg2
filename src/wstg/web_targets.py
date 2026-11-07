@@ -15,6 +15,7 @@ from . import catalog as catmod
 from . import db as dbmod
 from . import evidence as evmod
 from . import findings as fmod
+from . import prompt
 from . import runner as rmod
 from . import targets as tmod
 from . import users
@@ -222,9 +223,12 @@ def register(app: Flask, cfg: Config, db: dbmod.Database, cat: catmod.Catalog, s
             })
         has_ev = any(e.id in have for e in cat.evidence_for(test_id))
         st_value = tmod.status(len(steps), vs, has_ev) if sc else "-"
+        findings = fmod.list_for(db, t, test_id)
+        ai_prompt = prompt.build(test=test, scenario=sc, target=t, steps=steps, store=store,
+                                 findings=findings) if sc else ""
         return render_template("wstg_page.html", tab="index", test=test, scenario=sc, steps=steps,
                                status=st_value, applicable=t.type in test.target_types,
-                               findings=fmod.list_for(db, t, test_id))
+                               findings=findings, ai_prompt=ai_prompt)
 
     @app.post("/t/<name>/wstg/<test_id>/steps/<int:n>")
     @admin_required

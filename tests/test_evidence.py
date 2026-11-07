@@ -115,3 +115,13 @@ def test_domain_evidence_is_owned_by_the_domain(admin_client, site):
     page = admin_client.get("/t/www.example.com/manual").get_data(as_text=True)
     assert "from example.com" in page and "v1 · 1 item(s)" in page
     assert admin_client.get("/t/example.com/evidence/har-browse").status_code == 404
+
+
+def test_ai_prompt_includes_evidence_excerpts(admin_client, store, site):
+    store.add_text(site, "har-browse", "flows: login, search", "flows covered", "admin")
+    store.add_file(site, "har-browse", b'{"log": {"entries": []}}', "walk.har", "", "admin")
+    page = admin_client.get("/t/www.example.com/wstg/WSTG-CRYP-03").get_data(as_text=True)
+    prompt = page[page.index('id="ai-prompt"'):]
+    assert "flows: login, search" in prompt
+    assert "HAR file walk.har (not included" in prompt and "&#34;entries&#34;: []" not in prompt
+    assert "NOT COLLECTED" in prompt

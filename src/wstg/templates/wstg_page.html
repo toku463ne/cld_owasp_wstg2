@@ -5,7 +5,8 @@
   <h2>{{ test.id }} {{ test.title }} <span class="status s-{{ status if status != '-' else 'none' }}">{{ status }}</span></h2>
   <span class="sp"></span>
   <a href="{{ test.owasp_url }}" target="_blank" rel="noopener noreferrer">OWASP page</a>
-  <button type="button" data-copy="#ai-prompt" {{ 'disabled' if not scenario }}>Copy AI prompt</button>
+  <button type="button" data-copy="#ai-prompt" {{ 'disabled' if not scenario }}
+    title="Copies criteria, verdicts, and evidence excerpts (HAR files excluded). Paste it only into an AI chat the engagement allows.">Copy AI prompt</button>
 </div>
 {% if not applicable %}<div class="warnbox">{{ test.id }} runs on {{ test.target_types | join(', ') }} targets, not on {{ target.type }} targets.</div>{% endif %}
 
@@ -68,24 +69,6 @@
 </section>
 {% endfor %}
 
-<textarea id="ai-prompt" class="hidden" readonly>You are reviewing the result of an OWASP WSTG v4.2 test. Decide pass or fail for each step and for the whole test, using only the criteria and the evidence below. If evidence is missing or a collection failed, say so: that is never a pass.
-
-Test: {{ test.id }} {{ test.title }}
-Target: {{ target.name }} ({{ target.type }})
-OWASP: {{ test.owasp_url }}
-
-Overview: {{ scenario.overview }}
-Pass when: {{ scenario.pass_criteria }}
-Fail when: {{ scenario.fail_criteria }}
-{% if scenario.notes %}Notes:
-{% for n in scenario.notes %}- {{ n }}
-{% endfor %}{% endif %}
-Steps (tester verdict in brackets):
-{% for s in steps %}{{ s.n }}. [{{ s.verdict }}] {{ s.step.summary }}
-{% if s.command %}   Command: {{ s.command }}
-{% endif %}{% if s.operation %}   Operation: {{ s.operation }}
-{% endif %}{% for e in s.evidence %}   Evidence {{ e.ev.id }}: {% if e.row %}collected {{ e.row.created_at }} (v{{ e.row.version }}, {{ e.row.item_count }} item(s); contents not included yet){% else %}not collected{% endif %}
-{% endfor %}{% endfor %}
-Answer with: a verdict per step, an overall verdict, and for each fail the observed problem, its impact, and a CVSS 3.1 vector with a short rationale.</textarea>
+<textarea id="ai-prompt" class="hidden" readonly>{{ ai_prompt }}</textarea>
 {% endif %}
 {% endblock %}

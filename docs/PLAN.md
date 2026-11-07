@@ -11,11 +11,11 @@ Last updated: 2026-11-07
 | M0 | Skeleton | **Done** (`5d9c082`) | 23 tests pass; CLI and waitress server checked by hand |
 | M1 | Catalog | **In progress** | Index (97), schema and validator, INFO + CRYP scenarios; CONF pending |
 | M2 | Targets and main page | **Done** | Targets, scope records and check, selector, tabs, WSTG index |
-| M3 | WSTG page | **In progress** | Overview, criteria, steps, verdict/reset, rendered commands, AI prompt (basic); evidence view/edit with M4/M5 |
+| M3 | WSTG page | **Done** | Overview, criteria, steps, verdict/reset, commands, evidence (view, edit, collected date), findings, AI prompt |
 | M4 | Manual evidence | **Done** (browser paste to be checked on Kali) | Versioned store, capture box, upload, text, edit/remove as new versions |
 | M5 | Automatic evidence | **Done** (real tools to be checked on Kali) | Jobs, worker, light/full, resume, scope check, cancel, proxy |
 | M6 | Findings | **Done** | List, create from WSTG page, detail/edit, status and dates, CVSS 3.1 |
-| M7 | AI prompt | Not started | |
+| M7 | AI prompt | **Done** | Criteria, verdicts, commands, evidence excerpts, findings |
 | M8 | Deployment | **Partly done** (setup script, checked on Kali) | `scripts/setup-kali.sh`, nginx :8083, `wstg2-web` user service; worker unit and backup pending |
 | M9 | More automation | Not started | |
 
@@ -28,6 +28,10 @@ Last updated: 2026-11-07
 - Main page shell (target selector + `+`, four tabs, all placeholders); admin user page.
 - CLI: `check-config`, `migrate`, `user-add`, `user-passwd`, `user-disable`, `user-list`, `serve`.
 - Fixed during smoke test: waitress dropped nginx's `X-Forwarded-For` by default, which would have made every client look like 127.0.0.1.
+
+### M7 delivered
+- `src/wstg/prompt.py`: prompt with criteria, notes, steps with verdicts and rendered commands, every referenced evidence (collected date, version, command and exit code, text items and small text files cut at 6000 characters, 60000 in total; screenshots listed by caption; binary files listed), findings already recorded, and the requested answer format (verdicts, impact, reproduction, CVSS vector with rationale). Missing evidence is written as NOT COLLECTED.
+- HAR files are never included (cookies and tokens). The button's tooltip reminds the tester to paste only into an AI chat the engagement allows.
 
 ### M6 delivered
 - Migration `0005_findings`: title, status (open / in progress / closed), summary, impact, reproduction, CVSS vector and rationale, created / updated / closed dates. No severity column.
