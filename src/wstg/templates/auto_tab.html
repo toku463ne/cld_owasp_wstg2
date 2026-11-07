@@ -54,7 +54,7 @@
   <tr>
     <td><a href="{{ url_for('evidence_page', name=target.name, eid=e.id) }}"><b>{{ e.title }}</b></a><br><code class="muted">{{ e.id }}</code></td>
     <td class="nowrap">{{ e.level }}{% if e.heavy %} <span class="chip warn">heavy</span>{% endif %}{% if e.passive %} <span class="chip">passive</span>{% endif %}</td>
-    <td><code class="small">{{ e.argv | reject('equalto', '{proxy_args}') | join(' ') }}</code>{% if e.load_note %}<div class="note">{{ e.load_note }}</div>{% endif %}</td>
+    <td><code class="small">{{ e.argv | reject('in', ['{proxy_args}', '{pause_args}']) | join(' ') }}</code>{% if e.load_note %}<div class="note">{{ e.load_note }}</div>{% endif %}</td>
     <td class="nowrap">{% if have.get(e.id) %}{{ have[e.id].created_at }}<br><span class="muted">v{{ have[e.id].version }}</span>
       {% elif failed.get(e.id) %}<span class="status s-fail">failed</span><br><span class="muted small">{{ failed[e.id].summary }}</span>
       {% else %}<span class="muted">not collected</span>{% endif %}</td>

@@ -21,6 +21,10 @@
 #                http_proxy/https_proxy. They replace the argv element "{proxy_args}"
 #                when a proxy is set and are dropped otherwise. Placeholders:
 #                {proxy_url} (http://host:port) and {proxy_hostport} (host:port)
+#   pause_args   auto only: delay arguments added when WSTG_PAUSE is set ("{pause_args}"
+#                in argv; {pause} = seconds), for example nikto -Pause, ffuf -p
+#   incomplete_if  auto only: regexes; stdout/stderr matching one means the tool stopped
+#                early (for example nikto -maxtime), so the collection is failed
 #   direct       auto only: the tool cannot use a proxy and needs direct connections
 #                (raw TCP, UDP, or ICMP); behind a proxy-only network it fails
 #
@@ -179,8 +183,15 @@ evidence:
     heavy: true
     description: Nikto findings for {base_url}/ (outdated software, default files, risky configuration).
     argv: [nikto, -h, "{base_url}/", -ask, "no", -nointeractive, -Format, json, -output, "{out}/nikto.json",
-           "{proxy_args}"]
+           -maxtime, 235m, "{proxy_args}", "{pause_args}"]
     proxy_args: [-useproxy, "{proxy_url}"]
+    pause_args: [-Pause, "{pause}"]
+    incomplete_if: ["maximum execution time"]
     files: [nikto.json]
-    timeout: 3600
-    load_note: Sends thousands of requests and takes 10 to 60 minutes. Agree on the time window first; a WAF may block the tester's address.
+    timeout: 14400
+    load_note: >-
+      Sends thousands of requests and takes 10 to 60 minutes at full speed; it has no delay
+      by default, so weak targets can reach CPU 100% or answer 502/503/504. Set WSTG_PAUSE=2
+      (3 to 5 if it still fails) to wait between requests; then it runs for hours and stops
+      at 235 minutes (-maxtime), which is recorded as an incomplete (failed) collection.
+      Agree on the time window first; a WAF may block the tester's address.

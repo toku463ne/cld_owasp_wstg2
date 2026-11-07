@@ -27,6 +27,14 @@ argv element "{proxy_args}" when a proxy is set and are dropped otherwise:
     {proxy_url}       the proxy URL, for example http://proxy.example.com:3128
     {proxy_hostport}  host:port of the proxy
 
+Pause (WSTG_PAUSE, seconds between requests, to spare weak targets): tools
+with a delay option declare `pause_args`, which replace "{pause_args}" the
+same way when WSTG_PAUSE is set: {pause} is the number of seconds.
+
+`incomplete_if` lists regular expressions; when stdout or stderr matches, the
+tool stopped early (for example nikto -maxtime) and the collection is failed,
+never complete.
+
 Only these names are replaced (by regular expression, not str.format), so other
 braces pass through unchanged: curl globs such as {a,b} and curl's own
 --write-out syntax %{http_code}. An unknown {word} is reported as an error.
@@ -59,6 +67,10 @@ PLACEHOLDER_RE = re.compile(r"(?<!%)\{([a-z_]+)\}")
 EV_REF_RE = re.compile(r"\{ev:([a-z0-9-]+)\}")
 PROXY_ARGS = "{proxy_args}"
 PROXY_PLACEHOLDERS = {"proxy_url", "proxy_hostport"}
+PAUSE_ARGS = "{pause_args}"
+PAUSE_PLACEHOLDERS = {"pause"}
+OPTIONAL_ARGS = {PROXY_ARGS: ("proxy_args", PROXY_PLACEHOLDERS), PAUSE_ARGS: ("pause_args", PAUSE_PLACEHOLDERS)}
+MAX_TIMEOUT = 4 * 3600
 TOOL_INSTALLS = ("apt", "npm", "none")
 
 
@@ -100,6 +112,8 @@ class Evidence:
     ok_exit_codes: tuple[int, ...] = (0,)  # exit codes that mean "finished"
     proxy_args: tuple[str, ...] = ()  # replace "{proxy_args}" in argv when a proxy is set
     direct: bool = False              # the tool cannot use a proxy (needs direct connections)
+    pause_args: tuple[str, ...] = ()  # replace "{pause_args}" in argv when WSTG_PAUSE is set
+    incomplete_if: tuple[str, ...] = ()  # regexes on stdout/stderr meaning "stopped early"
     load_note: str = ""
     source: str = ""                  # file it was defined in
 
@@ -224,7 +238,7 @@ def _load_index(path: Path, problems: list[str]) -> tuple[str, dict[str, Test]]:
 
 EVIDENCE_KEYS = {"id", "title", "target_type", "kind", "description", "level", "passive", "heavy",
                  "argv", "files", "timeout", "ok_exit_codes", "load_note",
-                 "proxy_args", "direct"}
+                 "proxy_args", "direct", "pause_args", "incomplete_if"}
 
 
 def _load_evidence(dir_: Path, problems: list[str]) -> dict[str, Evidence]:
@@ -248,7 +262,8 @@ def _load_evidence(dir_: Path, problems: list[str]) -> dict[str, Evidence]:
                 argv=_strs(e.get("argv")), files=_strs(e.get("files")),
                 timeout=int(e.get("timeout", 120)),
                 ok_exit_codes=tuple(int(x) for x in e.get("ok_exit_codes", [0])), load_note=_str(e.get("load_note")),
-                proxy_args=_strs(e.get("proxy_args")), direct=bool(e.get("direct", False)), source=path.name,
+                proxy_args=_strs(e.get("proxy_args")), direct=bool(e.get("direct", False)),
+                pause_args=_strs(e.get("pause_args")), incomplete_if=_strs(e.get("incomplete_if")), source=path.name,
             )
             _check_evidence(ev, problems)
             out[eid] = ev
@@ -274,22 +289,30 @@ def _check_evidence(ev: Evidence, problems: list[str]) -> None:
             problems.append(f"{w}: domain targets run passive commands only (set passive: true or change target_type)")
         if ev.heavy and not ev.load_note:
             problems.append(f"{w}: heavy evidence needs a load_note")
-        if not 1 <= ev.timeout <= 3600:
-            problems.append(f"{w}: timeout must be 1..3600 seconds")
-        n = ev.argv.count(PROXY_ARGS)
-        if ev.proxy_args and n != 1:
-            problems.append(f"{w}: proxy_args needs exactly one \"{PROXY_ARGS}\" element in argv")
-        if not ev.proxy_args and n:
-            problems.append(f"{w}: argv has \"{PROXY_ARGS}\" but no proxy_args")
+        if not 1 <= ev.timeout <= MAX_TIMEOUT:
+            problems.append(f"{w}: timeout must be 1..{MAX_TIMEOUT} seconds")
+        for token, (key, names) in OPTIONAL_ARGS.items():
+            args, n = getattr(ev, key), ev.argv.count(token)
+            if args and n != 1:
+                problems.append(f"{w}: {key} needs exactly one \"{token}\" element in argv")
+            if not args and n:
+                problems.append(f"{w}: argv has \"{token}\" but no {key}")
+            for a in args:
+                for name in PLACEHOLDER_RE.findall(a):
+                    if name not in names:
+                        problems.append(f"{w}: {key} may only use {', '.join('{%s}' % x for x in sorted(names))},"
+                                        f" not {{{name}}}")
         if ev.proxy_args and ev.direct:
             problems.append(f"{w}: direct and proxy_args exclude each other")
-        for a in ev.proxy_args:
-            for name in PLACEHOLDER_RE.findall(a):
-                if name not in PROXY_PLACEHOLDERS:
-                    problems.append(f"{w}: proxy_args may only use {{proxy_url}} and {{proxy_hostport}}, not {{{name}}}")
+        for rx in ev.incomplete_if:
+            try:
+                re.compile(rx)
+            except re.error as e:
+                problems.append(f"{w}: incomplete_if {rx!r}: {e}")
     else:
         for k, v in (("argv", ev.argv), ("level", ev.level), ("files", ev.files),
                      ("proxy_args", ev.proxy_args), ("direct", ev.direct),
+                     ("pause_args", ev.pause_args), ("incomplete_if", ev.incomplete_if),
                      ("ok_exit_codes", ev.ok_exit_codes != (0,))):
             if v:
                 problems.append(f"{w}: manual evidence must not set {k}")
@@ -297,7 +320,7 @@ def _check_evidence(ev: Evidence, problems: list[str]) -> None:
             problems.append(f"{w}: manual evidence needs a description of what to capture")
     allowed = PLACEHOLDERS[ev.target_type]
     for s in ev.argv:
-        if s == PROXY_ARGS:
+        if s in OPTIONAL_ARGS:
             continue
         for name in PLACEHOLDER_RE.findall(s):
             if name not in allowed:

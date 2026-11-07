@@ -118,14 +118,18 @@ evidence:
     description: >-
       Host names under {domain} that the server at {base_url} answers differently from
       its default response (Host header brute force, SecLists top 5000 subdomains).
-    argv: [ffuf, -s, -noninteractive, -ac, -rate, "50", -t, "10",
+    argv: [ffuf, -s, -noninteractive, -ac, -rate, "50",
            -w, "/usr/share/seclists/Discovery/DNS/subdomains-top1million-5000.txt:FUZZ",
            -u, "{base_url}/", -H, "Host: FUZZ.{domain}",
-           -o, "{out}/ffuf-vhost.json", -of, json, "{proxy_args}"]
+           -o, "{out}/ffuf-vhost.json", -of, json, "{proxy_args}", "{pause_args}"]
     proxy_args: [-x, "{proxy_url}"]
+    pause_args: [-p, "{pause}", -t, "1"]
     files: [ffuf-vhost.json]
-    timeout: 900
-    load_note: About 5000 requests at up to 50 per second. Needs the seclists package.
+    timeout: 14400
+    load_note: >-
+      About 5000 requests, at up to 50 per second (ffuf's 40 threads otherwise). With
+      WSTG_PAUSE set, one thread waits that many seconds between requests (about 3 hours at
+      2 seconds). Needs the seclists package.
 
   - id: katana-crawl
     title: Unauthenticated crawl (katana)

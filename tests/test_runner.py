@@ -234,3 +234,35 @@ def test_direct_ssh_setting_is_validated(tmp_path):
     assert config.load({**base, "WSTG_DIRECT_SSH": "tester@jump.example.net"}, check_repo=False).direct_ssh
     with pytest.raises(config.ConfigError):
         config.load({**base, "WSTG_DIRECT_SSH": "-oProxyCommand=x"}, check_repo=False)
+
+
+def test_pause_args_only_with_wstg_pause(cfg, db, site):
+    argv = [PY, "-c", "import sys; print(sys.argv[1:])", "{pause_args}", "{base_url}/"]
+    e = ev("slowly", argv, pause_args=("-p", "{pause}", "-t", "1"))
+    r, store = make(cfg, db, e)
+    run(r, site)
+    assert (store.load(site.name, "slowly").path / "stdout.txt").read_text() == "['https://www.example.com/']\n"
+    object.__setattr__(cfg, "pause", 2)
+    r2, store2 = make(cfg, db, ev("slowly2", argv, pause_args=e.pause_args))
+    run(r2, site)
+    v = store2.load(site.name, "slowly2")
+    assert (v.path / "stdout.txt").read_text() == "['-p', '2', '-t', '1', 'https://www.example.com/']\n"
+    assert v.meta["pause"] == 2
+
+
+def test_stopped_early_is_never_complete(cfg, db, site):
+    r, store = make(cfg, db, ev("capped", [PY, "-c", "print('+ ERROR: Host maximum execution time of 60 seconds reached')"],
+                                incomplete_if=("maximum execution time",)))
+    items = run(r, site)
+    assert items["capped"]["status"] == "failed" and "stopped early" in items["capped"]["message"]
+    assert store.load(site.name, "capped") is None
+
+
+def test_pause_setting_is_validated(tmp_path):
+    from wstg import config
+    base = {"WSTG_EVIDENCE_ROOT": str(tmp_path / "e"), "WSTG_DB_PATH": str(tmp_path / "d.db")}
+    assert config.load({**base, "WSTG_PAUSE": "2"}, check_repo=False).pause == 2
+    assert config.load(base, check_repo=False).pause == 0
+    for bad in ("-1", "61", "x"):
+        with pytest.raises(config.ConfigError):
+            config.load({**base, "WSTG_PAUSE": bad}, check_repo=False)

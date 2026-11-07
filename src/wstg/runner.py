@@ -76,19 +76,35 @@ def proxy_values(proxy: str) -> tuple[dict[str, str], dict[str, str]]:
     return real, masked
 
 
-def build_argv(ev: catmod.Evidence, values: dict[str, str], proxy: str) -> tuple[list[str], list[str], list[str]]:
-    """(argv to check against the scope, argv to run, argv to record)."""
-    base = [catmod.render(a, values) for a in ev.argv]
-    if not proxy or not ev.proxy_args:
-        argv = [a for a in base if a != catmod.PROXY_ARGS]
-        return argv, argv, argv
-    real, masked = proxy_values(proxy)
-    i = base.index(catmod.PROXY_ARGS)
-    checked = base[:i] + base[i + 1:]
+def build_argv(ev: catmod.Evidence, values: dict[str, str], proxy: str,
+               pause: int = 0) -> tuple[list[str], list[str], list[str]]:
+    """(argv to check against the scope, argv to run, argv to record).
 
-    def with_args(v):
-        return base[:i] + [catmod.render(a, v) for a in ev.proxy_args] + base[i + 1:]
-    return checked, with_args(real), with_args(masked)
+    Optional argument groups ("{proxy_args}", "{pause_args}") are expanded when
+    their setting is on and dropped otherwise. The scope check sees neither:
+    the proxy host is not a target, and a pause adds no host.
+    """
+    base = [catmod.render(a, values) for a in ev.argv]
+    checked = [a for a in base if a not in catmod.OPTIONAL_ARGS]
+    real: dict[str, list[str]] = {}
+    masked: dict[str, list[str]] = {}
+    if proxy and ev.proxy_args:
+        r, m = proxy_values(proxy)
+        real[catmod.PROXY_ARGS] = [catmod.render(a, r) for a in ev.proxy_args]
+        masked[catmod.PROXY_ARGS] = [catmod.render(a, m) for a in ev.proxy_args]
+    if pause and ev.pause_args:
+        args = [catmod.render(a, {"pause": str(pause)}) for a in ev.pause_args]
+        real[catmod.PAUSE_ARGS] = masked[catmod.PAUSE_ARGS] = args
+
+    def expand(groups: dict[str, list[str]]) -> list[str]:
+        out: list[str] = []
+        for a in base:
+            if a in catmod.OPTIONAL_ARGS:
+                out += groups.get(a, [])
+            else:
+                out.append(a)
+        return out
+    return checked, expand(real), expand(masked)
 
 
 def plan(cat: catmod.Catalog, target: tmod.Target, mode: str) -> list[catmod.Evidence]:
@@ -196,7 +212,7 @@ class Runner:
         via = self.cfg.direct_ssh if ev.direct else ""
         proxy = "" if via else self.cfg.http_proxy   # the jump host connects directly
         try:
-            argv, run_argv, rec_argv = build_argv(ev, values, proxy)
+            argv, run_argv, rec_argv = build_argv(ev, values, proxy, self.cfg.pause)
         except RunError as e:
             shutil.rmtree(tmp, ignore_errors=True)
             return Outcome("failed", str(e))
@@ -218,7 +234,7 @@ class Runner:
                 shutil.rmtree(tmp, ignore_errors=True)
                 return Outcome("failed", str(e))
             values["out"] = rdir
-            _, run_argv, rec_argv = build_argv(ev, values, "")
+            _, run_argv, rec_argv = build_argv(ev, values, "", self.cfg.pause)
             popen_argv = remote.command(rdir, run_argv, ev.timeout)
             tool = f"{via}:{argv[0]}"
         else:
@@ -293,6 +309,8 @@ class Runner:
                 message = f"exit code {exit_code}"
             elif missing:
                 message = f"missing output: {', '.join(missing)}"
+            elif ev.incomplete_if:
+                message = _stopped_early(ev, tmp)
         if message and ev.direct and not via and self.cfg.http_proxy:
             message += (f" ({argv[0]} cannot use WSTG_HTTP_PROXY; it needs a direct connection to the target,"
                         " or set WSTG_DIRECT_SSH to run it on a jump host)")
@@ -306,6 +324,7 @@ class Runner:
             summary=("collected" if status == "complete" else f"failed: {message}"), items=items,
             extra_meta={"argv": rec_argv, "exit_code": exit_code, "started_at": started, "duration_s": duration,
                         "tool": tool, "job_id": job_id, "proxy": bool(proxy), "via": via,
+                        "pause": self.cfg.pause if ev.pause_args else 0,
                         "message": message, "files": {"command.txt": {}}})
         if cancelled:
             return Outcome("cancelled", message, v.version, exit_code)
@@ -471,6 +490,22 @@ class Remote:
             self.run(f"rm -rf -- {rdir}", 30)
         except RunError:
             pass
+
+
+def _stopped_early(ev: catmod.Evidence, folder: Path) -> str:
+    """A message when stdout/stderr say the tool stopped before finishing."""
+    for name in ("stdout.txt", "stderr.txt"):
+        p = folder / name
+        if not p.exists():
+            continue
+        with open(p, "rb") as f:
+            f.seek(max(0, p.stat().st_size - 1024 * 1024))
+            tail = f.read().decode(errors="replace")
+        for rx in ev.incomplete_if:
+            m = re.search(rx, tail)
+            if m:
+                return f"stopped early (incomplete result): {m.group(0)[:200]}"
+    return ""
 
 
 def _kill(proc: subprocess.Popen) -> None:
