@@ -1,36 +1,44 @@
 id: WSTG-INFO-02
 overview: >-
   Determine how far the web server's product and version can be identified from outside
-  (banners, response headers, default error pages), and whether that version has known
-  vulnerabilities.
+  (banners, response headers, default error pages), and whether the identified versions
+  have known vulnerabilities. The two questions are judged separately: steps 1 to 3 judge
+  version disclosure, step 4 judges known vulnerabilities.
 pass: >-
-  Headers, error pages, and fingerprinting do not reveal the product version, or the
-  revealed version has no known vulnerability.
+  Steps 1 to 3: no product version is revealed (a product name alone, such as
+  `Server: nginx`, is a pass). Step 4: no revealed version has a known vulnerability, or
+  no version is revealed at all.
 fail: >-
-  The version can be identified (for example `Server: Apache/2.4.49`) and has a known
-  vulnerability. A version disclosed without a known vulnerability is reported as low
-  severity information disclosure.
+  Steps 1 to 3: a source reveals a product version (for example `Server: Apache/2.4.49`);
+  this is a low severity information disclosure on its own, whether or not the version
+  has a known vulnerability. Step 4: a revealed version has a known vulnerability; this is
+  a separate finding rated by the vulnerability itself.
 notes:
-  - Hiding the version is not a fix by itself; report it together with the patch level.
-  - Server header names differ from NVD product names (Apache/2.4.49 is cpe:2.3:a:apache:http_server:2.4.49). Do not write "no known vulnerabilities" until the CPE lookup returned a product.
-  - The NVD API without a key allows 5 requests per 30 seconds; HTTP 403 means the limit was hit.
+  - Report version disclosure and known vulnerabilities as separate findings. Hiding the version fixes the disclosure only; the vulnerability needs a patch.
+  - Distribution packages (for example `Apache/2.4.52 (Ubuntu)`) often carry backported fixes, so the upstream version number may list CVEs that are already fixed. Confirm the package version with the server owner before rating such a CVE.
   - X-AspNet-Version 4.0.30319 is shared by .NET 4.0 to 4.8 and does not identify a version; report the header itself.
+  - Check every CVE ID the AI lists at https://nvd.nist.gov/vuln/detail/CVE-ID before writing the finding; the AI's knowledge has a cut-off date and it can be wrong.
 steps:
-  - summary: Read Server, X-Powered-By, Via, and similar headers on HTTPS and HTTP
+  - summary: Read Server, X-Powered-By, Via, and similar headers on HTTPS and HTTP (fail when a version is shown)
     evidence: [http-root-https, http-root-http]
-  - summary: Look for product names and versions in the default error page
+  - summary: Look for product names and versions in the default error page (fail when a version is shown)
     evidence: [http-404]
-  - summary: Fingerprint the server and components with WhatWeb
+  - summary: Fingerprint the server and components with WhatWeb (fail when a version is shown)
     evidence: [whatweb]
-  - summary: Look up each product and version in NVD and list known CVEs
-    command: >-
-      curl -s --get --data-urlencode "keywordSearch=PRODUCT VERSION"
-      https://services.nvd.nist.gov/rest/json/cpes/2.0 | jq -r '.products[].cpe.cpeName';
-      sleep 7;
-      curl -s "https://services.nvd.nist.gov/rest/json/cves/2.0?virtualMatchString=CPE_NAME&resultsPerPage=100"
-      | jq -r '.vulnerabilities[].cve | [.id, (.metrics.cvssMetricV31[0].cvssData.baseScore // "-" | tostring)] | @tsv'
-    load_note: NVD API without a key allows 5 requests per 30 seconds; wait 7 seconds between requests.
-  - summary: Record the products, versions, and CVEs with CVSS 7.0 or higher as a finding
+  - summary: List known vulnerabilities of each revealed product version
+    evidence: [http-root-https, http-root-http, http-404, whatweb]
+    ai_task: >-
+      From the evidence of steps 1 to 3, list each product and version that is revealed
+      (product, version, where it was seen). For each one, list the known CVEs you are aware
+      of with CVSS 3.1 base score 7.0 or higher (CVE ID, score, one-line description), and
+      say up to which date your knowledge goes. Mention when the version string shows a
+      distribution package whose fixes may be backported. Verdict: fail when a revealed
+      version has such a CVE; pass when no version is revealed or the revealed versions have
+      none; "-" when you are not sure. Judge only known vulnerabilities here, not the
+      disclosure itself.
+  - summary: Record the findings
     operation: >-
-      For each CVE with CVSS 7.0 or higher, write the CVE ID, the version, and where the
-      version was seen (header, error page, WhatWeb) in the finding.
+      Write one low severity finding for the version disclosure (the header, error page, or
+      WhatWeb line that shows the version). Write a separate finding per vulnerable product
+      with the CVE IDs (checked in NVD), the version, and where it was seen, rated by the
+      CVE's CVSS vector.

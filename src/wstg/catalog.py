@@ -134,6 +134,7 @@ class Step:
     operation: str = ""               # concrete UI operation
     evidence: tuple[str, ...] = ()
     load_note: str = ""
+    ai_task: str = ""                 # judged by the AI review: instruction added to the AI prompt
 
 
 @dataclass(frozen=True)
@@ -331,7 +332,7 @@ def _check_evidence(ev: Evidence, problems: list[str]) -> None:
 
 
 SCENARIO_KEYS = {"id", "overview", "pass", "fail", "notes", "steps"}
-STEP_KEYS = {"summary", "command", "operation", "evidence", "load_note"}
+STEP_KEYS = {"summary", "command", "operation", "evidence", "load_note", "ai_task"}
 
 
 def _load_scenarios(dir_: Path, tests: dict[str, Test], evidence: dict[str, Evidence],
@@ -358,9 +359,9 @@ def _load_scenarios(dir_: Path, tests: dict[str, Test], evidence: dict[str, Evid
                 continue
             st = Step(summary=_str(s["summary"]), command=_str(s.get("command")),
                       operation=_str(s.get("operation")), evidence=_strs(s.get("evidence")),
-                      load_note=_str(s.get("load_note")))
-            if not (st.command or st.operation or st.evidence):
-                problems.append(f"{sw}: needs a command, an operation, or evidence")
+                      load_note=_str(s.get("load_note")), ai_task=_str(s.get("ai_task")))
+            if not (st.command or st.operation or st.evidence or st.ai_task):
+                problems.append(f"{sw}: needs a command, an operation, evidence, or an AI task")
             for eid in st.evidence:
                 ev = evidence.get(eid)
                 if not ev:

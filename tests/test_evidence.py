@@ -125,3 +125,10 @@ def test_ai_prompt_includes_evidence_excerpts(admin_client, store, site):
     assert "flows: login, search" in prompt
     assert "HAR file walk.har (not included" in prompt and "&#34;entries&#34;: []" not in prompt
     assert "NOT COLLECTED" in prompt
+
+
+def test_ai_task_step_goes_into_the_prompt(admin_client, site):
+    page = admin_client.get("/t/www.example.com/wstg/WSTG-INFO-02").get_data(as_text=True)
+    assert "Judged by the AI review." in page
+    prompt = page[page.index('id="ai-prompt"'):]
+    assert "YOUR TASK for this step: From the evidence of steps 1 to 3" in prompt

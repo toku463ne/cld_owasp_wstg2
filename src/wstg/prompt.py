@@ -73,6 +73,8 @@ def build(*, test: catmod.Test, scenario: catmod.Scenario, target, steps: list[d
             lines.append(f"   Command: {s['command']}")
         if s["operation"]:
             lines.append(f"   Operation: {s['operation']}")
+        if s["step"].ai_task:
+            lines.append(f"   YOUR TASK for this step: {s['step'].ai_task}")
         for e in s["evidence"]:
             ev = e["ev"]
             if ev.id in seen:

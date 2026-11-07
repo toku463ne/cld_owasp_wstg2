@@ -12,7 +12,7 @@ fail: >-
 notes:
   - Cookie names hint at the platform: JSESSIONID = Java, ASP.NET_SessionId = .NET, PHPSESSID = PHP, laravel_session = Laravel, ci_session = CodeIgniter, connect.sid = Express.
   - Retire.js downloads its vulnerability database from GitHub at run time; behind a proxy or without Internet access the update fails. It scans local files only, so it sends nothing to the target. Use --exitwith 0 so a finding does not stop a batch.
-  - Look up CMS and framework versions in NVD as in WSTG-INFO-02 step 4 (5 requests per 30 seconds without an API key). Record where each version was seen.
+  - Known CVEs of framework and CMS versions are judged by the AI review (step "List known vulnerabilities of framework and CMS versions"); check each CVE ID in NVD before writing the finding.
   - Scripts that need a login are not in site-assets; fetch them from the logged-in HAR.
 steps:
   - summary: List products and versions WhatWeb recognized
@@ -45,6 +45,15 @@ steps:
       | [.component, .version, ([.vulnerabilities[].severity] | unique | join(",")), ([.vulnerabilities[].identifiers.CVE[]?] | unique | join(" ")), $f] | @tsv'
       retire-site.json retire-har.json
     load_note: One GET per script URL in the HAR.
+  - summary: List known vulnerabilities of framework and CMS versions
+    evidence: [whatweb, http-root-https, http-404, framework-paths]
+    ai_task: >-
+      From the evidence above, list each framework, CMS, and plugin with its version and
+      where it was seen. For each one, list the known CVEs you are aware of with CVSS 3.1
+      base score 7.0 or higher (CVE ID, score, one-line description), and say up to which
+      date your knowledge goes. JavaScript libraries are covered by the Retire.js step.
+      Verdict: fail when a version has such a CVE; pass when no version is identified or
+      the versions have none; "-" when you are not sure.
   - summary: Record each vulnerable component with its version and where it was identified
     operation: >-
       For each product with a known CVE (CVSS 7.0 or higher first), write the product,

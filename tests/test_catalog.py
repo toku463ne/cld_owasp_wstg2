@@ -178,7 +178,7 @@ def test_scenario_references_are_checked(tmp_path):
     })
     assert "is for FQDN targets" in p
     assert "unknown evidence 'missing-one'" in p
-    assert "needs a command, an operation, or evidence" in p
+    assert "needs a command, an operation, evidence, or an AI task" in p
     assert "{ev:http-root} must also be listed" in p
     assert "{out} is not available" in p
     assert "does not match the file name" in p
