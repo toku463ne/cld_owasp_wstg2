@@ -98,6 +98,13 @@ curl -s --noproxy '*' --max-time 5 -o /dev/null -w '%{http_code}\n' http://127.0
    JSON block at its end sets the step verdicts: a pass is refused when the step's evidence is
    missing or failed, "-" changes nothing, and verdicts you set yourself are kept unless
    *Overwrite verdicts set by a tester* is ticked. Each step shows the AI's verdict and reason.
+   Findings the AI proposes are listed there with a *Create finding* button (or tick *Also create
+   the findings the AI proposes*); a title that already exists for the test is not created again.
+6. **AI review in bulk (AI agent)**: *Save all AI prompts* on the WSTG index tab (or
+   `uv run wstg ai-prompts TARGET`) writes `<evidence>/<target>/_ai/prompts/WSTG-*.md` and a
+   README.md for the agent. The agent, or you from an AI chat, writes each answer to
+   `_ai/answers/WSTG-XXXX-NN.json`. *Import AI answers* (or `uv run wstg ai-import TARGET
+   [--findings]`) imports them all; files already imported are skipped.
 
 ## Configuration
 

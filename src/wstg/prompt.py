@@ -173,11 +173,18 @@ def build(*, test: catmod.Test, scenario: catmod.Scenario, target, steps: list[d
               "End the answer with this JSON block, filled in (it is imported back into the test tool).",
               "One entry per step. verdict is \"pass\", \"fail\", or \"-\" when the evidence is missing, failed,",
               "or not enough to decide. reason: one or two sentences citing the evidence.",
+              "findings: one entry per distinct problem (empty list when there is none). Do not repeat",
+              "a finding already recorded above. steps: the step numbers that show it. cvss_vector: a full",
+              "CVSS 3.1 vector (CVSS:3.1/AV:../AC:../PR:../UI:../S:../C:../I:../A:..); cvss_rationale: one",
+              "line per metric. reproduction: exact commands or operations, citing the evidence.",
               "```json",
               json.dumps({"wstg_review": {
                   "test": test.id, "target": target.name, "overall": "pass | fail | -",
                   "summary": "one paragraph",
-                  "steps": [{"step": s["n"], "verdict": "pass | fail | -", "reason": "..."} for s in steps]}},
+                  "steps": [{"step": s["n"], "verdict": "pass | fail | -", "reason": "..."} for s in steps],
+                  "findings": [{"title": "...", "steps": [1], "summary": "...", "impact": "...",
+                                "reproduction": "...", "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N",
+                                "cvss_rationale": "..."}]}},
                   indent=2),
               "```"]
     return "\n".join(lines) + "\n"

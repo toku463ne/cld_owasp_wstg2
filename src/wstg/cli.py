@@ -201,6 +201,41 @@ def cmd_collect(args) -> int:
     return 0
 
 
+def _target(r, name):
+    from . import targets as tmod
+    t = tmod.get(r.db, name)
+    if not t:
+        raise config.ConfigError(f"no such target: {name}")
+    return t
+
+
+def cmd_ai_prompts(args) -> int:
+    from . import ai_files
+    r = _runner(_cfg())
+    t = _target(r, args.target)
+    for tid in args.test or []:
+        if tid not in ai_files.tests_with_scenarios(r.cat, t):
+            raise config.ConfigError(f"{tid} has no scenario for {t.type} targets")
+    paths = ai_files.save_prompts(r.cfg, r.db, r.cat, r.store, t, args.test or None)
+    for p in paths:
+        print(p)
+    print(f"{len(paths)} prompt(s); instructions for an AI agent: {ai_files.folder(r.cfg, t) / 'README.md'}")
+    return 0
+
+
+def cmd_ai_import(args) -> int:
+    from . import ai_files
+    r = _runner(_cfg())
+    t = _target(r, args.target)
+    results = ai_files.import_answers(r.cfg, r.db, r.cat, r.store, t, args.actor,
+                                      overwrite=args.overwrite, create_findings=args.findings)
+    if not results:
+        print(f"no answer files in {ai_files.folder(r.cfg, t) / 'answers'}")
+    for x in results:
+        print(f"  {x['status']:<8} {x['file']:<24} {x['message']}")
+    return 1 if any(x["status"] == "error" for x in results) else 0
+
+
 def cmd_backup(args) -> int:
     """Consistent copy of the database (SQLite online backup), keeping the newest N.
     Evidence folders are append-only versions: copy them with rsync."""
@@ -286,6 +321,18 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--mode", choices=("light", "full"), default="light")
     s.add_argument("--run", action="store_true", help="run it now in this process (no worker needed)")
     s.set_defaults(func=cmd_collect)
+
+    s = sub.add_parser("ai-prompts", help="save AI prompts to <evidence>/<target>/_ai/prompts for an AI agent")
+    s.add_argument("target")
+    s.add_argument("--test", action="append", help="only this test (repeatable); default: every test with a scenario")
+    s.set_defaults(func=cmd_ai_prompts)
+
+    s = sub.add_parser("ai-import", help="import AI answers from <evidence>/<target>/_ai/answers/WSTG-*.json")
+    s.add_argument("target")
+    s.add_argument("--overwrite", action="store_true", help="also replace verdicts a tester set")
+    s.add_argument("--findings", action="store_true", help="create the findings the AI proposes")
+    s.add_argument("--actor", default="cli", help="recorded as ai:<actor> (default: cli)")
+    s.set_defaults(func=cmd_ai_import)
 
     s = sub.add_parser("backup", help="copy the database to a backup folder (keeps the newest N)")
     s.add_argument("--dest", help="backup folder (default: <data dir>/backup)")

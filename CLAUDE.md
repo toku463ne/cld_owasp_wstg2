@@ -116,6 +116,8 @@ uv run wstg tools-check [--strict]        # which tools of catalog/tools.yaml ar
 uv run wstg tools-check --remote          # tools on the jump host (WSTG_DIRECT_SSH)
 uv run wstg worker [--once]               # run queued automatic evidence jobs
 uv run wstg collect TARGET [--mode light|full] [--run]
+uv run wstg ai-prompts TARGET [--test WSTG-..]   # save AI prompts to <evidence>/TARGET/_ai/prompts
+uv run wstg ai-import TARGET [--overwrite] [--findings]  # import _ai/answers/WSTG-*.json
 uv run wstg backup [--dest DIR] [--keep 14]
 
 uv run pytest -q                          # tests (temporary directories only)
@@ -124,7 +126,8 @@ uv run pytest -q                          # tests (temporary directories only)
 Code layout: `src/wstg/` (`config.py`, `db.py` + `migrations/NNNN_*.sql`, `users.py`,
 `web.py`, `web_targets.py`, `web_evidence.py` + `templates/` + `static/`, `cli.py`, `catalog.py`,
 `targets.py` (targets, scope check, status), `evidence.py` (versioned store), `runner.py`
-(jobs, worker)), catalog data in `catalog/`
+(jobs, worker), `analysis.py` (auto-run step commands), `prompt.py` + `ai_review.py` + `ai_files.py`
+(AI prompt, answer import, prompt/answer files)), catalog data in `catalog/`
 (`wstg_index.yaml`, `evidence/*.yaml`, `wstg/WSTG-*.yaml`, `tools.yaml`; schema in `catalog/evidence/core.yaml`
 and `src/wstg/catalog.py`), tests in `tests/`, setup in
 `scripts/setup-kali.sh` + `deploy/nginx/wstg2.conf.template`.

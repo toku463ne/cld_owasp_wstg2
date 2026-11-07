@@ -4,7 +4,10 @@ The prompt (`prompt.py`) asks the AI to end its answer with a JSON block:
 
     {"wstg_review": {"test": "WSTG-INFO-02", "target": "www.example.com",
                      "overall": "pass" | "fail" | "-", "summary": "...",
-                     "steps": [{"step": 1, "verdict": "pass" | "fail" | "-", "reason": "..."}]}}
+                     "steps": [{"step": 1, "verdict": "pass" | "fail" | "-", "reason": "..."}],
+                     "findings": [{"title": "...", "steps": [2], "summary": "...", "impact": "...",
+                                   "reproduction": "...", "cvss_vector": "CVSS:3.1/...",
+                                   "cvss_rationale": "..."}]}}
 
 `parse()` finds that block in the pasted answer (the last ```json block, or
 the whole text) and validates it. `apply()` sets the step verdicts, with
@@ -17,21 +20,29 @@ these rules:
   `overwrite` is set.
 - Applied verdicts are recorded as set by "ai:<user>", so the page can tell
   them apart, and every import is stored with its per-step outcome.
+
+Proposed findings are kept with the review. `create_finding()` turns one into a
+finding (created by "ai:<user>"); a finding with the same title on the same test
+is never created twice. `apply(create_findings=True)` creates all of them.
 """
 
 from __future__ import annotations
 
 import json
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from . import catalog as catmod
+from . import cvss
+from . import findings as fmod
 from . import db as dbmod
 from . import evidence as evmod
 from . import targets as tmod
 
 MAX_ANSWER = 400_000
 MAX_REASON = 4000
+MAX_FINDINGS = 20
+FINDING_TEXT = ("summary", "impact", "reproduction", "cvss_rationale")
 AI_PREFIX = "ai:"
 FENCE_RE = re.compile(r"```[a-zA-Z]*\s*\n(.*?)```", re.S)
 
@@ -47,10 +58,11 @@ class Review:
     overall: str
     summary: str
     steps: list[dict]          # [{"step": n, "verdict": v, "reason": r}]
+    findings: list[dict] = field(default_factory=list)
 
     def to_json(self) -> str:
         return json.dumps({"test": self.test, "target": self.target, "overall": self.overall,
-                           "summary": self.summary, "steps": self.steps})
+                           "summary": self.summary, "steps": self.steps, "findings": self.findings})
 
 
 def _candidates(text: str):
@@ -117,7 +129,63 @@ def parse(text: str, *, test_id: str, target_name: str, step_count: int) -> Revi
                     "reason": str(s.get("reason") or "").strip()[:MAX_REASON]}
     return Review(test=test_id, target=target_name, overall=_verdict(d.get("overall"), "overall"),
                   summary=str(d.get("summary") or "").strip()[:MAX_REASON],
-                  steps=[steps[n] for n in sorted(steps)])
+                  steps=[steps[n] for n in sorted(steps)],
+                  findings=_findings(d.get("findings"), step_count))
+
+
+def _findings(raw, step_count: int) -> list[dict]:
+    if raw in (None, ""):
+        return []
+    if not isinstance(raw, list):
+        raise ReviewError("findings must be a list")
+    if len(raw) > MAX_FINDINGS:
+        raise ReviewError(f"more than {MAX_FINDINGS} findings")
+    out = []
+    for i, f in enumerate(raw):
+        if not isinstance(f, dict):
+            raise ReviewError(f"findings[{i}] is not an object")
+        title = str(f.get("title") or "").strip()
+        if not title:
+            raise ReviewError(f"findings[{i}] has no title")
+        item = {"title": title[:300], "note": ""}
+        for k in FINDING_TEXT:
+            item[k] = str(f.get(k) or "").strip()[:fmod.MAX_TEXT]
+        st = f.get("steps") or []
+        item["steps"] = sorted({int(x) for x in (st if isinstance(st, list) else [st])
+                                if str(x).strip().isdigit() and 1 <= int(x) <= step_count})
+        vector = str(f.get("cvss_vector") or "").strip()
+        try:
+            item["cvss_vector"] = cvss.normalize(vector) if vector else ""
+        except cvss.CvssError as e:
+            item["cvss_vector"], item["note"] = "", f"CVSS vector dropped ({e}): {vector[:120]}"
+        out.append(item)
+    return out
+
+
+def _existing_finding(db: dbmod.Database, target: tmod.Target, test_id: str, title: str) -> int | None:
+    row = db.one("SELECT id FROM findings WHERE target_id = ? AND test_id = ? AND lower(title) = lower(?)",
+                 (target.id, test_id, title))
+    return row["id"] if row else None
+
+
+def create_finding(db: dbmod.Database, target: tmod.Target, review_id: int, index: int, actor: str
+                   ) -> tuple[int, bool]:
+    """Create finding `index` of an imported review. Returns (finding id, created);
+    created is False when a finding with that title already exists for the test."""
+    row = db.one("SELECT * FROM ai_reviews WHERE id = ? AND target_id = ?", (review_id, target.id))
+    if not row:
+        raise ReviewError("no such AI review")
+    props = json.loads(row["review"]).get("findings") or []
+    if not 0 <= index < len(props):
+        raise ReviewError("no such proposed finding")
+    f = props[index]
+    if (fid := _existing_finding(db, target, row["test_id"], f["title"])) is not None:
+        return fid, False
+    data = {k: f.get(k, "") for k in ("title", "summary", "impact", "reproduction", "cvss_vector", "cvss_rationale")}
+    if f.get("note"):
+        data["cvss_rationale"] = (data["cvss_rationale"] + "\n\n" + f["note"]).strip()
+    data["status"] = "open"
+    return fmod.create(db, target, row["test_id"], data, AI_PREFIX + actor), True
 
 
 def missing_evidence(store: evmod.Store, cat: catmod.Catalog, target: tmod.Target, step: catmod.Step) -> list[str]:
@@ -132,7 +200,8 @@ def missing_evidence(store: evmod.Store, cat: catmod.Catalog, target: tmod.Targe
 
 
 def apply(db: dbmod.Database, store: evmod.Store, cat: catmod.Catalog, target: tmod.Target,
-          review: Review, answer: str, actor: str, *, overwrite: bool = False) -> dict:
+          review: Review, answer: str, actor: str, *, overwrite: bool = False,
+          create_findings: bool = False) -> dict:
     sc = cat.scenarios[review.test]
     current = {r["step"]: r for r in db.query(
         "SELECT step, verdict, updated_by FROM step_verdicts WHERE target_id = ? AND test_id = ?",
@@ -159,9 +228,16 @@ def apply(db: dbmod.Database, store: evmod.Store, cat: catmod.Catalog, target: t
             "INSERT INTO ai_reviews (target_id, test_id, created_at, created_by, answer, review, results)"
             " VALUES (?,?,?,?,?,?,?)",
             (target.id, review.test, dbmod.utcnow(), actor, answer, review.to_json(), json.dumps(results)))
-        db.audit(conn, actor, "ai_review.import", target=target.name, test=review.test, review=cur_.lastrowid,
+        review_id = cur_.lastrowid
+        db.audit(conn, actor, "ai_review.import", target=target.name, test=review.test, review=review_id,
                  applied=sum(r["outcome"] == "applied" for r in results))
-    return {"review": review, "results": results}
+    created = []
+    if create_findings:
+        for i in range(len(review.findings)):
+            fid, new = create_finding(db, target, review_id, i, actor)
+            if new:
+                created.append(fid)
+    return {"review": review, "results": results, "id": review_id, "findings_created": created}
 
 
 def latest(db: dbmod.Database, target: tmod.Target, test_id: str) -> dict | None:
@@ -172,8 +248,13 @@ def latest(db: dbmod.Database, target: tmod.Target, test_id: str) -> dict | None
     review = json.loads(row["review"])
     results = {r["step"]: r for r in json.loads(row["results"])}
     reasons = {s["step"]: s["reason"] for s in review["steps"]}
+    proposals = [dict(f, index=i, finding=_existing_finding(db, target, test_id, f["title"]))
+                 for i, f in enumerate(review.get("findings") or [])]
+    for p in proposals:
+        p["cvss"] = cvss.try_score(p["cvss_vector"])
     return {"id": row["id"], "created_at": row["created_at"], "created_by": row["created_by"],
-            "overall": review["overall"], "summary": review["summary"],
+            "overall": review["overall"], "summary": review["summary"], "findings": proposals,
+            "answer": row["answer"],
             "steps": {n: dict(r, reason=reasons.get(n, "")) for n, r in results.items()}}
 
 

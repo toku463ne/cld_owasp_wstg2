@@ -8,6 +8,11 @@
   <a href="{{ test.owasp_url }}" target="_blank" rel="noopener noreferrer">OWASP page</a>
   <button type="button" data-copy="#ai-prompt" {{ 'disabled' if not scenario }}
     title="Copies criteria, verdicts, and evidence excerpts (HAR files excluded). Paste it only into an AI chat the engagement allows.">Copy AI prompt</button>
+  {% if can_write and scenario and applicable %}
+  <form method="post" class="inline" action="{{ url_for('wstg_ai_prompt_save', name=target.name, test_id=test.id) }}">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <button title="Saves the prompt to the evidence folder (_ai/prompts) for an AI agent">Save AI prompt</button></form>
+  {% endif %}
 </div>
 {% if not applicable %}<div class="warnbox">{{ test.id }} runs on {{ test.target_types | join(', ') }} targets, not on {{ target.type }} targets.</div>{% endif %}
 
@@ -38,6 +43,21 @@
   {% if ai %}
   <p>Imported {{ ai.created_at }} by {{ ai.created_by }} · overall <span class="status s-{{ ai.overall if ai.overall != '-' else 'none' }}">{{ ai.overall }}</span></p>
   {% if ai.summary %}<p>{{ ai.summary }}</p>{% endif %}
+  {% if ai.findings %}
+  <h4>Findings proposed by the AI</h4>
+  <table>
+    <tr><th>Title</th><th>Steps</th><th>CVSS</th><th></th></tr>
+    {% for f in ai.findings %}
+    <tr><td><b>{{ f.title }}</b>{% if f.summary %}<br><span class="muted small">{{ f.summary | truncate(300) }}</span>{% endif %}
+        {% if f.note %}<br><span class="muted small">{{ f.note }}</span>{% endif %}</td>
+      <td class="nowrap">{{ f.steps | join(', ') }}</td>
+      <td class="nowrap">{% if f.cvss %}<span class="sev sev-{{ f.cvss.severity | lower }}">{{ f.cvss.score }} {{ f.cvss.severity }}</span>{% else %}<span class="muted">not rated</span>{% endif %}</td>
+      <td class="nowrap">{% if f.finding %}<a href="{{ url_for('finding_page', name=target.name, fid=f.finding) }}">created</a>
+        {% elif can_write %}<form method="post" class="inline" action="{{ url_for('wstg_ai_finding', name=target.name, test_id=test.id, review_id=ai.id, index=f.index) }}">
+          <input type="hidden" name="csrf" value="{{ csrf }}"><button>Create finding</button></form>{% endif %}</td></tr>
+    {% endfor %}
+  </table>
+  {% endif %}
   {% else %}<p class="muted">No AI review imported yet. Copy the AI prompt, paste it into the AI chat, and import its answer here.</p>{% endif %}
   {% if can_write %}
   <details {{ 'open' if not ai }}>
@@ -46,6 +66,7 @@
       <input type="hidden" name="csrf" value="{{ csrf }}">
       <textarea name="answer" rows="8" placeholder="Paste the whole AI answer (it must end with the ```json block the prompt asks for)" required></textarea>
       <label><input type="checkbox" name="overwrite" value="1"> Overwrite verdicts set by a tester</label>
+      <label><input type="checkbox" name="findings" value="1"> Also create the findings the AI proposes (skips titles that already exist)</label>
       <p class="muted small">Proposed verdicts are applied to the steps. A pass is refused when a step's evidence is missing or failed; "-" leaves a step unchanged.</p>
       <div><button>Import and apply</button></div>
     </form>

@@ -15,8 +15,7 @@ from . import catalog as catmod
 from . import db as dbmod
 from . import evidence as evmod
 from . import findings as fmod
-from . import ai_review, analysis
-from . import prompt
+from . import ai_files, ai_review
 from . import runner as rmod
 from . import targets as tmod
 from . import users
@@ -46,14 +45,7 @@ def register(app: Flask, cfg: Config, db: dbmod.Database, cat: catmod.Catalog, s
         return [x for x in cat.tests.values() if t.type in x.target_types]
 
     def collected(t: tmod.Target) -> dict[str, dict]:
-        """{evidence_id: newest complete version row} visible from t (own + parent domain)."""
-        out = {}
-        parent = tmod.get(db, t.parent_name) if t.parent_name else None
-        if parent:
-            out.update({k: dict(v, owner=parent.name) for k, v in store.latest_rows(parent).items()
-                        if cat.evidence.get(k) and cat.evidence[k].target_type == "domain"})
-        out.update({k: dict(v, owner=t.name) for k, v in store.latest_rows(t).items()})
-        return out
+        return ai_files.collected(db, cat, store, t)
 
     @app.context_processor
     def inject_targets():
@@ -135,7 +127,9 @@ def register(app: Flask, cfg: Config, db: dbmod.Database, cat: catmod.Catalog, s
         counts = {s: sum(1 for r in rows if r["status"] == s) for s in ("-", "started", "pass", "fail")}
         scope_problems = tmod.scope_problems(tmod.get_scope(db, t))
         return render_template("wstg_index.html", tab="index", rows=rows, counts=counts,
-                               scope_problems=scope_problems)
+                               scope_problems=scope_problems, ai_folder=ai_files.folder(cfg, t),
+                               ai_answers=len(ai_files.answer_files(cfg, t)),
+                               ai_prompts=len(ai_files.tests_with_scenarios(cat, t)))
 
     @app.get("/t/<name>/manual")
     @login_required
@@ -214,34 +208,13 @@ def register(app: Flask, cfg: Config, db: dbmod.Database, cat: catmod.Catalog, s
             flash(f"{test.id} is merged into {test.merged_into} in WSTG v4.2.")
             return redirect(url_for("wstg_page", name=t.name, test_id=test.merged_into))
         sc = cat.scenarios.get(test_id)
-        scope = tmod.get_scope(db, t)
-        values = tmod.placeholder_values(cfg, t, scope)
-        ev_paths = {}
-        for e in cat.evidence.values():
-            owner = tmod.evidence_owner(t, e.target_type)
-            if owner:
-                ev_paths[e.id] = str(tmod.evidence_dir(cfg, owner) / e.id / "latest")
-        steps = []
         have = collected(t)
         vs = tmod.verdicts(db, t, test_id).get(test_id, {})
-        cache_dir = tmod.evidence_dir(cfg, t.name) / ".analysis"
-        for i, st in enumerate(sc.steps if sc else (), 1):
-            command = catmod.render(st.command, values, ev_paths)
-            steps.append({
-                "n": i, "step": st, "verdict": vs.get(i, "-"),
-                "auto": analysis.run(cache_dir, st.command, command, ev_paths) if st.auto_run else None,
-                "command": command,
-                "operation": catmod.render(st.operation, values, ev_paths),
-                "evidence": [{"ev": cat.evidence[eid], "owner": tmod.evidence_owner(t, cat.evidence[eid].target_type),
-                              "row": have.get(eid),
-                              "used_by": [x for x in cat.tests_using(eid) if x != test_id]}
-                             for eid in st.evidence],
-            })
+        steps = ai_files.steps_for(cfg, db, cat, store, t, test_id, have)
         has_ev = any(e.id in have for e in cat.evidence_for(test_id))
         st_value = tmod.status(len(steps), vs, has_ev) if sc else "-"
         findings = fmod.list_for(db, t, test_id)
-        ai_prompt = prompt.build(test=test, scenario=sc, target=t, steps=steps, store=store,
-                                 findings=findings) if sc else ""
+        ai_prompt = ai_files.build_prompt(cfg, db, cat, store, t, test_id, steps) if sc else ""
         setters = ai_review.setters(db, t, test_id)
         for s in steps:
             s["by_ai"] = setters.get(s["n"], "").startswith(ai_review.AI_PREFIX)
@@ -264,12 +237,63 @@ def register(app: Flask, cfg: Config, db: dbmod.Database, cat: catmod.Catalog, s
             flash(f"AI answer not imported: {e}")
             return redirect(url_for("wstg_page", name=t.name, test_id=test_id) + "#ai-review")
         out = ai_review.apply(db, store, cat, t, review, answer, g.user["username"],
-                              overwrite=bool(request.form.get("overwrite")))
+                              overwrite=bool(request.form.get("overwrite")),
+                              create_findings=bool(request.form.get("findings")))
         counts: dict[str, int] = {}
         for r in out["results"]:
             counts[r["outcome"]] = counts.get(r["outcome"], 0) + 1
-        flash("AI review imported: " + ", ".join(f"{v} {k}" for k, v in counts.items()))
+        msg = "AI review imported: " + ", ".join(f"{v} {k}" for k, v in counts.items())
+        if review.findings:
+            msg += f"; {len(review.findings)} finding(s) proposed, {len(out['findings_created'])} created"
+        flash(msg)
         return redirect(url_for("wstg_page", name=t.name, test_id=test_id) + "#ai-review")
+
+    @app.post("/t/<name>/wstg/<test_id>/ai-review/<int:review_id>/findings/<int:index>")
+    @admin_required
+    def wstg_ai_finding(name: str, test_id: str, review_id: int, index: int):
+        t = load_target(name)
+        if not db.one("SELECT 1 FROM ai_reviews WHERE id = ? AND target_id = ? AND test_id = ?",
+                      (review_id, t.id, test_id)):
+            abort(404)
+        try:
+            fid, new = ai_review.create_finding(db, t, review_id, index, g.user["username"])
+        except (ai_review.ReviewError, fmod.FindingError) as e:
+            flash(f"Finding not created: {e}")
+            return redirect(url_for("wstg_page", name=t.name, test_id=test_id) + "#ai-review")
+        flash("Finding created from the AI review; check and edit it." if new
+              else "A finding with this title already exists.")
+        return redirect(url_for("finding_page", name=t.name, fid=fid))
+
+    @app.post("/t/<name>/wstg/<test_id>/ai-prompt/save")
+    @admin_required
+    def wstg_ai_prompt_save(name: str, test_id: str):
+        t = load_target(name)
+        if test_id not in ai_files.tests_with_scenarios(cat, t):
+            abort(404)
+        path = ai_files.save_prompts(cfg, db, cat, store, t, [test_id])[0]
+        flash(f"AI prompt saved to {path}")
+        return redirect(url_for("wstg_page", name=t.name, test_id=test_id))
+
+    @app.post("/t/<name>/ai/prompts")
+    @admin_required
+    def ai_prompts_save(name: str):
+        t = load_target(name)
+        paths = ai_files.save_prompts(cfg, db, cat, store, t)
+        flash(f"{len(paths)} AI prompt(s) saved to {ai_files.folder(cfg, t) / 'prompts'}")
+        return redirect(url_for("wstg_index", name=t.name) + "#ai-bulk")
+
+    @app.post("/t/<name>/ai/answers")
+    @admin_required
+    def ai_answers_import(name: str):
+        t = load_target(name)
+        results = ai_files.import_answers(cfg, db, cat, store, t, g.user["username"],
+                                          overwrite=bool(request.form.get("overwrite")),
+                                          create_findings=bool(request.form.get("findings")))
+        if not results:
+            flash(f"No answer files in {ai_files.folder(cfg, t) / 'answers'}")
+        for r in results:
+            flash(f"{r['file']}: {r['status']}" + (f" ({r['message']})" if r["message"] else ""))
+        return redirect(url_for("wstg_index", name=t.name) + "#ai-bulk")
 
     @app.post("/t/<name>/wstg/<test_id>/steps/<int:n>")
     @admin_required

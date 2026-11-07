@@ -8,6 +8,22 @@
   {% for s, n in counts.items() %}<span class="status s-{{ s if s != '-' else 'none' }}">{{ s }}</span> {{ n }}{{ ' · ' if not loop.last }}{% endfor %}
   {% if target.type == 'fqdn' %} · Domain-only tests are on the parent domain target.{% endif %}
 </p>
+{% if can_write %}
+<details class="ai-box" id="ai-bulk">
+  <summary>AI review in bulk (for an AI agent)</summary>
+  <p class="muted small">Save the AI prompts of all {{ ai_prompts }} tests with a scenario to
+    <code>{{ ai_folder }}/prompts/</code>. An AI agent (or you, from an AI chat) writes each answer to
+    <code>{{ ai_folder }}/answers/WSTG-XXXX-NN.json</code>; the folder's README.md tells the agent what to do.
+    Then import all answers at once. Answers already imported are skipped.</p>
+  <form method="post" class="inline" action="{{ url_for('ai_prompts_save', name=target.name) }}">
+    <input type="hidden" name="csrf" value="{{ csrf }}"><button>Save all AI prompts</button></form>
+  <form method="post" class="inline" action="{{ url_for('ai_answers_import', name=target.name) }}">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <label><input type="checkbox" name="overwrite" value="1"> Overwrite tester verdicts</label>
+    <label><input type="checkbox" name="findings" value="1"> Create proposed findings</label>
+    <button {{ 'disabled' if not ai_answers }}>Import AI answers ({{ ai_answers }} file{{ '' if ai_answers == 1 else 's' }})</button></form>
+</details>
+{% endif %}
 <table class="index">
   <tr><th>ID</th><th>Test</th><th>OWASP</th><th>Status</th></tr>
   {% for r in rows %}
