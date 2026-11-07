@@ -91,12 +91,19 @@ def test_scope_is_checked_before_running(cfg, db, site, tmp_path):
     assert not marker.exists()
     assert store.history(site, "outside") == []
 
+    # queueing needs a valid scope record
+    r2, _ = make(cfg, db, ev("again", [PY, "-c", "print(1)"]))
+    job = rmod.enqueue(db, r2.cat, site, "light", "test")
+    # ... and it is checked again right before each command (it may expire meanwhile)
     tm.update_scope(db, site, allowed_hosts="www.example.com", allowed_ports="443",
                     base_url="https://www.example.com", authorization_ref="", valid_from="", valid_until="",
                     actor="test")
-    r2, _ = make(cfg, db, ev("again", [PY, "-c", "print(1)"]))
-    items = run(r2, site)
+    assert r2.claim() == job
+    r2.run_job(job)
+    items = {i["evidence_id"]: i for i in rmod.job_items(db, job)}
     assert items["again"]["status"] == "refused" and "no authorization" in items["again"]["message"]
+    with pytest.raises(rmod.RunError, match="set the scope record"):
+        rmod.enqueue(db, r2.cat, site, "light", "test")
 
 
 def test_only_one_active_job_and_cancel(cfg, db, site):

@@ -17,8 +17,10 @@
     <input type="hidden" name="csrf" value="{{ csrf }}">
     <label><input type="radio" name="mode" value="light" checked> Light only ({{ light_count }}): quick requests, no scanners</label>
     <label><input type="radio" name="mode" value="full"> Full ({{ full_count }}): also slow and heavy tools (nikto, port scans, crawls)</label>
-    <button {{ 'disabled' if active }}>Collect</button>
+    <button {{ 'disabled' if active or scope_problems }}>Collect</button>
   </form>
+  {% if scope_problems %}<p class="note warn">Collect is disabled until the scope record is complete:
+    {{ scope_problems | join('; ') }}. <a href="{{ url_for('target_settings', name=target.name) }}">Set the scope</a></p>{% endif %}
   {% endif %}
 </section>
 

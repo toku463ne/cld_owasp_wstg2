@@ -73,6 +73,9 @@ def job_items(db: dbmod.Database, job_id: int) -> list[dict]:
 
 
 def enqueue(db: dbmod.Database, cat: catmod.Catalog, target: tmod.Target, mode: str, actor: str) -> int:
+    problems = tmod.scope_problems(tmod.get_scope(db, target))
+    if problems:
+        raise RunError(f"set the scope record of {target.name} first: {'; '.join(problems)}")
     evs = plan(cat, target, mode)
     if not evs:
         raise RunError(f"no automatic evidence for {target.type} targets in {mode} mode")

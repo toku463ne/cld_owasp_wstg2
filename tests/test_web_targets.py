@@ -83,7 +83,16 @@ def test_scope_settings(admin_client, db, cfg):
 
 def test_auto_collect_queue_and_cancel(admin_client, guest_client, db, cfg):
     from wstg import runner as rmod
-    tm.create(db, cfg, "www.example.com", "fqdn")
+    t = tm.create(db, cfg, "www.example.com", "fqdn")
+    # no scope yet: the button is disabled and the server refuses to queue
+    page = admin_client.get("/t/www.example.com/auto").get_data(as_text=True)
+    assert "Collect is disabled until the scope record is complete" in page
+    post(admin_client, "/t/www.example.com/auto/collect", mode="light")
+    assert rmod.last_job(db, t) is None
+    assert "set the scope record" in admin_client.get("/t/www.example.com/auto").get_data(as_text=True)
+    tm.update_scope(db, t, allowed_hosts="www.example.com", allowed_ports="80,443",
+                    base_url="https://www.example.com", authorization_ref="Contract 2026-001",
+                    valid_from="2000-01-01", valid_until="2099-12-31", actor="test")
     assert post(guest_client, "/t/www.example.com/auto/collect", mode="light").status_code == 403
     r = post(admin_client, "/t/www.example.com/auto/collect", mode="light")
     assert r.status_code == 302
