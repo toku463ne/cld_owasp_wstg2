@@ -50,7 +50,11 @@ Rules:
 
 ### Evidence model
 - Evidence has an **evidence ID** and can be shared by several WSTG tests. Which WSTG uses which evidence is defined per WSTG scenario (data, not ad-hoc code).
-- Evidence is editable and shows its collection date.
+- Evidence is editable and shows its collection date. An edit creates a **new version**; the original is kept.
+- Each target has a **scope record** (allowed hosts/ports, authorization reference, validity period). Every command is checked against it before running; domain targets run passive commands only.
+- No Burp dependency: traffic-based checks use Python HTTP clients, curl, headless-browser HAR recording, and HAR import.
+
+Implementation plan and milestones: [`docs/PLAN.md`](docs/PLAN.md).
 - Prefer automation over manual evidence (e.g. extract what Burp history would show automatically when possible).
 - Evidence lives **outside the repository** (path set by configuration, e.g. `/srv/wstg/evidence`). The app refuses to start if the evidence directory resolves inside the repo.
 - Folder layout, one folder per target:
@@ -62,7 +66,7 @@ Rules:
 
 ### System
 - Runs on **Kali Linux**. Main program is Python, managed with **uv**. Web framework: **Flask**.
-- Served through **nginx on port 8083** (the Python app listens on loopback only).
+- Served through **nginx on port 8083, plain HTTP** (the Python app listens on loopback only). TLS on 443 comes later, when the tool is opened to everyone.
 - Users in **SQLite**, roles **admin** and **guest**.
 - Access allowed only from **192.168.0.0/16** by default.
 
