@@ -105,12 +105,53 @@ curl -s --noproxy '*' --max-time 5 -o /dev/null -w '%{http_code}\n' http://127.0
 | `WSTG_SECRET_KEY_FILE` / `WSTG_SECRET_KEY` | (required to serve) | Flask session key |
 | `WSTG_APP_PORT` | `5083` | loopback port of the app |
 | `WSTG_WEB_PORT` | `8083` | nginx port (used by the setup script) |
-| `WSTG_HTTP_PROXY` | (empty) | proxy for collection commands, e.g. `http://127.0.0.1:8080`. Set as `http_proxy`/`https_proxy`; tools that ignore those get their own option (openssl `-proxy`, testssl `--proxy`, whatweb `--proxy`, nikto `-useproxy`, ffuf `-x`, katana/subfinder `-proxy`, wafw00f `-p`). whois, traceroute, nmap, and sslscan cannot use a proxy and need direct connections |
+| `WSTG_HTTP_PROXY` | (empty) | proxy for collection commands, e.g. `http://127.0.0.1:8080`. Set as `http_proxy`/`https_proxy`; tools that ignore those get their own option (openssl `-proxy`, testssl `--proxy`, whatweb `--proxy`, nikto `-useproxy`, ffuf `-x`, katana/subfinder `-proxy`, wafw00f `-p`). whois, traceroute, nmap, and sslscan cannot use a proxy: set `WSTG_DIRECT_SSH` |
+| `WSTG_DIRECT_SSH` | (empty) | jump host (`user@host` or a `Host` alias of `~/.ssh/config`) that runs the tools which cannot use a proxy; see [Jump host](#jump-host-for-tools-that-cannot-use-the-proxy) |
 | `WSTG_JOB_STALE_SECONDS` | `120` | a running job without a worker heartbeat for this long is shown as stalled |
 | `WSTG_ALLOWED_NETWORKS` | `192.168.0.0/16,127.0.0.0/8` | client networks; enforced by nginx and the app |
 
 After changing `WSTG_WEB_PORT` or `WSTG_ALLOWED_NETWORKS`, run the setup script again
-to re-render the nginx site.
+to re-render the nginx site. After changing `WSTG_HTTP_PROXY` or `WSTG_DIRECT_SSH`, restart
+the worker: `systemctl --user restart wstg2-worker`.
+
+### Jump host for tools that cannot use the proxy
+
+whois, traceroute, nmap, and sslscan need direct connections (raw TCP, UDP, ICMP). Behind
+a proxy-only network, give the worker a jump host with direct Internet access (for example
+Ubuntu 24.04). Those four commands then run there over SSH: in a temporary folder under
+`/tmp`, with `timeout`, stdout/stderr streamed back, output files copied back with tar, and
+the folder removed afterwards. The scope check still runs on the Kali host first. Every other
+tool keeps using `WSTG_HTTP_PROXY`. For domain registration data without the jump host, the
+`dns-rdap` evidence (RDAP over HTTPS) works through the proxy.
+
+On the jump host:
+
+```bash
+sudo apt install whois traceroute nmap sslscan
+```
+
+On the Kali host, as the user that runs the worker:
+
+```bash
+ssh-keygen -t ed25519 -f ~/.ssh/wstg2_jump -N ''         # key without a passphrase (the worker cannot type one)
+ssh-copy-id -i ~/.ssh/wstg2_jump.pub tester@jump.example.net
+cat >> ~/.ssh/config <<'EOF'
+Host wstg2-jump
+    HostName jump.example.net
+    User tester
+    IdentityFile ~/.ssh/wstg2_jump
+    IdentitiesOnly yes
+EOF
+ssh wstg2-jump true                                       # once by hand: accept the host key
+echo 'WSTG_DIRECT_SSH=wstg2-jump' >> ~/.config/wstg2/wstg2.env
+systemctl --user restart wstg2-worker
+uv run wstg tools-check --remote                          # tools on the jump host
+```
+
+The worker connects with `BatchMode=yes` and `StrictHostKeyChecking=yes`: it never asks
+for a password and refuses unknown host keys. If the jump host needs the proxy to be
+reached, put a `ProxyCommand` or `ProxyJump` in that `Host` entry. The scan source
+address is the jump host's; announce that address to the target's administrator.
 
 ## Commands
 
@@ -125,6 +166,8 @@ uv run wstg user-disable NAME [--enable]
 uv run wstg user-list
 uv run wstg serve [--dev]                 # 127.0.0.1:$WSTG_APP_PORT
 uv run wstg catalog-check [-v]            # validate the WSTG catalog (catalog/)
+uv run wstg tools-check [--strict]        # which tools of catalog/tools.yaml are installed
+uv run wstg tools-check --remote          # tools on the jump host of WSTG_DIRECT_SSH
 uv run wstg worker [--once]               # run queued automatic evidence jobs (systemd: wstg2-worker)
 uv run wstg collect TARGET [--mode light|full] [--run]   # queue (or with --run, run now) a collection
 uv run wstg backup [--dest DIR] [--keep 14]              # copy the database; rsync the evidence folder yourself

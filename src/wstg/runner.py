@@ -16,19 +16,26 @@
   catalog). The scope check runs on the command without them, so the proxy
   host is never mistaken for a contacted target. Credentials in the proxy URL
   are masked in the recorded command line.
+- WSTG_DIRECT_SSH: evidence marked `direct` (tools that cannot use a proxy)
+  runs on that jump host over SSH instead (see `Remote`).
 - One worker process (`wstg worker`) runs jobs one at a time. On start it marks
   jobs left running by a dead worker as interrupted.
 """
 
 from __future__ import annotations
 
+import io
 import os
+import re
+import shlex
 import shutil
 import signal
 import socket
 import subprocess
+import tarfile
 import time
 from dataclasses import dataclass
+from pathlib import Path
 from urllib.parse import urlsplit
 
 from . import catalog as catmod
@@ -158,7 +165,7 @@ class Runner:
 
     def env(self) -> dict[str, str]:
         env = {k: v for k, v in os.environ.items()
-               if k in ("PATH", "HOME", "LANG", "LC_ALL", "TERM", "USER", "TMPDIR")}
+               if k in ("PATH", "HOME", "LANG", "LC_ALL", "TERM", "USER", "TMPDIR", "SSH_AUTH_SOCK")}
         env.setdefault("PATH", "/usr/local/bin:/usr/bin:/bin")
         env.setdefault("LANG", "C.UTF-8")
         for k in ("http_proxy", "https_proxy", "HTTP_PROXY", "HTTPS_PROXY", "no_proxy", "NO_PROXY"):
@@ -176,13 +183,20 @@ class Runner:
 
     def collect(self, target: tmod.Target, ev: catmod.Evidence, *, job_id: int | None = None,
                 actor: str = "worker") -> Outcome:
-        """Run one evidence command and store the result (complete or failed)."""
+        """Run one evidence command and store the result (complete or failed).
+
+        Evidence marked `direct` runs on the jump host (WSTG_DIRECT_SSH) when one
+        is configured: the command runs over SSH in a temporary folder there, its
+        stdout/stderr stream back, and the files it wrote are copied back with tar.
+        """
         scope = tmod.get_scope(self.db, target)
         values = tmod.placeholder_values(self.cfg, target, scope)
         tmp = self.store.begin(target, ev.id)
         values["out"] = str(tmp)
+        via = self.cfg.direct_ssh if ev.direct else ""
+        proxy = "" if via else self.cfg.http_proxy   # the jump host connects directly
         try:
-            argv, run_argv, rec_argv = build_argv(ev, values, self.cfg.http_proxy)
+            argv, run_argv, rec_argv = build_argv(ev, values, proxy)
         except RunError as e:
             shutil.rmtree(tmp, ignore_errors=True)
             return Outcome("failed", str(e))
@@ -194,21 +208,38 @@ class Runner:
         except tmod.ScopeError as e:
             shutil.rmtree(tmp, ignore_errors=True)
             return Outcome("refused", str(e))
-        tool = shutil.which(argv[0], path=self.env()["PATH"])
-        if not tool:
-            shutil.rmtree(tmp, ignore_errors=True)
-            return Outcome("failed", f"tool not installed: {argv[0]}")
+
+        remote = None
+        if via:
+            remote = Remote(via, self.env())
+            try:
+                rdir = remote.prepare(argv[0])
+            except RunError as e:
+                shutil.rmtree(tmp, ignore_errors=True)
+                return Outcome("failed", str(e))
+            values["out"] = rdir
+            _, run_argv, rec_argv = build_argv(ev, values, "")
+            popen_argv = remote.command(rdir, run_argv, ev.timeout)
+            tool = f"{via}:{argv[0]}"
+        else:
+            tool = shutil.which(argv[0], path=self.env()["PATH"])
+            if not tool:
+                shutil.rmtree(tmp, ignore_errors=True)
+                return Outcome("failed", f"tool not installed: {argv[0]}")
+            popen_argv = [tool, *run_argv[1:]]
 
         started = dbmod.utcnow()
         t0 = time.monotonic()
         exit_code, message, cancelled = None, "", False
         with open(tmp / "stdout.txt", "wb") as out, open(tmp / "stderr.txt", "wb") as err:
             try:
-                proc = subprocess.Popen([tool, *run_argv[1:]], cwd=tmp, stdin=subprocess.DEVNULL, stdout=out,
+                proc = subprocess.Popen(popen_argv, cwd=tmp, stdin=subprocess.DEVNULL, stdout=out,
                                         stderr=err, env=self.env(), start_new_session=True)
             except OSError as e:
                 shutil.rmtree(tmp, ignore_errors=True)
-                return Outcome("failed", f"cannot start {argv[0]}: {e}")
+                if remote:
+                    remote.cleanup(rdir)
+                return Outcome("failed", f"cannot start {popen_argv[0]}: {e}")
             next_beat = 0.0
             while True:
                 try:
@@ -225,9 +256,21 @@ class Runner:
                     message = f"timed out after {ev.timeout} s"
                 if cancelled or message or (tmp / "stdout.txt").stat().st_size > MAX_STDOUT_BYTES:
                     message = message or "stdout larger than 200 MB"
+                    if remote:
+                        remote.stop(rdir)
                     _kill(proc)
                     exit_code = proc.wait()
                     break
+        if remote:
+            if not message and exit_code == 255:
+                message = f"ssh to {via} failed (exit 255; see stderr.txt)"
+            elif not message and exit_code == 124:
+                message = f"timed out after {ev.timeout} s on {via}"
+            try:
+                remote.fetch(rdir, tmp)
+            except RunError as e:
+                message = message or str(e)
+            remote.cleanup(rdir)
         duration = round(time.monotonic() - t0, 1)
 
         items = [evmod.Item("text", "stdout.txt", "", 0, caption="stdout", mime="text/plain")]
@@ -250,16 +293,19 @@ class Runner:
                 message = f"exit code {exit_code}"
             elif missing:
                 message = f"missing output: {', '.join(missing)}"
-        if message and ev.direct and self.cfg.http_proxy:
-            message += f" ({argv[0]} cannot use WSTG_HTTP_PROXY; it needs a direct connection to the target)"
+        if message and ev.direct and not via and self.cfg.http_proxy:
+            message += (f" ({argv[0]} cannot use WSTG_HTTP_PROXY; it needs a direct connection to the target,"
+                        " or set WSTG_DIRECT_SSH to run it on a jump host)")
         status = "failed" if message else "complete"
         cmd_line = " ".join(rec_argv)
+        if via:
+            cmd_line = f"[on {via}] {cmd_line}"
         (tmp / "command.txt").write_text(cmd_line + "\n")
         v = self.store.commit(
             target, ev.id, tmp, source="auto", actor=actor, status=status,
             summary=("collected" if status == "complete" else f"failed: {message}"), items=items,
             extra_meta={"argv": rec_argv, "exit_code": exit_code, "started_at": started, "duration_s": duration,
-                        "tool": tool, "job_id": job_id, "proxy": bool(self.cfg.http_proxy),
+                        "tool": tool, "job_id": job_id, "proxy": bool(proxy), "via": via,
                         "message": message, "files": {"command.txt": {}}})
         if cancelled:
             return Outcome("cancelled", message, v.version, exit_code)
@@ -352,6 +398,79 @@ class Runner:
             if once:
                 return
             time.sleep(poll)
+
+
+SSH_OPTIONS = ["-T", "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=yes", "-o", "ConnectTimeout=15",
+               "-o", "ServerAliveInterval=30", "-o", "ServerAliveCountMax=4"]
+RESERVED = {"stdout.txt", "stderr.txt", "command.txt", "meta.json"}
+MAX_FETCH_BYTES = 200 * 1024 * 1024
+
+
+class Remote:
+    """Run a command on the jump host over SSH (key authentication only).
+
+    BatchMode never waits for a password; StrictHostKeyChecking needs the host
+    key in ~/.ssh/known_hosts (connect once by hand first).
+    """
+
+    def __init__(self, dest: str, env: dict[str, str]):
+        self.dest, self.env = dest, env
+
+    def ssh(self, script: str) -> list[str]:
+        return ["ssh", *SSH_OPTIONS, self.dest, "--", script]
+
+    def run(self, script: str, timeout: int = 60) -> subprocess.CompletedProcess:
+        try:
+            return subprocess.run(self.ssh(script), stdin=subprocess.DEVNULL, capture_output=True,
+                                  env=self.env, timeout=timeout)
+        except FileNotFoundError:
+            raise RunError("tool not installed: ssh") from None
+        except subprocess.TimeoutExpired:
+            raise RunError(f"ssh to {self.dest} timed out") from None
+
+    def prepare(self, tool: str) -> str:
+        """Check the tool on the jump host and create a temporary folder there."""
+        r = self.run(f"command -v {shlex.quote(tool)} >/dev/null 2>&1 || exit 127; "
+                      "mktemp -d /tmp/wstg2.XXXXXXXX", 30)
+        if r.returncode == 127:
+            raise RunError(f"tool not installed on {self.dest}: {tool}")
+        if r.returncode != 0:
+            last = (r.stderr.decode(errors="replace").strip().splitlines() or [""])[-1]
+            raise RunError(f"ssh to {self.dest} failed (exit {r.returncode}): {last}")
+        rdir = r.stdout.decode().strip()
+        if not re.fullmatch(r"/tmp/wstg2\.[A-Za-z0-9]+", rdir):
+            raise RunError(f"unexpected temporary folder from {self.dest}: {rdir!r}")
+        return rdir
+
+    def command(self, rdir: str, argv: list[str], timeout: int) -> list[str]:
+        # exec keeps the shell's PID, so .wstg-pid names the `timeout` process,
+        # which passes SIGTERM on to the tool.
+        return self.ssh(f"cd {rdir} && echo $$ > .wstg-pid && "
+                        f"exec timeout -k 10 {int(timeout)} {shlex.join(argv)}")
+
+    def stop(self, rdir: str) -> None:
+        try:
+            self.run(f"kill -TERM $(cat {rdir}/.wstg-pid) 2>/dev/null; true", 30)
+        except RunError:
+            pass
+
+    def fetch(self, rdir: str, dest: Path) -> None:
+        """Copy the files the command wrote back (tar over SSH, safe extraction)."""
+        r = self.run(f"tar -C {rdir} --exclude=./.wstg-pid -cf - .", 300)
+        if r.returncode != 0:
+            raise RunError(f"cannot copy the output back from {self.dest} (tar exit {r.returncode})")
+        if len(r.stdout) > MAX_FETCH_BYTES:
+            raise RunError("output files larger than 200 MB")
+        with tarfile.open(fileobj=io.BytesIO(r.stdout), mode="r:") as tf:
+            members = [m for m in tf.getmembers()
+                       if (m.isfile() or m.isdir()) and os.path.normpath(m.name) not in RESERVED | {"."}]
+            tf.extractall(dest, members=members, filter="data")
+
+    def cleanup(self, rdir: str) -> None:
+        try:
+            self.run(f"rm -rf -- {rdir}", 30)
+        except RunError:
+            pass
 
 
 def _kill(proc: subprocess.Popen) -> None:

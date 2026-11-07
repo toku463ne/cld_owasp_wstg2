@@ -99,6 +99,8 @@ def cmd_tools_check(args) -> int:
     import shutil
     c = catalog.load()
     tools = list(c.tools.values())
+    if args.remote:
+        return _tools_check_remote(c)
     if args.packages:
         for t in tools:
             if t.install == args.packages:
@@ -124,6 +126,43 @@ def cmd_tools_check(args) -> int:
     if missing:
         print(f"{len(missing)} missing; install with scripts/setup-kali.sh (without --no-packages)")
         return 1 if args.strict else 0
+    print("OK")
+    return 0
+
+
+def _tools_check_remote(c) -> int:
+    """Check the tools of `direct` evidence on the jump host (WSTG_DIRECT_SSH)."""
+    import shlex
+    from . import runner as rmod
+    cfg = config.load()
+    if not cfg.direct_ssh:
+        print("WSTG_DIRECT_SSH is not set; direct tools (whois, traceroute, nmap, sslscan) run on this host")
+        return 0
+    names = sorted({e.argv[0] for e in c.evidence.values() if e.kind == "auto" and e.direct})
+    names += ["tar", "timeout", "mktemp"]
+    script = "; ".join(f"printf '%s %s\\n' {shlex.quote(n)} \"$(command -v {shlex.quote(n)} || echo -)\""
+                       for n in names)
+    try:
+        r = rmod.Remote(cfg.direct_ssh, dict(os.environ)).run(script, 60)
+    except rmod.RunError as e:
+        print(f"error: {e}")
+        return 1
+    if r.returncode != 0:
+        print(f"error: ssh to {cfg.direct_ssh} failed (exit {r.returncode}): "
+              f"{r.stderr.decode(errors='replace').strip()}")
+        print("  check: key authentication works and the host key is in ~/.ssh/known_hosts"
+              f" (run `ssh {cfg.direct_ssh} true` once by hand)")
+        return 1
+    missing = []
+    for line in r.stdout.decode(errors="replace").splitlines():
+        name, _, where = line.partition(" ")
+        ok = where != "-"
+        if not ok:
+            missing.append(c.tools[name].package if name in c.tools else name)
+        print(f"{'ok     ' if ok else 'MISSING'} {name:<14} on {cfg.direct_ssh}  {where if ok else ''}")
+    if missing:
+        print(f"install on the jump host: sudo apt install {' '.join(missing)}")
+        return 1
     print("OK")
     return 0
 
@@ -234,6 +273,8 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--packages", choices=catalog.TOOL_INSTALLS[:2],
                    help="only print the package names installed with apt or npm (for setup-kali.sh)")
     s.add_argument("--strict", action="store_true", help="exit 1 when a tool is missing")
+    s.add_argument("--remote", action="store_true",
+                   help="check the jump host of WSTG_DIRECT_SSH instead (needs the config)")
     s.set_defaults(func=cmd_tools_check)
 
     s = sub.add_parser("worker", help="run queued automatic evidence jobs (one at a time)")

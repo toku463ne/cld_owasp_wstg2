@@ -16,6 +16,9 @@ repository. Explicit environment variables win over the file.
     WSTG_HTTP_PROXY         proxy for collection commands (http_proxy/https_proxy of the
                             child processes, plus `proxy_args` of tools that ignore
                             those), e.g. http://127.0.0.1:8080; empty = none
+    WSTG_DIRECT_SSH         jump host for tools that cannot use a proxy (whois,
+                            traceroute, nmap, sslscan): user@host or a Host alias of
+                            ~/.ssh/config; key authentication, host key in known_hosts
     WSTG_JOB_STALE_SECONDS  a running job without a heartbeat for this long is marked
                             interrupted (default 120)
     WSTG_WEB_PORT           nginx port (default 8083); read by scripts/setup-kali.sh,
@@ -94,6 +97,7 @@ class Config:
     app_port: int = DEFAULT_APP_PORT
     allowed_networks: tuple[ipaddress.IPv4Network | ipaddress.IPv6Network, ...] = field(default_factory=tuple)
     http_proxy: str = ""
+    direct_ssh: str = ""
     job_stale_seconds: int = 120
 
     def guarded_paths(self) -> dict[str, Path]:
@@ -122,6 +126,13 @@ def _parse_networks(value: str):
         except ValueError as e:
             raise ConfigError(f"WSTG_ALLOWED_NETWORKS: {e}") from None
     return tuple(nets)
+
+
+def _ssh_dest(value: str) -> str:
+    # user@host or a Host alias from ~/.ssh/config; never an ssh option.
+    if value and not re.fullmatch(r"[A-Za-z0-9_][A-Za-z0-9_.-]*(@[A-Za-z0-9_.-]+)?", value):
+        raise ConfigError(f"WSTG_DIRECT_SSH must be user@host or an ssh Host alias: {value!r}")
+    return value
 
 
 def _int(env: dict[str, str], name: str, default: int) -> int:
@@ -168,6 +179,7 @@ def load(env: dict[str, str] | None = None, check_repo: bool = True) -> Config:
         app_port=port,
         allowed_networks=_parse_networks(env.get("WSTG_ALLOWED_NETWORKS", DEFAULT_ALLOWED_NETWORKS)),
         http_proxy=env.get("WSTG_HTTP_PROXY", "").strip(),
+        direct_ssh=_ssh_dest(env.get("WSTG_DIRECT_SSH", "").strip()),
         job_stale_seconds=_int(env, "WSTG_JOB_STALE_SECONDS", 120),
     )
     if check_repo:

@@ -13,10 +13,13 @@ fail: >-
 notes:
   - '"No results" and "collection failed" are different. Check stderr.txt and the HTTP code of each source before judging; a failed source is collected again, not passed.'
   - Recommend removal requests (for example Google Search Console) for exposed content, including cached copies.
-  - Behind a proxy, theHarvester and subfinder ignore http_proxy/https_proxy; pass the proxy explicitly (theHarvester -p, subfinder -proxy) or they return zero results.
+  - Behind a proxy, theHarvester ignores http_proxy/https_proxy; pass the proxy explicitly (theHarvester -p) or it returns zero results. The automatic subfinder run gets -proxy from WSTG_HTTP_PROXY.
 steps:
   - summary: Identify the organization, registrant, and name servers as the starting point
-    evidence: [dns-whois, dns-records]
+    evidence: [dns-whois, dns-rdap, dns-records]
+    command: >-
+      jq '{ldhName, status, registrar: [.entities[]? | select(.roles | index("registrar")) | .vcardArray[1][]? | select(.[0] == "fn") | .[3]],
+      events: [.events[]? | "\(.eventAction) \(.eventDate)"], nameservers: [.nameservers[]?.ldhName]}' {ev:dns-rdap}/rdap.json
   - summary: List subdomains and host names from Certificate Transparency and passive sources
     evidence: [ct-crtsh, subdomains-subfinder]
     command: jq -r '.[].name_value' {ev:ct-crtsh}/crtsh.json | sort -u

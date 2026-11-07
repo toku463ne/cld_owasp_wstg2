@@ -113,6 +113,7 @@ uv run wstg user-list
 uv run wstg serve [--dev]                 # web app on 127.0.0.1:$WSTG_APP_PORT (default 5083), behind nginx :8083
 uv run wstg catalog-check [-v]            # validate catalog/ (index, evidence, scenarios); needs no config
 uv run wstg tools-check [--strict]        # which tools of catalog/tools.yaml are installed; needs no config
+uv run wstg tools-check --remote          # tools on the jump host (WSTG_DIRECT_SSH)
 uv run wstg worker [--once]               # run queued automatic evidence jobs
 uv run wstg collect TARGET [--mode light|full] [--run]
 uv run wstg backup [--dest DIR] [--keep 14]

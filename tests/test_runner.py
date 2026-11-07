@@ -181,3 +181,56 @@ def test_missing_tool_is_reported_on_the_evidence_page_data(cfg, db, site):
     assert items["nope"]["message"] == "tool not installed: wstg-no-such-tool-xyz"
     assert store.load(site.name, "nope") is None
     assert rmod.last_attempt(db, site, "nope")["message"].startswith("tool not installed")
+
+
+@pytest.fixture
+def fake_ssh(tmp_path, monkeypatch):
+    """An `ssh` that runs the remote script locally (records the destination)."""
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    log = tmp_path / "ssh.log"
+    (bin_dir / "ssh").write_text(
+        "#!/bin/sh\nwhile [ \"$1\" != \"--\" ]; do last=$1; shift; done; shift\n"
+        f"echo \"$last\" >> {log}\nexec sh -c \"$1\"\n")
+    (bin_dir / "ssh").chmod(0o755)
+    monkeypatch.setenv("PATH", f"{bin_dir}:{os.environ['PATH']}")
+    return log
+
+
+def test_direct_tools_run_on_the_jump_host(cfg, db, site, fake_ssh):
+    object.__setattr__(cfg, "http_proxy", "http://127.0.0.1:8080")
+    object.__setattr__(cfg, "direct_ssh", "tester@jump.example.net")
+    code = ("import os, sys; open(sys.argv[1], 'w').write(os.getcwd());"
+            " print('proxy' in ' '.join(os.environ.get(k, '') for k in os.environ if 'proxy' in k))")
+    r, store = make(cfg, db,
+                    ev("raw", [PY, "-c", code, "{out}/r.txt"], direct=True, files=("r.txt",)),
+                    ev("local", [PY, "-c", "print(1)"]),
+                    ev("gone", ["wstg-no-such-tool-xyz"], direct=True))
+    items = run(r, site)
+    assert items["raw"]["status"] == "complete", items["raw"]["message"]
+    v = store.load(site.name, "raw")
+    remote_dir = (v.path / "r.txt").read_text()
+    assert remote_dir.startswith("/tmp/wstg2.") and not os.path.exists(remote_dir)   # cleaned up
+    assert v.meta["via"] == "tester@jump.example.net"
+    assert (v.path / "command.txt").read_text().startswith("[on tester@jump.example.net] ")
+    assert items["local"]["status"] == "complete" and store.load(site.name, "local").meta["via"] == ""
+    assert items["gone"]["message"] == "tool not installed on tester@jump.example.net: wstg-no-such-tool-xyz"
+    assert store.load(site.name, "gone") is None
+    assert "tester@jump.example.net" in fake_ssh.read_text()
+
+
+def test_jump_host_timeout_stops_the_remote_command(cfg, db, site, fake_ssh):
+    object.__setattr__(cfg, "direct_ssh", "jump")
+    r, store = make(cfg, db, ev("slow", [PY, "-c", "import time; time.sleep(30)"], direct=True, timeout=2))
+    t0 = __import__("time").monotonic()
+    items = run(r, site)
+    assert items["slow"]["status"] == "failed" and "timed out" in items["slow"]["message"]
+    assert __import__("time").monotonic() - t0 < 20
+
+
+def test_direct_ssh_setting_is_validated(tmp_path):
+    from wstg import config
+    base = {"WSTG_EVIDENCE_ROOT": str(tmp_path / "e"), "WSTG_DB_PATH": str(tmp_path / "d.db")}
+    assert config.load({**base, "WSTG_DIRECT_SSH": "tester@jump.example.net"}, check_repo=False).direct_ssh
+    with pytest.raises(config.ConfigError):
+        config.load({**base, "WSTG_DIRECT_SSH": "-oProxyCommand=x"}, check_repo=False)

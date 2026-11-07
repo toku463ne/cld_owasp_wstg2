@@ -38,6 +38,22 @@ evidence:
     description: Registrant, organization, registrar, and name servers of the domain.
     argv: [whois, "{domain}"]
     direct: true
+
+  - id: dns-rdap
+    title: RDAP record (registration data over HTTPS)
+    target_type: domain
+    kind: auto
+    level: light
+    passive: true
+    description: >-
+      Registration data of the domain as JSON (registrar, registrant entities, status,
+      events, name servers) from the registry's RDAP service, found through rdap.org.
+      Same facts as WHOIS, but over HTTPS, so it works through WSTG_HTTP_PROXY.
+    argv: [curl, -sS, -L, --max-time, "60", -H, "Accept: application/rdap+json",
+           -o, "{out}/rdap.json", -w, "%{http_code}\n", "https://rdap.org/domain/{domain}"]
+    files: [rdap.json]
+    timeout: 90
+    load_note: Some country-code TLDs have no RDAP service yet (HTTP 404 from rdap.org); use dns-whois (on the jump host) for those. Registries redact personal data in both RDAP and WHOIS.
     timeout: 60
 
   - id: dns-records

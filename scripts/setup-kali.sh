@@ -212,6 +212,10 @@ else
   echo "skipping installation (--no-packages)"
 fi
 [ "$DRY" = 1 ] || wstg tools-check
+if [ -n "$(env_get "$CONFIG" WSTG_DIRECT_SSH)" ] && [ "$DRY" = 0 ]; then
+  echo "jump host for whois, traceroute, nmap, sslscan (WSTG_DIRECT_SSH):"
+  wstg tools-check --remote || echo "warning: fix the jump host (see README.md, Jump host)"
+fi
 
 step "Database migrations"
 run wstg migrate
