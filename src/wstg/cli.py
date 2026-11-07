@@ -93,6 +93,40 @@ def cmd_catalog_check(args) -> int:
     return 0
 
 
+def _runner(cfg):
+    from . import evidence as evmod, runner as rmod
+    db = _db(cfg)
+    if dbmod.pending_migrations(db):
+        raise config.ConfigError("database has pending migrations; run `wstg migrate`")
+    return rmod.Runner(cfg, db, catalog.load(), evmod.Store(cfg, db))
+
+
+def cmd_worker(args) -> int:
+    r = _runner(_cfg())
+    print(f"worker {r.worker} polling for jobs", flush=True)
+    r.serve(once=args.once)
+    return 0
+
+
+def cmd_collect(args) -> int:
+    from . import runner as rmod, targets as tmod
+    r = _runner(_cfg())
+    t = tmod.get(r.db, args.target)
+    if not t:
+        raise config.ConfigError(f"no such target: {args.target}")
+    try:
+        job = rmod.enqueue(r.db, r.cat, t, args.mode, actor="cli")
+    except rmod.RunError as e:
+        raise config.ConfigError(str(e)) from None
+    print(f"queued job {job} ({args.mode}) for {t.name}")
+    if args.run:
+        r.recover()
+        r.run_job(r.claim())
+        for it in rmod.job_items(r.db, job):
+            print(f"  {it['status']:<9} {it['evidence_id']:<24} {it['message']}")
+    return 0
+
+
 def cmd_serve(args) -> int:
     from .web import create_app
 
@@ -139,6 +173,16 @@ def build_parser() -> argparse.ArgumentParser:
     s = sub.add_parser("catalog-check", help="load and validate the WSTG catalog (catalog/)")
     s.add_argument("-v", "--verbose", action="store_true", help="list tests without a scenario")
     s.set_defaults(func=cmd_catalog_check)
+
+    s = sub.add_parser("worker", help="run queued automatic evidence jobs (one at a time)")
+    s.add_argument("--once", action="store_true", help="run what is queued, then exit")
+    s.set_defaults(func=cmd_worker)
+
+    s = sub.add_parser("collect", help="queue automatic evidence collection for a target")
+    s.add_argument("target")
+    s.add_argument("--mode", choices=("light", "full"), default="light")
+    s.add_argument("--run", action="store_true", help="run it now in this process (no worker needed)")
+    s.set_defaults(func=cmd_collect)
 
     s = sub.add_parser("serve", help="run the web app on 127.0.0.1:WSTG_APP_PORT (behind nginx)")
     s.add_argument("--dev", action="store_true", help="use the Flask development server")

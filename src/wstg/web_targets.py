@@ -14,6 +14,7 @@ from markupsafe import Markup, escape
 from . import catalog as catmod
 from . import db as dbmod
 from . import evidence as evmod
+from . import runner as rmod
 from . import targets as tmod
 from . import users
 from .config import Config
@@ -156,9 +157,40 @@ def register(app: Flask, cfg: Config, db: dbmod.Database, cat: catmod.Catalog, s
     @login_required
     def auto_tab(name: str):
         t = load_target(name)
+        have = {k: v for k, v in collected(t).items() if v["owner"] == t.name}
+        failed = {r["evidence_id"]: r for r in db.query(
+            "SELECT * FROM evidence_versions WHERE target_id = ? AND status = 'failed' ORDER BY version", (t.id,))}
         evs = [e for e in cat.evidence.values() if e.kind == "auto" and e.target_type == t.type]
-        return render_template("auto_tab.html", tab="auto", evidence=evs, cat=cat,
+        job = rmod.last_job(db, t)
+        items = rmod.job_items(db, job["id"]) if job else []
+        active = bool(job and job["status"] in rmod.ACTIVE)
+        waiting = bool(job and job["status"] == "queued")
+        return render_template("auto_tab.html", tab="auto", evidence=evs, cat=cat, have=have, failed=failed,
+                               job=job, items=items, active=active, waiting=waiting,
+                               stale=bool(job and rmod.stale(db, cfg, job)),
+                               light_count=len(rmod.plan(cat, t, "light")), full_count=len(rmod.plan(cat, t, "full")),
                                scope_problems=tmod.scope_problems(tmod.get_scope(db, t)))
+
+    @app.post("/t/<name>/auto/collect")
+    @admin_required
+    def auto_collect(name: str):
+        t = load_target(name)
+        try:
+            job = rmod.enqueue(db, cat, t, request.form.get("mode", "light"), g.user["username"])
+            flash(f"Job {job} queued. Evidence that is already collected is skipped.")
+        except rmod.RunError as e:
+            flash(str(e))
+        return redirect(url_for("auto_tab", name=t.name))
+
+    @app.post("/t/<name>/auto/jobs/<int:job_id>/cancel")
+    @admin_required
+    def auto_cancel(name: str, job_id: int):
+        t = load_target(name)
+        if not db.one("SELECT 1 FROM jobs WHERE id = ? AND target_id = ?", (job_id, t.id)):
+            abort(404)
+        rmod.cancel(db, job_id, g.user["username"])
+        flash(f"Job {job_id}: cancel requested.")
+        return redirect(url_for("auto_tab", name=t.name))
 
     # ---- WSTG page --------------------------------------------------------
 

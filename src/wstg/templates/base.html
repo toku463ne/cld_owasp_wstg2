@@ -5,6 +5,7 @@
 <link rel="stylesheet" href="{{ static_url('style.css') }}">
 <script src="{{ static_url('app.js') }}" defer></script>
 <script src="{{ static_url('capture.js') }}" defer></script>
+{% block head_extra %}{% endblock %}
 </head><body>
 <header class="top">
   <a class="brand" href="{{ url_for('index') }}">WSTG Runner</a>

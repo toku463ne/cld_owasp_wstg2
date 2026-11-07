@@ -195,19 +195,19 @@ fi
 
 # --------------------------------------------------------------------------
 if [ "$SYSTEMD" = 1 ]; then
-  step "systemd user service (wstg2-web)"
+  step "systemd user services (wstg2-web, wstg2-worker)"
   UNIT_DIR="$HOME/.config/systemd/user"
-  if [ "$DRY" = 1 ]; then echo "  [dry-run] would write $UNIT_DIR/wstg2-web.service"
-  else
+  unit() {  # name description command
+    if [ "$DRY" = 1 ]; then echo "  [dry-run] would write $UNIT_DIR/$1.service"; return; fi
     mkdir -p "$UNIT_DIR"
-    cat > "$UNIT_DIR/wstg2-web.service" <<EOF
+    cat > "$UNIT_DIR/$1.service" <<EOF
 [Unit]
-Description=WSTG Runner web app (127.0.0.1:$APP_PORT, behind nginx :$WEB_PORT)
+Description=$2
 
 [Service]
 Environment=WSTG_CONFIG=$CONFIG
 WorkingDirectory=$REPO
-ExecStart=$UV_BIN run --frozen wstg serve
+ExecStart=$UV_BIN run --frozen wstg $3
 Restart=on-failure
 # uv exits with 143 when systemd stops it with SIGTERM; that is a normal stop.
 SuccessExitStatus=143
@@ -216,11 +216,14 @@ RestartSec=5
 [Install]
 WantedBy=default.target
 EOF
-  fi
+  }
+  unit wstg2-web "WSTG Runner web app (127.0.0.1:$APP_PORT, behind nginx :$WEB_PORT)" serve
+  unit wstg2-worker "WSTG Runner automatic evidence worker" worker
   run systemctl --user daemon-reload
-  run systemctl --user enable wstg2-web.service
-  # Restart (not just start) so an update picks up the new code.
-  run systemctl --user restart wstg2-web.service
+  run systemctl --user enable wstg2-web.service wstg2-worker.service
+  # Restart (not just start) so an update picks up the new code. A collection
+  # that is running is marked interrupted; collecting again skips what is done.
+  run systemctl --user restart wstg2-web.service wstg2-worker.service
   # Keep the user service running without an open login session.
   if [ "$(loginctl show-user "$USER" -p Linger --value 2>/dev/null || true)" != yes ]; then
     run sudo loginctl enable-linger "$USER"
@@ -299,6 +302,7 @@ cat <<EOF
 Done.
   export WSTG_CONFIG=$CONFIG
   Web UI:   http://${addr:-<this host>}:$WEB_PORT/   (allowed from: $NETWORKS)
-  Service:  systemctl --user status wstg2-web     logs: journalctl --user -u wstg2-web -f
+  Services: systemctl --user status wstg2-web wstg2-worker
+  Logs:     journalctl --user -u wstg2-web -u wstg2-worker -f
   Update:   git pull && scripts/setup-kali.sh --no-packages
 EOF

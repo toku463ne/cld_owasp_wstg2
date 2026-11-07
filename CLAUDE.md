@@ -112,12 +112,16 @@ uv run wstg user-disable NAME [--enable]
 uv run wstg user-list
 uv run wstg serve [--dev]                 # web app on 127.0.0.1:$WSTG_APP_PORT (default 5083), behind nginx :8083
 uv run wstg catalog-check [-v]            # validate catalog/ (index, evidence, scenarios); needs no config
+uv run wstg worker [--once]               # run queued automatic evidence jobs
+uv run wstg collect TARGET [--mode light|full] [--run]
 
 uv run pytest -q                          # tests (temporary directories only)
 ```
 
 Code layout: `src/wstg/` (`config.py`, `db.py` + `migrations/NNNN_*.sql`, `users.py`,
-`web.py` + `templates/` + `static/`, `cli.py`, `catalog.py`), catalog data in `catalog/`
+`web.py`, `web_targets.py`, `web_evidence.py` + `templates/` + `static/`, `cli.py`, `catalog.py`,
+`targets.py` (targets, scope check, status), `evidence.py` (versioned store), `runner.py`
+(jobs, worker)), catalog data in `catalog/`
 (`wstg_index.yaml`, `evidence/*.yaml`, `wstg/WSTG-*.yaml`; schema in `catalog/evidence/core.yaml`
 and `src/wstg/catalog.py`), tests in `tests/`, setup in
 `scripts/setup-kali.sh` + `deploy/nginx/wstg2.conf.template`.

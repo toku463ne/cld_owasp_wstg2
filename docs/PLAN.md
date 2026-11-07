@@ -13,7 +13,7 @@ Last updated: 2026-11-07
 | M2 | Targets and main page | **Done** | Targets, scope records and check, selector, tabs, WSTG index |
 | M3 | WSTG page | **In progress** | Overview, criteria, steps, verdict/reset, rendered commands, AI prompt (basic); evidence view/edit with M4/M5 |
 | M4 | Manual evidence | **Done** (browser paste to be checked on Kali) | Versioned store, capture box, upload, text, edit/remove as new versions |
-| M5 | Automatic evidence | Not started | |
+| M5 | Automatic evidence | **Done** (real tools to be checked on Kali) | Jobs, worker, light/full, resume, scope check, cancel, proxy |
 | M6 | Findings | Not started | |
 | M7 | AI prompt | Not started | |
 | M8 | Deployment | **Partly done** (setup script, checked on Kali) | `scripts/setup-kali.sh`, nginx :8083, `wstg2-web` user service; worker unit and backup pending |
@@ -28,6 +28,15 @@ Last updated: 2026-11-07
 - Main page shell (target selector + `+`, four tabs, all placeholders); admin user page.
 - CLI: `check-config`, `migrate`, `user-add`, `user-passwd`, `user-disable`, `user-list`, `serve`.
 - Fixed during smoke test: waitress dropped nginx's `X-Forwarded-For` by default, which would have made every client look like 127.0.0.1.
+
+### M5 delivered
+- Migration `0004_jobs`: `jobs` (queued / running / cancelling / done / cancelled / interrupted, heartbeat) and `job_items` (pending / running / skipped / complete / failed / refused / cancelled).
+- `src/wstg/runner.py`: plan (automatic evidence of the target's type; light skips `level: full`; heavy last), one active job per target, worker that runs one job at a time. Per command: render placeholders (`{out}` = temp folder of the new version), refuse unfilled placeholders, `check_command` against the scope record, no shell, no stdin, own process group, timeout, 200 MB stdout cap, cancel while running (kills the process group). Complete only when the exit code is in `ok_exit_codes` and every declared output exists; otherwise a failed version is kept for review but never becomes `latest`, and is retried next time. Completed evidence is skipped (resume). On start the worker marks jobs of a dead worker as interrupted and removes temp folders.
+- Commands get a clean environment (PATH, HOME, LANG, ...); `WSTG_HTTP_PROXY` sets http(s)_proxy for them; proxies from the worker's own environment are dropped.
+- CLI: `wstg worker [--once]`, `wstg collect TARGET [--mode] [--run]`. Setup script installs `wstg2-worker` next to `wstg2-web`.
+- Automatic evidence tab: light / full collect, job progress (refreshes every 5 s), cancel, per-evidence collected / failed state, worker hints (waiting, stalled). Evidence page shows the command that ran, exit code, duration, and failed versions.
+- Editing a text item keeps its file name, so `{ev:ID}/stdout.txt` stays valid after an edit.
+- Not yet checked: the real catalog tools against a lab target on Kali (tests use local harmless commands only).
 
 ### M4 delivered
 - Migration `0003_evidence`: `evidence_versions` index (source manual / auto / edit, status complete / failed, item count).

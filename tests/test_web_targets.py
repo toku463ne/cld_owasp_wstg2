@@ -79,3 +79,18 @@ def test_scope_settings(admin_client, db, cfg):
              allowed_hosts="www.example.com", allowed_ports="443")
     assert r.status_code == 200 and "base URL host must be" in r.get_data(as_text=True)
     assert tm.get_scope(db, tm.get(db, "www.example.com")).base_url == "https://www.example.com"
+
+
+def test_auto_collect_queue_and_cancel(admin_client, guest_client, db, cfg):
+    from wstg import runner as rmod
+    tm.create(db, cfg, "www.example.com", "fqdn")
+    assert post(guest_client, "/t/www.example.com/auto/collect", mode="light").status_code == 403
+    r = post(admin_client, "/t/www.example.com/auto/collect", mode="light")
+    assert r.status_code == 302
+    job = rmod.last_job(db, tm.get(db, "www.example.com"))
+    assert job["status"] == "queued" and job["mode"] == "light"
+    page = admin_client.get("/t/www.example.com/auto").get_data(as_text=True)
+    assert f"Job {job['id']}" in page and "Waiting for the worker" in page and 'http-equiv="refresh"' in page
+    assert "nikto" not in [i["evidence_id"] for i in rmod.job_items(db, job["id"])]
+    post(admin_client, f"/t/www.example.com/auto/jobs/{job['id']}/cancel")
+    assert rmod.last_job(db, tm.get(db, "www.example.com"))["status"] == "cancelled"

@@ -150,42 +150,34 @@ class Store:
 
     # ---- writing ------------------------------------------------------------
 
-    def _write_version(self, target: tmod.Target, evidence_id: str, *, source: str, actor: str,
-                       summary: str, items: list[Item], prev: Version | None,
-                       new_files: dict[str, bytes], extra_meta: dict | None = None,
-                       status: str = "complete") -> Version:
-        """Write a version: items are copied (hard-linked) from prev unless their
-        file is in new_files. Temp folder, fsync, rename, index, then `latest`."""
+    def begin(self, target: tmod.Target, evidence_id: str) -> Path:
+        """A new, empty temp folder inside the evidence folder (same file system)."""
         base = self.folder(target.name, evidence_id)
         base.mkdir(mode=0o700, parents=True, exist_ok=True)
         tmp = base / f".tmp-{secrets.token_hex(6)}"
         tmp.mkdir(mode=0o700)
+        return tmp
+
+    def commit(self, target: tmod.Target, evidence_id: str, tmp: Path, *, source: str, actor: str,
+               summary: str, items: list[Item], status: str = "complete", based_on: int | None = None,
+               extra_meta: dict | None = None) -> Version:
+        """Turn a filled temp folder into the next version: hash the items, write
+        meta.json, fsync, rename under the DB write lock, index, then move
+        `latest` (complete versions only). The temp folder is gone afterwards,
+        also on failure."""
+        base = tmp.parent
         try:
             for it in items:
-                dest = tmp / it.file
-                dest.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-                if it.file in new_files:
-                    dest.write_bytes(new_files[it.file])
-                else:
-                    if prev is None:
-                        raise EvidenceError(f"no source for {it.file}")
-                    src = prev.path / it.file
-                    try:
-                        os.link(src, dest)
-                    except OSError:
-                        shutil.copy2(src, dest)
-                _fsync(dest)
-                it.sha256, it.size = _sha256(dest), dest.stat().st_size
-            for rel, data in new_files.items():
-                if not (tmp / rel).exists():          # files outside items (auto: stdout.txt ...)
-                    (tmp / rel).parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-                    (tmp / rel).write_bytes(data)
-                    _fsync(tmp / rel)
+                path = tmp / it.file
+                if not path.is_file():
+                    raise EvidenceError(f"missing item file {it.file}")
+                _fsync(path)
+                it.sha256, it.size = _sha256(path), path.stat().st_size
             now = dbmod.utcnow()
             meta = {
                 "schema_version": 1, "target": target.name, "evidence_id": evidence_id,
                 "source": source, "status": status, "created_at": now, "created_by": actor,
-                "summary": summary, "based_on": prev.version if prev else None,
+                "summary": summary, "based_on": based_on,
                 "items": [i.to_dict() for i in items], **(extra_meta or {}),
             }
             (tmp / META).write_text(json.dumps(meta, indent=2, ensure_ascii=False) + "\n")
@@ -219,6 +211,30 @@ class Store:
         finally:
             if tmp.exists():
                 shutil.rmtree(tmp, ignore_errors=True)
+
+    def _write_version(self, target: tmod.Target, evidence_id: str, *, source: str, actor: str,
+                       summary: str, items: list[Item], prev: Version | None,
+                       new_files: dict[str, bytes]) -> Version:
+        """A manual change: items are hard-linked from prev unless their file is in new_files."""
+        tmp = self.begin(target, evidence_id)
+        try:
+            for it in items:
+                dest = tmp / it.file
+                dest.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+                if it.file in new_files:
+                    dest.write_bytes(new_files[it.file])
+                else:
+                    if prev is None:
+                        raise EvidenceError(f"no source for {it.file}")
+                    try:
+                        os.link(prev.path / it.file, dest)
+                    except OSError:
+                        shutil.copy2(prev.path / it.file, dest)
+        except BaseException:
+            shutil.rmtree(tmp, ignore_errors=True)
+            raise
+        return self.commit(target, evidence_id, tmp, source=source, actor=actor, summary=summary,
+                           items=items, based_on=prev.version if prev else None)
 
     def _next_name(self, items: list[Item], ext: str) -> str:
         n = 1 + max((int(m.group(1)) for i in items if (m := re.match(r"items/(\d+)", i.file))), default=0)
@@ -295,9 +311,8 @@ class Store:
             if len(data) > MAX_TEXT_BYTES:
                 raise EvidenceError("the text is larger than 1 MB")
             if data != (prev.path / it.file).read_bytes():
-                stem, ext = os.path.splitext(it.file)
-                stem = re.sub(r"-e\d+$", "", stem)
-                it.file = f"{stem}-e{prev.version + 1}{ext}"
+                # Same file name in the new version folder (written, not linked),
+                # so references such as {ev:ID}/stdout.txt stay valid.
                 new[it.file] = data
                 what.append("text")
         if not what:

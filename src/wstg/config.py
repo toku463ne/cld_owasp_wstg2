@@ -13,6 +13,10 @@ repository. Explicit environment variables win over the file.
     WSTG_ALLOWED_NETWORKS   comma-separated client networks the app accepts
                             (default 192.168.0.0/16,127.0.0.0/8); nginx enforces
                             the same list, this is a second line of defense
+    WSTG_HTTP_PROXY         proxy for collection commands (http_proxy/https_proxy of the
+                            child processes), e.g. http://127.0.0.1:8080; empty = none
+    WSTG_JOB_STALE_SECONDS  a running job without a heartbeat for this long is marked
+                            interrupted (default 120)
     WSTG_WEB_PORT           nginx port (default 8083); read by scripts/setup-kali.sh,
                             not by the app
 """
@@ -88,6 +92,8 @@ class Config:
     secret_key: str = ""
     app_port: int = DEFAULT_APP_PORT
     allowed_networks: tuple[ipaddress.IPv4Network | ipaddress.IPv6Network, ...] = field(default_factory=tuple)
+    http_proxy: str = ""
+    job_stale_seconds: int = 120
 
     def guarded_paths(self) -> dict[str, Path]:
         return {"evidence root": self.evidence_root, "database": self.db_path}
@@ -115,6 +121,13 @@ def _parse_networks(value: str):
         except ValueError as e:
             raise ConfigError(f"WSTG_ALLOWED_NETWORKS: {e}") from None
     return tuple(nets)
+
+
+def _int(env: dict[str, str], name: str, default: int) -> int:
+    try:
+        return int(env.get(name) or default)
+    except ValueError:
+        raise ConfigError(f"{name} must be a number") from None
 
 
 def load(env: dict[str, str] | None = None, check_repo: bool = True) -> Config:
@@ -153,6 +166,8 @@ def load(env: dict[str, str] | None = None, check_repo: bool = True) -> Config:
         secret_key=secret,
         app_port=port,
         allowed_networks=_parse_networks(env.get("WSTG_ALLOWED_NETWORKS", DEFAULT_ALLOWED_NETWORKS)),
+        http_proxy=env.get("WSTG_HTTP_PROXY", "").strip(),
+        job_stale_seconds=_int(env, "WSTG_JOB_STALE_SECONDS", 120),
     )
     if check_repo:
         check_outside_repo(cfg)

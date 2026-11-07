@@ -6,12 +6,14 @@
   <span class="chip">{{ ev.kind }}{% if ev.level %} · {{ ev.level }}{% endif %}</span>
 </div>
 <p>{{ ev.description }}</p>
-{% if ev.kind == 'auto' %}<p><code>{{ ev.argv | join(' ') }}</code></p>{% endif %}
+{% if ev.kind == 'auto' %}<p><code>{{ ev.argv | join(' ') }}</code></p>
+{% if version and version.meta.argv %}<p class="muted small">Ran: <code>{{ version.meta.argv | join(' ') }}</code> · exit {{ version.meta.exit_code }} · {{ version.meta.duration_s }} s{% if version.meta.message %} · {{ version.meta.message }}{% endif %}</p>{% endif %}{% endif %}
 <p class="muted">Used by:
   {% for tid in used_by %}<a href="{{ url_for('wstg_page', name=target.name, test_id=tid) }}">{{ tid }}</a> {% endfor %}</p>
 
 {% if version %}
 <div class="{{ 'okbox' if is_latest else 'warnbox' }}">
+  {% if version.meta.status == 'failed' %}<b>Failed collection</b> (never used as evidence) · {% endif %}
   Version {{ version.version }} · {{ version.meta.source }} · {{ version.created_at }} by {{ version.meta.created_by }}
   {% if version.meta.summary %} · {{ version.meta.summary }}{% endif %}
   {% if not is_latest %} · <a href="{{ url_for('evidence_page', name=target.name, eid=ev.id) }}">show the latest version</a>{% endif %}
@@ -77,7 +79,7 @@
   <tr><th>Version</th><th>Source</th><th>Status</th><th>Created</th><th>By</th><th>Change</th><th>Items</th></tr>
   {% for h in history %}
   <tr class="{{ 'current' if version and h.version == version.version }}">
-    <td>{% if h.status == 'complete' %}<a href="{{ url_for('evidence_page', name=target.name, eid=ev.id, v=h.version) }}">v{{ h.version }}</a>{% else %}v{{ h.version }}{% endif %}</td>
+    <td><a href="{{ url_for('evidence_page', name=target.name, eid=ev.id, v=h.version) }}">v{{ h.version }}</a></td>
     <td>{{ h.source }}</td><td>{{ h.status }}</td><td class="nowrap">{{ h.created_at }}</td><td>{{ h.created_by }}</td>
     <td>{{ h.summary }}</td><td>{{ h.item_count }}</td>
   </tr>

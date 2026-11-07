@@ -1,18 +1,61 @@
 {% extends "target_base.html" %}
+{% block head_extra %}{% if active %}<meta http-equiv="refresh" content="5">{% endif %}{% endblock %}
 {% block content %}
 {% if scope_problems %}
 <div class="warnbox">The scope record does not allow commands yet: {{ scope_problems | join('; ') }}.
+  Collection refuses every command until this is fixed.
   <a href="{{ url_for('target_settings', name=target.name) }}">Edit the scope</a></div>
 {% endif %}
-<p class="muted">Collection (full / light, resumable) comes in milestone M5. These are the automatic evidence definitions for {{ target.type }} targets.</p>
+
+<section class="overview">
+  <h3>Collect automatic evidence</h3>
+  <p class="muted">Runs before testing. Evidence that is already collected is skipped, so an interrupted run continues where it stopped.
+  {% if target.type == 'fqdn' %}Domain evidence (DNS, WHOIS, certificate logs) is collected on the domain target{% if target.parent_name %} <a href="{{ url_for('auto_tab', name=target.parent_name) }}">{{ target.parent_name }}</a>{% endif %}.{% endif %}</p>
+  {% if can_write %}
+  <form method="post" class="inline" action="{{ url_for('auto_collect', name=target.name) }}">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <label><input type="radio" name="mode" value="light" checked> Light only ({{ light_count }}): quick requests, no scanners</label>
+    <label><input type="radio" name="mode" value="full"> Full ({{ full_count }}): also slow and heavy tools (nikto, port scans, crawls)</label>
+    <button {{ 'disabled' if active }}>Collect</button>
+  </form>
+  {% endif %}
+</section>
+
+{% if job %}
+<section class="overview">
+  <h3>Job {{ job.id }} · {{ job.mode }} · <span class="status s-{{ 'pass' if job.status == 'done' else ('started' if job.status in ('queued', 'running', 'cancelling') else 'fail') }}">{{ job.status }}</span></h3>
+  <p class="muted">Queued {{ job.created_at }} by {{ job.created_by }}{% if job.started_at %} · started {{ job.started_at }}{% endif %}{% if job.finished_at %} · finished {{ job.finished_at }}{% endif %}{% if active %} · this page refreshes every 5 s{% endif %}</p>
+  {% if waiting %}<div class="warnbox">Waiting for the worker. If this does not start, check <code>systemctl --user status wstg2-worker</code>.</div>{% endif %}
+  {% if stale %}<div class="warnbox">No heartbeat from the worker recently. It may have stopped; restart it (<code>systemctl --user restart wstg2-worker</code>) and collect again.</div>{% endif %}
+  {% if can_write and active %}
+  <form method="post" class="inline" action="{{ url_for('auto_cancel', name=target.name, job_id=job.id) }}">
+    <input type="hidden" name="csrf" value="{{ csrf }}"><button>Cancel</button></form>
+  {% endif %}
+  <table>
+    <tr><th>#</th><th>Evidence</th><th>Status</th><th>Message</th><th>Finished</th></tr>
+    {% for it in items %}
+    <tr><td>{{ it.seq }}</td>
+      <td><a href="{{ url_for('evidence_page', name=target.name, eid=it.evidence_id) }}">{{ it.evidence_id }}</a></td>
+      <td><span class="status s-{{ {'complete': 'pass', 'skipped': 'none', 'pending': 'none', 'running': 'started'}.get(it.status, 'fail') }}">{{ it.status }}</span></td>
+      <td>{{ it.message }}{% if it.exit_code is not none %} <span class="muted">(exit {{ it.exit_code }})</span>{% endif %}</td>
+      <td class="nowrap">{{ it.finished_at or '' }}</td></tr>
+    {% endfor %}
+  </table>
+</section>
+{% endif %}
+
+<h3>Automatic evidence for {{ target.type }} targets</h3>
 <table>
-  <tr><th>Evidence</th><th>Level</th><th>Command</th><th>Used by</th></tr>
+  <tr><th>Evidence</th><th>Level</th><th>Command</th><th>Collected</th><th>Used by</th></tr>
   {% for e in evidence %}
   <tr>
-    <td><b>{{ e.title }}</b><br><code class="muted">{{ e.id }}</code></td>
+    <td><a href="{{ url_for('evidence_page', name=target.name, eid=e.id) }}"><b>{{ e.title }}</b></a><br><code class="muted">{{ e.id }}</code></td>
     <td class="nowrap">{{ e.level }}{% if e.heavy %} <span class="chip warn">heavy</span>{% endif %}{% if e.passive %} <span class="chip">passive</span>{% endif %}</td>
-    <td><code>{{ e.argv | join(' ') }}</code>{% if e.load_note %}<div class="note">{{ e.load_note }}</div>{% endif %}</td>
-    <td>{% for tid in cat.tests_using(e.id) %}<a href="{{ url_for('wstg_page', name=target.name, test_id=tid) }}">{{ tid }}</a>{{ ' ' }}{% endfor %}</td>
+    <td><code class="small">{{ e.argv | join(' ') }}</code>{% if e.load_note %}<div class="note">{{ e.load_note }}</div>{% endif %}</td>
+    <td class="nowrap">{% if have.get(e.id) %}{{ have[e.id].created_at }}<br><span class="muted">v{{ have[e.id].version }}</span>
+      {% elif failed.get(e.id) %}<span class="status s-fail">failed</span><br><span class="muted small">{{ failed[e.id].summary }}</span>
+      {% else %}<span class="muted">not collected</span>{% endif %}</td>
+    <td>{% for tid in cat.tests_using(e.id) %}<a href="{{ url_for('wstg_page', name=target.name, test_id=tid) }}">{{ tid }}</a> {% endfor %}</td>
   </tr>
   {% endfor %}
 </table>
