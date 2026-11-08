@@ -86,7 +86,7 @@ def test_web_capture_upload_and_serve(admin_client, guest_client, site, cfg):
     page = admin_client.get(url).get_data(as_text=True)
     assert "first" in page and "x.html" in page and "Version 2" in page
     # the description shows a concrete command: {fqdn} is filled in with the target host
-    assert "wstg capture www.example.com --role anon" in page
+    assert "uv run wstg capture www.example.com --role anon" in page
     assert "{fqdn}" not in page
 
     img = admin_client.get(url + "/v/2/items/001.png")

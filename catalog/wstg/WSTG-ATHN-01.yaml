@@ -29,7 +29,7 @@ steps:
     evidence: [har-browse]
     operation: >-
       Record the login with the test account into the har-browse evidence. Preferred:
-      run `wstg capture {fqdn} --role login`, then in the browser window that opens log in
+      run `uv run wstg capture {fqdn} --role login`, then in the browser window that opens log in
       with the test account (solve any CAPTCHA yourself) and also walk through password
       change and any re-authentication screen; close by pressing Enter in the terminal.
       Fallback without the capture tool: open the login page, press F12, open Network, tick
