@@ -180,6 +180,22 @@ run "$UV_BIN" --directory "$REPO" sync --frozen
 wstg() { "$UV_BIN" --directory "$REPO" run --frozen wstg "$@"; }
 [ "$DRY" = 1 ] || wstg check-config
 
+step "Browser for HAR capture (Playwright Chromium)"
+# `wstg capture` drives a headful Chromium to record a browsing session as a HAR.
+if [ "$DRY" = 1 ]; then
+  echo "  [dry-run] would install the Playwright Chromium browser"
+elif [ "$PACKAGES" = 1 ]; then
+  # --with-deps installs the OS libraries the browser needs (apt, needs root).
+  PROXY="$(env_get "$CONFIG" WSTG_HTTP_PROXY)"
+  HTTPS_PROXY="$PROXY" https_proxy="$PROXY" \
+    "$UV_BIN" --directory "$REPO" run --frozen playwright install --with-deps chromium \
+    || echo "warning: 'playwright install --with-deps chromium' failed; 'wstg capture' will not work until it succeeds"
+else
+  # No apt without --packages: install just the browser binary into ~/.cache.
+  "$UV_BIN" --directory "$REPO" run --frozen playwright install chromium \
+    || echo "warning: 'playwright install chromium' failed; run it by hand for 'wstg capture'"
+fi
+
 step "Test tools (catalog/tools.yaml)"
 if [ "$PACKAGES" = 1 ]; then
   if [ "$DRY" = 1 ]; then

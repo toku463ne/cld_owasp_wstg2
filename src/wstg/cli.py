@@ -202,6 +202,26 @@ def cmd_collect(args) -> int:
     return 0
 
 
+def cmd_capture(args) -> int:
+    from . import capture as capmod, targets as tmod
+    r = _runner(_cfg())
+    t = _target(r, args.target)
+    try:
+        res = capmod.record_session(r.cfg, r.db, r.store, t, role=args.role or "", actor="cli",
+                                    headless=args.headless, start_url=args.url)
+    except (capmod.CaptureError, tmod.TargetError) as e:
+        raise config.ConfigError(str(e)) from None
+    print(f"saved HAR {res['har_file']} as {capmod.EVIDENCE_ID} v{res['har_version']} for {t.name}")
+    if res["state_file"]:
+        print(f"saved storage state {res['state_file']} (v{res['version']})")
+    if res["out_of_scope_hosts"]:
+        print(f"  WARNING: contacted {len(res['out_of_scope_hosts'])} host(s) outside the scope: "
+              + ", ".join(res["out_of_scope_hosts"]))
+    print(f"  analyse it with the WSTG pages, or: uv run wstg-har cookies "
+          f"{tmod.evidence_dir(r.cfg, t) / capmod.EVIDENCE_ID / 'latest' / 'items'}/*.har")
+    return 0
+
+
 def _target(r, name):
     from . import targets as tmod
     t = tmod.get(r.db, name)
@@ -329,6 +349,13 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--evidence", help="collect only this evidence ID")
     s.add_argument("--force", action="store_true", help="with --evidence: collect again even if collected")
     s.set_defaults(func=cmd_collect)
+
+    s = sub.add_parser("capture", help="record a browsing session as a HAR with a headful browser (M9)")
+    s.add_argument("target")
+    s.add_argument("--role", default="", help="a label for this session (for example anon, user, admin)")
+    s.add_argument("--url", default=None, help="start URL (default: the scope base URL)")
+    s.add_argument("--headless", action="store_true", help="run the browser headless (for automation/testing)")
+    s.set_defaults(func=cmd_capture)
 
     s = sub.add_parser("ai-prompts", help="save AI prompts to <evidence>/<target>/_ai/prompts for an AI agent")
     s.add_argument("target")
