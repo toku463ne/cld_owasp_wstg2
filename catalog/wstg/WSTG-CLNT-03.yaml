@@ -10,17 +10,50 @@ fail: >-
   script execution).
 notes:
   - Report HTML injection even when it does not reach XSS; the impact is content spoofing plus luring.
+  - "Interpreted vs escaped: in the raw response the marker surrounded by real tags (`<h1>clnt3mark</h1>`) means it is interpreted; the HTML-encoded form (`&lt;h1&gt;clnt3mark&lt;/h1&gt;`) means it is escaped and safe."
 finding_kinds: [html-injection]
 steps:
-  - summary: Inject HTML tags into reflected inputs (manual)
+  - summary: List inputs that are reflected into the page (candidates to test)
+    auto_run: true
+    evidence: [katana-crawl]
+    command: >-
+      echo "== URL/query parameters seen in the crawl:";
+      grep -oE '[?&][A-Za-z0-9_.-]+=' {ev:katana-crawl}/katana.txt 2>/dev/null | tr -d '?&=' | sort | uniq -c | sort -rn | head -40;
+      echo "== form / input field names in the crawled pages:";
+      grep -rhoiE '<(input|textarea|select)[^>]*name=["'"'"']?[A-Za-z0-9_.-]+' {ev:katana-crawl}/responses 2>/dev/null
+      | grep -oiE 'name=["'"'"']?[A-Za-z0-9_.-]+' | sort -u | head -40
+      || echo "no form fields in the crawl (test the parameters above and any inputs you see in the browser)"
+  - summary: Inject HTML markers into each input and check whether they are interpreted (manual)
     evidence: [html-injection-tests]
     operation: >-
-      Into inputs reflected into the page send `<h1>test</h1>`, `<b>`, and a fake form or
-      link, and check whether the tags are interpreted rather than shown as text, in both
-      body and attribute contexts. Record in html-injection-tests.
+      Test each candidate from step 1 (and any input you see in the browser). Use the unique
+      marker `clnt3mark` so it is easy to find in the response.
+
+      1. Body context — send a heading and a bold tag:
+      `curl -sk -G "{base_url}/PATH" --data-urlencode 'PARAM=<h1>clnt3mark</h1>' | grep -n clnt3mark`
+      (POST form: `curl -sk "{base_url}/PATH" --data-urlencode 'PARAM=<h1>clnt3mark</h1>' | grep -n clnt3mark`).
+
+      2. Attribute context — try to break out of an attribute value:
+      `curl -sk -G "{base_url}/PATH" --data-urlencode 'PARAM="><h1>clnt3mark</h1>' | grep -n clnt3mark`.
+
+      3. Content spoofing — inject a fake link and a fake login form and see whether they render:
+      `curl -sk -G "{base_url}/PATH" --data-urlencode 'PARAM=<a href="//example.com/clnt3mark">click</a><form action="//example.com/clnt3mark"><input name="pw" type="password"></form>' | grep -n clnt3mark`.
+
+      Decide per input from the grep output: the marker wrapped in real tags
+      (`<h1>clnt3mark</h1>`) = interpreted (fail candidate); the encoded form
+      (`&lt;h1&gt;clnt3mark&lt;/h1&gt;`) = escaped (safe). Record each input, the context,
+      the exact tags sent, and interpreted/escaped in html-injection-tests.
+  - summary: Confirm the injected markup renders in the browser (manual)
+    evidence: [html-injection-tests]
+    operation: >-
+      For each input that looked interpreted in step 2, open the URL in the inspection
+      browser and confirm the injected heading, link, or fake form actually appears on the
+      page (not shown as text). Screenshot it into html-injection-tests; this is the
+      content-spoofing/phishing proof even when no script runs.
   - summary: Judge HTML injection
     evidence: [html-injection-tests]
     ai_task: >-
-      From step 1 decide whether input is interpreted as HTML. Verdict: fail when injected
-      tags render (content spoofing/phishing), noting if it can reach XSS; pass when tags
-      are escaped; "-" when html-injection-tests is missing.
+      From steps 2 and 3 decide whether input is interpreted as HTML. Verdict: fail when
+      injected tags render (content spoofing/phishing), noting if it can reach XSS; pass when
+      tags are escaped and shown as text; "-" when html-injection-tests is missing. Note the
+      input and context for each.

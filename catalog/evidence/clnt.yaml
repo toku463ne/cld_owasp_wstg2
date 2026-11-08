@@ -37,8 +37,12 @@ evidence:
     target_type: fqdn
     kind: manual
     description: >-
-      Per input reflected as HTML, the tags injected (<h1>, <b>, a fake form or link) and
-      whether they were interpreted rather than shown as text, with a note on the
+      One line per input tested, from the commands in WSTG-CLNT-03. For each: the input
+      (URL parameter or form field) and page, the tags sent (for example `<h1>clnt3mark</h1>`,
+      `"><h1>clnt3mark</h1>`, a fake link/login form), the context (body or attribute), and
+      the result interpreted or escaped (interpreted = the marker appears wrapped in real
+      tags in the response; escaped = it appears HTML-encoded as `&lt;h1&gt;...`). Add a
+      screenshot of the rendered markup for any interpreted input, and note the
       phishing/content-spoofing impact even when no script runs.
 
   - id: client-redirect-tests

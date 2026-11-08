@@ -44,6 +44,15 @@ def test_clnt07_cors_safe_when_no_credentials(admin_client, store, site):
     assert s1.count("DANGER:") == 1       # only in the command text, not the output
 
 
+def test_clnt03_lists_reflected_input_candidates(admin_client, store, site):
+    put(store, site, "katana-crawl", {
+        "katana.txt": f"{BASE}/search?q=1&lang=en\n{BASE}/p?id=5\n",
+        "responses/r1.html": '<form><input name="comment"><textarea name="bio"></textarea></form>'})
+    s1 = page(admin_client, "WSTG-CLNT-03").split("Step 1")[1].split("Step 2")[0]
+    assert "q" in s1 and "lang" in s1 and "id" in s1      # URL/query parameters
+    assert "comment" in s1 and "bio" in s1                # form field names
+
+
 def test_clnt09_reports_missing_frame_headers(admin_client, store, site):
     put(store, site, "http-root-https", {"stdout.txt": "HTTP/1.1 200 OK\r\nServer: x\r\n", "body.html": "<html></html>"})
     s1 = page(admin_client, "WSTG-CLNT-09").split("Step 1")[1].split("Step 2")[0]
