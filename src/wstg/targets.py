@@ -21,7 +21,10 @@ from . import db as dbmod
 from .config import Config
 
 TYPES = ("domain", "fqdn")
-VERDICTS = ("pass", "fail")
+NO_NEED = "no need"
+# Verdicts a tester may set on a step. "no need" marks a step that does not
+# apply to this target, so it counts as done without needing to pass.
+VERDICTS = ("pass", "fail", NO_NEED)
 _LABEL_RE = re.compile(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?")
 _DATE_RE = re.compile(r"\d{4}-\d{2}-\d{2}")
 
@@ -362,23 +365,23 @@ def set_verdict(db: dbmod.Database, target: Target, test_id: str, step: int, ver
 
 
 def status(step_count: int, step_verdicts: dict[int, str], has_evidence: bool = False) -> str:
-    """WSTG status: '-', 'started', 'pass', 'fail'.
+    """WSTG status: '-', 'started', 'pass', 'fail', 'no need'.
 
-    fail if any step failed; pass only if every step passed; started if
-    anything was judged or collected; '-' otherwise. A test without a
-    scenario (step_count 0) is never pass.
+    fail if any step failed; otherwise, once every step is judged (as pass or
+    'no need'), pass — or 'no need' when every step is 'no need'; started if
+    anything was judged or collected; '-' otherwise. A test without a scenario
+    (step_count 0) is never pass.
     """
     vs = [v for s, v in step_verdicts.items() if 1 <= s <= step_count]
     if "fail" in vs:
         return "fail"
-    if step_count and len(vs) == step_count and all(v == "pass" for v in vs):
-        return "pass"
+    if step_count and len(vs) == step_count:
+        return NO_NEED if all(v == NO_NEED for v in vs) else "pass"
     if vs or has_evidence:
         return "started"
     return "-"
 
 
-NO_NEED = "no need"
 # All possible statuses, in report order.
 STATUSES = ("-", "started", "pass", "fail", NO_NEED)
 # Statuses a tester may set as an override ("" = auto, i.e. computed from steps).

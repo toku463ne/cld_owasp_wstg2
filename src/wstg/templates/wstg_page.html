@@ -114,7 +114,7 @@
     <form method="post" class="inline" action="{{ url_for('wstg_step_verdict', name=target.name, test_id=test.id, n=s.n) }}">
       <input type="hidden" name="csrf" value="{{ csrf }}">
       <select name="verdict" aria-label="Verdict of step {{ s.n }}" {{ 'disabled' if not can_write }} data-autosubmit>
-        {% for v in ['-', 'pass', 'fail'] %}<option value="{{ v }}" {{ 'selected' if s.verdict == v }}>{{ v }}</option>{% endfor %}
+        {% for v in step_verdict_options %}<option value="{{ v }}" {{ 'selected' if s.verdict == v }}>{{ v }}</option>{% endfor %}
       </select>
       {% if s.by_ai %}<span class="chip" title="Set by an AI review import">AI</span>{% endif %}
       {% if can_write %}<noscript><button>Save</button></noscript><button name="reset" value="1" title="Reset this step">Reset</button>{% endif %}

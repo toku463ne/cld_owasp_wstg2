@@ -295,6 +295,7 @@ def register(app: Flask, cfg: Config, db: dbmod.Database, cat: catmod.Catalog, s
             s["by_ai"] = setters.get(s["n"], "").startswith(ai_review.AI_PREFIX)
         return render_template("wstg_page.html", tab="index", test=test, scenario=sc, steps=steps,
                                status=st_value, computed=computed, status_options=tmod.STATUS_OVERRIDES,
+                               step_verdict_options=("-", *tmod.VERDICTS),
                                applicable=t.type in test.target_types,
                                findings=findings, ai_prompt=ai_prompt, review=review,
                                ai=ai_review.latest(db, t, test_id) if sc else None)

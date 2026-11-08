@@ -206,7 +206,9 @@ Last updated: 2026-11-08
 - `-`: no step verdict and no evidence
 - `started`: at least one step verdict or evidence
 - `fail`: at least one step is `fail`
-- `pass`: every step is `pass`
+- `pass`: every step is judged as `pass` or `no need`, with at least one `pass`
+- `no need`: every step is `no need`
+- Step verdicts are `pass`, `fail`, or `no need` (migration `0012_step_no_need`): `no need` marks a step that does not apply to this target (e.g. an optional PoC confirmation), so an overall pass/fail can be reached without that step passing. The tester can still override the whole-test status (see the tester-annotations section).
 
 ### Runtime
 - Flask app on 127.0.0.1, behind nginx on **HTTP port 8083** with `allow 192.168.0.0/16; deny all;`.

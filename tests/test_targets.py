@@ -112,6 +112,11 @@ def test_status():
     assert tm.status(0, {}) == "-"
     assert tm.status(2, {1: "pass", 2: "pass", 5: "pass"}) == "pass"
     assert tm.status(2, {1: "pass", 7: "pass"}) == "started"  # stale step numbers are ignored
+    # "no need" steps count as done without needing to pass
+    assert tm.status(3, {1: "pass", 2: "pass", 3: "no need"}) == "pass"
+    assert tm.status(3, {1: "pass", 2: "no need"}) == "started"      # step 3 still unjudged
+    assert tm.status(3, {1: "fail", 2: "no need"}) == "fail"         # a fail still wins
+    assert tm.status(2, {1: "no need", 2: "no need"}) == "no need"   # every step skipped
 
 
 def test_verdicts(db, cfg):
@@ -122,6 +127,8 @@ def test_verdicts(db, cfg):
     assert tm.verdicts(db, f) == {"WSTG-INFO-02": {1: "fail", 2: "pass"}}
     tm.set_verdict(db, f, "WSTG-INFO-02", 1, "-", "test")
     assert tm.verdicts(db, f, "WSTG-INFO-02") == {"WSTG-INFO-02": {2: "pass"}}
+    tm.set_verdict(db, f, "WSTG-INFO-02", 3, "no need", "test")       # a step may be "no need"
+    assert tm.verdicts(db, f, "WSTG-INFO-02") == {"WSTG-INFO-02": {2: "pass", 3: "no need"}}
     with pytest.raises(tm.TargetError):
         tm.set_verdict(db, f, "WSTG-INFO-02", 1, "maybe", "test")
 
