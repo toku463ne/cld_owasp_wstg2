@@ -58,7 +58,9 @@ code { background: var(--th); padding: 0 3px; border-radius: 3px; }
 .status.s-started { color: var(--warn); border-color: var(--warn); }
 .status.s-pass { color: var(--ok); border-color: var(--ok); }
 .status.s-fail { color: var(--bad); border-color: var(--bad); }
+.status.s-noneed { color: var(--muted); border-style: dashed; }
 tr.merged td { color: var(--muted); }
+.pre-wrap { white-space: pre-wrap; }
 .warnbox, .okbox { border: 1px solid var(--warn); border-radius: 4px; padding: 6px 10px; margin: 8px 0; }
 .okbox { border-color: var(--ok); }
 .note { font-size: 13px; color: var(--muted); margin-top: 4px; }

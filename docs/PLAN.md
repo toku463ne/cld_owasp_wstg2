@@ -118,6 +118,13 @@ Last updated: 2026-11-08
 - `tests/test_errh_busl_clnt_apit.py`: ERRH-01 marker scan, CLNT-07 danger/safe CORS branches, CLNT-09 missing frame headers, APIT-01 introspection detection, every page renders. Full suite 234 passed.
 - Not run against any host; all probes and manual commands to be exercised against a lab target on Kali.
 
+### Per-test tester annotations: "no need" status and tester review (owner request)
+- Migration `0010_test_reviews`: one row per (target, test) with `no_need` (0/1) and `tester_review` (text); a row with neither is removed. Independent of step verdicts and AI reviews, so `Reset test` does not touch them.
+- "No need" status: the tester can mark a test not applicable to the target (for example WSTG-APIT-01 GraphQL when no GraphQL is used). It adds a fifth status, `no need` (`tmod.NO_NEED`/`STATUSES`), which overrides the computed status on the WSTG page and the index (and its count); step verdicts, if any, are kept. Set/cleared from the WSTG page head (admin; `POST .../no-need`). `targets.set_no_need` / `test_review` / `test_reviews`.
+- Tester review: an optional, editable free-text review per test, shown next to the AI review (`POST .../tester-review`, `targets.set_tester_review`). Admins edit it; guests see it read-only. Kept when the no-need flag is toggled.
+- UI: a `statusclass` Jinja filter maps a status to its CSS class (handles the space in "no need"); `.status.s-noneed` style added. Both new endpoints are admin-only and reject merged or unknown tests.
+- Tests in `tests/test_web_targets.py` (no-need status on page and index, tester review persistence and guest read-only, row removal, admin-only, merged/unknown rejected) and `test_header_values_...`; full suite 237 passed.
+
 ### M8 (pulled forward) delivered
 - `scripts/setup-kali.sh`: apt base packages, uv, data dirs (`/srv/wstg2/{evidence,db}`), config file and secret key generated once, `uv sync`, `check-config`, `migrate`, first admin, systemd user service `wstg2-web` (restarted on every run, lingering), nginx site rendered from `deploy/nginx/wstg2.conf.template` (port and allow list from the config), `nginx -t` with rollback, smoke test. Options `--no-packages`, `--no-nginx`, `--no-systemd`, `--dry-run`. Rerun after `git pull` to update a Kali host.
 - New config key `WSTG_WEB_PORT` (default 8083), read by the setup script only.

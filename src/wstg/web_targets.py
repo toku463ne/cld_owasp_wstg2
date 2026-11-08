@@ -30,8 +30,17 @@ def ticks(text: str) -> Markup:
     return Markup(_TICKS_RE.sub(lambda m: f"<code>{m.group(1)}</code>", str(escape(text or ""))))
 
 
+_STATUS_CLASS = {"-": "none", "": "none", "no need": "noneed"}
+
+
+def status_class(status: str) -> str:
+    """CSS class suffix for a status (the display string may contain a space)."""
+    return _STATUS_CLASS.get(status, status)
+
+
 def register(app: Flask, cfg: Config, db: dbmod.Database, cat: catmod.Catalog, store: evmod.Store) -> None:
     app.jinja_env.filters["ticks"] = ticks
+    app.jinja_env.filters["statusclass"] = status_class
 
     def load_target(name: str) -> tmod.Target:
         t = tmod.get(db, name)
@@ -118,16 +127,22 @@ def register(app: Flask, cfg: Config, db: dbmod.Database, cat: catmod.Catalog, s
         t = load_target(name)
         vs = tmod.verdicts(db, t)
         have = collected(t)
+        reviews = tmod.test_reviews(db, t)
         rows = []
         prompts_dir = ai_files.folder(cfg, t) / "prompts"
         for test in tests_for(t):
             sc = cat.scenarios.get(test.id)
             has_ev = any(e.id in have for e in cat.evidence_for(test.id))
-            st = None if test.merged_into else tmod.status(len(sc.steps) if sc else 0, vs.get(test.id, {}), has_ev)
+            if test.merged_into:
+                st = None
+            elif reviews.get(test.id, {}).get("no_need"):
+                st = tmod.NO_NEED
+            else:
+                st = tmod.status(len(sc.steps) if sc else 0, vs.get(test.id, {}), has_ev)
             rows.append({"test": test, "scenario": sc, "status": st,
                          "evidence": ai_files.evidence_state(cat, test.id, have) if sc else None,
                          "prompt": sc is not None and (prompts_dir / f"{test.id}.md").exists()})
-        counts = {s: sum(1 for r in rows if r["status"] == s) for s in ("-", "started", "pass", "fail")}
+        counts = {s: sum(1 for r in rows if r["status"] == s) for s in tmod.STATUSES}
         ev_counts = {s: sum(1 for r in rows if r["evidence"] and r["evidence"]["state"] == s)
                      for s in ("complete", "partial", "none")}
         scope_problems = tmod.scope_problems(tmod.get_scope(db, t))
@@ -233,7 +248,8 @@ def register(app: Flask, cfg: Config, db: dbmod.Database, cat: catmod.Catalog, s
         vs = tmod.verdicts(db, t, test_id).get(test_id, {})
         steps = ai_files.steps_for(cfg, db, cat, store, t, test_id, have)
         has_ev = any(e.id in have for e in cat.evidence_for(test_id))
-        st_value = tmod.status(len(steps), vs, has_ev) if sc else "-"
+        review = tmod.test_review(db, t, test_id)
+        st_value = tmod.NO_NEED if review["no_need"] else (tmod.status(len(steps), vs, has_ev) if sc else "-")
         findings = fmod.list_for(db, t, test_id)
         ai_prompt = ai_files.build_prompt(cfg, db, cat, store, t, test_id, steps) if sc else ""
         setters = ai_review.setters(db, t, test_id)
@@ -241,8 +257,29 @@ def register(app: Flask, cfg: Config, db: dbmod.Database, cat: catmod.Catalog, s
             s["by_ai"] = setters.get(s["n"], "").startswith(ai_review.AI_PREFIX)
         return render_template("wstg_page.html", tab="index", test=test, scenario=sc, steps=steps,
                                status=st_value, applicable=t.type in test.target_types,
-                               findings=findings, ai_prompt=ai_prompt,
+                               findings=findings, ai_prompt=ai_prompt, review=review,
                                ai=ai_review.latest(db, t, test_id) if sc else None)
+
+    @app.post("/t/<name>/wstg/<test_id>/no-need")
+    @admin_required
+    def wstg_no_need(name: str, test_id: str):
+        t = load_target(name)
+        if test_id not in cat.tests or cat.tests[test_id].merged_into:
+            abort(404)
+        value = bool(request.form.get("no_need"))
+        tmod.set_no_need(db, t, test_id, value, g.user["username"])
+        flash(f"{test_id} marked \"no need\"." if value else f"{test_id}: \"no need\" cleared.")
+        return redirect(url_for("wstg_page", name=t.name, test_id=test_id))
+
+    @app.post("/t/<name>/wstg/<test_id>/tester-review")
+    @admin_required
+    def wstg_tester_review(name: str, test_id: str):
+        t = load_target(name)
+        if test_id not in cat.tests or cat.tests[test_id].merged_into:
+            abort(404)
+        tmod.set_tester_review(db, t, test_id, request.form.get("review", ""), g.user["username"])
+        flash(f"{test_id}: tester review saved.")
+        return redirect(url_for("wstg_page", name=t.name, test_id=test_id) + "#tester-review")
 
     @app.post("/t/<name>/wstg/<test_id>/ai-review")
     @admin_required

@@ -3,7 +3,7 @@
 {% block title %}{{ test.id }} · {{ target.name }}{% endblock %}
 {% block content %}
 <div class="wstg-head">
-  <h2>{{ test.id }} {{ test.title }} <span class="status s-{{ status if status != '-' else 'none' }}">{{ status }}</span></h2>
+  <h2>{{ test.id }} {{ test.title }} <span class="status s-{{ status | statusclass }}">{{ status }}</span></h2>
   <span class="sp"></span>
   <a href="{{ test.owasp_url }}" target="_blank" rel="noopener noreferrer">OWASP page</a>
   <button type="button" data-copy="#ai-prompt" {{ 'disabled' if not scenario }}
@@ -13,6 +13,18 @@
     <input type="hidden" name="csrf" value="{{ csrf }}">
     <button title="Saves the prompt to the evidence folder (_ai/prompts) for an AI agent">Save AI prompt</button></form>
   {% endif %}
+  {% if can_write %}
+  <form method="post" class="inline" action="{{ url_for('wstg_no_need', name=target.name, test_id=test.id) }}">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    {% if review.no_need %}
+    <button title="Clears the \"no need\" mark so the computed status is shown again.">Unmark "no need"</button>
+    {% else %}
+    <input type="hidden" name="no_need" value="1">
+    <button title="Mark this test not applicable to this target (for example an API test when that technology is not used). The status becomes &quot;no need&quot;; step verdicts are kept."
+      data-confirm="Mark {{ test.id }} as &quot;no need&quot; for {{ target.name }}? Its status will show &quot;no need&quot;.">Mark "no need"</button>
+    {% endif %}
+  </form>
+  {% endif %}
   {% if can_write and scenario %}
   <form method="post" class="inline" action="{{ url_for('wstg_reset', name=target.name, test_id=test.id) }}">
     <input type="hidden" name="csrf" value="{{ csrf }}">
@@ -20,7 +32,21 @@
       data-confirm="Reset {{ test.id }}? Every step verdict and the imported AI reviews of this test are removed. Evidence and findings are kept.">Reset test</button></form>
   {% endif %}
 </div>
+{% if review.no_need %}<div class="warnbox">Marked <b>"no need"</b> for {{ target.name }}{% if review.updated_by %} by {{ review.updated_by }} on {{ review.updated_at }}{% endif %}. The status is overridden; step verdicts, if any, are kept.</div>{% endif %}
 {% if not applicable %}<div class="warnbox">{{ test.id }} runs on {{ test.target_types | join(', ') }} targets, not on {{ target.type }} targets.</div>{% endif %}
+
+<section class="ai-box" id="tester-review">
+  <div class="step-head"><h3>Tester review</h3>
+    {% if review.review and review.updated_by %}<span class="sp"></span><span class="muted small">updated {{ review.updated_at }} by {{ review.updated_by }}</span>{% endif %}</div>
+  {% if can_write %}
+  <form method="post" class="stack" action="{{ url_for('wstg_tester_review', name=target.name, test_id=test.id) }}">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <textarea name="review" rows="5" placeholder="Optional. The tester's own notes and conclusion for this test (kept alongside the AI review).">{{ review.review }}</textarea>
+    <div><button>Save tester review</button></div>
+  </form>
+  {% elif review.review %}<p class="pre-wrap">{{ review.review }}</p>
+  {% else %}<p class="muted">No tester review.</p>{% endif %}
+</section>
 
 {% if not scenario %}
 <p>{{ test.summary }}</p>
@@ -47,7 +73,7 @@
 <section class="ai-box" id="ai-review">
   <div class="step-head"><h3>AI review</h3></div>
   {% if ai %}
-  <p>Imported {{ ai.created_at }} by {{ ai.created_by }} · overall <span class="status s-{{ ai.overall if ai.overall != '-' else 'none' }}">{{ ai.overall }}</span></p>
+  <p>Imported {{ ai.created_at }} by {{ ai.created_by }} · overall <span class="status s-{{ ai.overall | statusclass }}">{{ ai.overall }}</span></p>
   {% if ai.summary %}<p>{{ ai.summary }}</p>{% endif %}
   {% if ai.findings %}
   <h4>Findings proposed by the AI</h4>

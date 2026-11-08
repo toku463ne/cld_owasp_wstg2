@@ -5,7 +5,7 @@
   <a href="{{ url_for('target_settings', name=target.name) }}">Edit the scope</a></div>
 {% endif %}
 <p class="muted">
-  {% for s, n in counts.items() %}<span class="status s-{{ s if s != '-' else 'none' }}">{{ s }}</span> {{ n }}{{ ' · ' if not loop.last }}{% endfor %}
+  {% for s, n in counts.items() %}<span class="status s-{{ s | statusclass }}">{{ s }}</span> {{ n }}{{ ' · ' if not loop.last }}{% endfor %}
   {% if target.type == 'fqdn' %} · Domain-only tests are on the parent domain target.{% endif %}
   <br>Evidence: <span class="status s-pass">complete</span> {{ ev_counts.complete }} ·
   <span class="status s-started">partial</span> {{ ev_counts.partial }} ·
@@ -49,7 +49,7 @@
         title="{{ 'Missing: ' ~ (e.missing | join(', ')) if e.missing else 'All evidence collected' }}">{{ e.have }}/{{ e.total }}</span>
       {% elif e %}<span class="muted small">no evidence</span>{% endif %}
       {% if r.prompt %}<br><span class="muted small" title="Saved in {{ ai_folder }}/prompts">prompt saved</span>{% endif %}</td>
-    <td class="nowrap">{% if r.status %}<span class="status s-{{ r.status if r.status != '-' else 'none' }}">{{ r.status }}</span>{% else %}<span class="muted">merged into {{ r.test.merged_into }}</span>{% endif %}</td>
+    <td class="nowrap">{% if r.status %}<span class="status s-{{ r.status | statusclass }}">{{ r.status }}</span>{% else %}<span class="muted">merged into {{ r.test.merged_into }}</span>{% endif %}</td>
   </tr>
   {% endfor %}
 </table>
