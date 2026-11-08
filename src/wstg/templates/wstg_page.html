@@ -124,7 +124,7 @@
   {% if a %}<div class="ai-note"><b>AI: {{ a.proposed }}</b> · {{ a.outcome }}{% if a.note %} ({{ a.note }}){% endif %}{% if a.reason %}<br>{{ a.reason }}{% endif %}</div>{% endif %}
   {% if s.step.load_note %}<div class="note warn">{{ s.step.load_note | ticks }}</div>{% endif %}
   {% if s.command %}
-  <div class="cmd"><pre id="cmd-{{ s.n }}">{{ s.command }}</pre><button type="button" data-copy="#cmd-{{ s.n }}">Copy</button></div>
+  <div class="cmd"><pre id="cmd-{{ s.n }}">{{ s.command | cmdtext }}</pre><button type="button" data-copy="#cmd-{{ s.n }}">Copy</button></div>
   {% endif %}
   {% if s.auto %}
   {% if s.auto.status == 'missing' %}<p class="muted small">Runs automatically once its evidence is collected ({{ s.auto.note }}).</p>

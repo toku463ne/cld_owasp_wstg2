@@ -249,3 +249,13 @@ def test_optext_escapes_html_payloads():
     out = str(optext("send `<h1>x</h1>` and see &lt;h1&gt;"))
     assert "&lt;h1&gt;x&lt;/h1&gt;" in out      # payload shown as text, not raw tags
     assert "<h1>" not in out
+
+
+def test_cmdtext_breaks_at_top_level_semicolons_only():
+    from wstg.web_targets import cmdtext
+    out = str(cmdtext("echo a; grep x f | sort; echo b"))
+    assert out.count("\n") == 2                      # two statement breaks
+    assert "echo a;\ngrep x f | sort;\necho b" in out
+    # a ; inside quotes is not a statement separator
+    safe = str(cmdtext("sed -E 's/;.*//' f; echo done"))
+    assert "s/;.*//" in safe and safe.count("\n") == 1

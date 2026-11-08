@@ -32,6 +32,25 @@ def ticks(text: str) -> Markup:
     return Markup(_TICKS_RE.sub(lambda m: f"<code>{m.group(1)}</code>", str(escape(text or ""))))
 
 
+def cmdtext(command: str) -> Markup:
+    """Show a shell command across lines: break after each top-level `;` (a
+    statement separator), leaving `;` inside quotes untouched. A newline is a
+    statement separator in bash too, so the command still runs if copied."""
+    out, quote = [], None
+    for ch in command or "":
+        out.append(ch)
+        if quote:
+            if ch == quote:
+                quote = None
+        elif ch in "'\"":
+            quote = ch
+        elif ch == ";":
+            out.append("\n")
+    text = re.sub(r";[ \t]*\n[ \t]*", ";\n", "".join(out))
+    text = re.sub(r"\n{2,}", "\n", text).strip()
+    return Markup(str(escape(text)))
+
+
 def optext(text: str) -> Markup:
     """Render a step operation: like `ticks`, but also put each embedded command
     (a `code` span with a space) and each inline numbered sub-step on its own
@@ -58,6 +77,7 @@ def status_class(status: str) -> str:
 def register(app: Flask, cfg: Config, db: dbmod.Database, cat: catmod.Catalog, store: evmod.Store) -> None:
     app.jinja_env.filters["ticks"] = ticks
     app.jinja_env.filters["optext"] = optext
+    app.jinja_env.filters["cmdtext"] = cmdtext
     app.jinja_env.filters["statusclass"] = status_class
 
     def load_target(name: str) -> tmod.Target:
