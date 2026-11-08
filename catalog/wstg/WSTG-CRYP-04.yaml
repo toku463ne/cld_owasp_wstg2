@@ -25,18 +25,23 @@ steps:
     evidence: [http-root-https, har-browse]
     command: >-
       grep -i '^set-cookie' {ev:http-root-https}/stdout.txt;
-      jq -r '.log.entries[].response.headers[]? | select(.name|ascii_downcase=="set-cookie") | .value'
-      {ev:har-browse}/items/*.har | sort -u;
+      wstg-har cookies {ev:har-browse}/items/*.har;
       v='VALUE'; printf '%s' "$v" | tr '_-' '/+' | base64 -d 2>/dev/null | xxd | head
+    operation: >-
+      The anonymous Set-Cookie values are shown directly; `wstg-har cookies` lists the
+      logged-in cookie names only (no values). Take each candidate value from the HAR and
+      decode it with the `v='VALUE'` line (or `xxd -r -p` for hex). If it decodes to readable
+      data, it is only encoding, not encryption.
   - summary: Check tokens and session identifiers for predictability
     auto_run: true
     evidence: [session-token-samples, har-browse]
     command: >-
       grep -i '^set-cookie' {ev:session-token-samples}/stdout.txt | sed -E 's/^[^:]*: *//; s/;.*//' | sort
     operation: >-
-      The command lists the cookies of ten anonymous responses. For logged-in tokens, run
-      `jq -r '.log.entries[].response.headers[]? | select(.name|ascii_downcase=="set-cookie") | .value' HAR | grep -oiE '(sessionid|token|csrf)=[^;]+' | sort`
-      on the HAR files.
+      The command lists the cookies of ten anonymous responses (predictability is judged from
+      these). For logged-in tokens, list their names with `wstg-har cookies {ev:har-browse}/items/*.har`;
+      judging their randomness needs several samples, so collect more captures or anonymous
+      samples rather than reading one logged-in value.
     ai_task: >-
       Compare the values of each cookie name across the ten anonymous responses in the command
       output: length, character set, parts shared by all values, parts that count up or

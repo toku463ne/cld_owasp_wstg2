@@ -24,7 +24,14 @@ steps:
     command: >-
       grep -i '^set-cookie' {ev:http-root-https}/stdout.txt;
       grep -oiE '<input[^>]+type="?hidden[^>]*>' {ev:http-root-https}/body.html;
-      jq -r '.log.entries[] | .request.url, (.request.cookies[]? | "\(.name)=\(.value)")' {ev:har-browse}/items/*.har | sort -u
+      wstg-har cookies {ev:har-browse}/items/*.har;
+      wstg-har urls {ev:har-browse}/items/*.har
+    operation: >-
+      Anonymous cookies and hidden fields are shown with their values (they are not
+      credentials); the HAR part lists the logged-in cookie names and request parameter
+      names only (no values). Pick the candidate names here; their values are decoded and
+      measured in the next step. A long Base64/hex value that changes on every login is a
+      good candidate.
   - summary: Decode each candidate and check whether its length is a multiple of the block size
     auto_run: true
     evidence: [http-root-https, session-token-samples]

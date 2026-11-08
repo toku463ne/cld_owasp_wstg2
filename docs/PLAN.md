@@ -132,6 +132,8 @@ Last updated: 2026-11-08
 - Launch model (owner chose CLI): the browser window opens on the host that runs the command, so the tester works on the Kali desktop (or VNC). A web-UI button was declined to avoid launching a GUI browser from the loopback web service.
 - Dependency: `playwright>=1.49` added; `setup-kali.sh` installs the browser (`playwright install --with-deps chromium`, or just `chromium` under `--no-packages`). Playwright is imported lazily inside the driver, so the rest of the app and the tests run without it.
 - `tests/test_capture.py` uses a fake browser driver (no real Chromium): stores HAR + storage state as `har-browse`, flags out-of-scope hosts, and refuses a domain target, an unauthorized scope, an out-of-scope start URL, and an empty recording. Full suite 259 passed.
+- HAR acquisition unified on `wstg capture`: the shared `har-browse` evidence description (catalog/evidence/core.yaml) now prefers `wstg capture {fqdn} --role ROLE`, with the F12 / "Save all as HAR" flow as a fallback, so every HAR-using test (SESS, CRYP, INFO...) gets the new capture method in one place. ATHN-01 step 3 records with it; SESS-02 step 3 points at it.
+- Value leaks removed while integrating `wstg-har`: CRYP-02 step 1 and CRYP-04 steps 1-2 printed logged-in cookie/URL values from the HAR with jq; they now enumerate the candidate names value-free with `wstg-har cookies`/`urls` and the tester decodes the specific values by hand. CRYP-03 was already switched in part 1. The CRYP-02 prompt test still confirms no HAR value reaches the AI prompt.
 - Deferred/next: scripted login automation (declined for now); an optional web-UI trigger if the operation model changes.
 
 ### M9 part 1 delivered: HAR analysis (replacing manual Burp-history checks)

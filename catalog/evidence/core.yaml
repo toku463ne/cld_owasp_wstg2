@@ -125,14 +125,17 @@ evidence:
     target_type: fqdn
     kind: manual
     description: >-
-      HAR files exported from the browser's developer tools while walking through the
-      application: one file anonymous, one file per logged-in role. Press F12, open
-      Network, tick "Preserve log" (Firefox: "Persist Logs"), press Ctrl+Shift+R, then
-      open the login page, log in, use every main screen and function once (profile,
-      search, forms that send personal data), and log out. Right-click the request list,
-      choose "Save all as HAR (with sensitive data)" (older browsers: "Save all as HAR"),
-      and upload the file with the caption "anonymous" or "logged in as ROLE". HAR files
-      contain cookies and tokens; keep them only here.
+      HAR files of the application's main flows: one anonymous, one per logged-in role.
+      Preferred: run `wstg capture {fqdn} --role ROLE` (ROLE = anon, user, admin...) on the
+      Kali host; in the browser window that opens, walk every main screen and function once
+      (log in, profile, search, forms that send personal data, log out) and press Enter in
+      the terminal to save. The HAR and the storage state are stored here automatically; run
+      it once per role. Fallback without the capture tool: in the browser press F12, open
+      Network, tick "Preserve log" (Firefox: "Persist Logs"), press Ctrl+Shift+R, walk the
+      application, then right-click the request list, choose "Save all as HAR (with sensitive
+      data)" (older browsers: "Save all as HAR"), and upload the file with the caption
+      "anonymous" or "logged in as ROLE". HAR files contain cookies and tokens; keep them
+      only here (they never go into a finding or an AI chat).
 
   - id: http-root-https
     title: HTTPS response of /

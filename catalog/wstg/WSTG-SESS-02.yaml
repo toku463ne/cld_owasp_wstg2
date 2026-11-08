@@ -29,7 +29,9 @@ steps:
   - summary: Review the authenticated session cookie attributes (manual)
     evidence: [cookie-attr-tests]
     operation: >-
-      Using the HAR check above (step 2) and, if needed, a direct login
+      Step 2 already extracts each cookie's attributes from the authenticated HAR (captured
+      with `wstg capture`, see the har-browse evidence); this step is the human judgement over
+      that output. Using it and, if needed, a direct login
       (`curl -si -c cookies.txt --data '<login body>' {base_url}/<login>`), confirm for each
       session or authentication cookie: Secure, HttpOnly, SameSite, Domain, and Path, and
       any __Host-/__Secure- prefix. Record it in cookie-attr-tests, marking which cookies are
