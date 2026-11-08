@@ -29,6 +29,7 @@ steps:
   - summary: Find archived and script-referenced paths missing from both
     evidence: [wayback-urls, site-assets]
     command: >-
+      grep -qi '^[[:space:]]*<' {ev:wayback-urls}/wayback.txt && echo "wayback-urls UNAVAILABLE: the Wayback Machine returned an error page (HTTP 503 is common); recollect - archived paths may be missing this run";
       { grep -F '://{fqdn}' {ev:wayback-urls}/wayback.txt | sed 's/[?#].*//';
       grep -rhoE '"/[A-Za-z0-9_./-]{2,}"' {ev:site-assets}/site | tr -d '"' | sed 's#^#{base_url}#'; }
       | sort -u | comm -23 - <(sort -u walk.txt crawl.txt) | tee hidden.txt | wc -l

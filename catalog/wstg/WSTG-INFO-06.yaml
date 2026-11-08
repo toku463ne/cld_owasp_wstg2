@@ -37,6 +37,7 @@ steps:
     auto_run: true
     evidence: [katana-crawl, wayback-urls]
     command: >-
+      grep -qi '^[[:space:]]*<' {ev:wayback-urls}/wayback.txt && echo "wayback-urls UNAVAILABLE: the Wayback Machine returned an error page (HTTP 503 is common); recollect - archived parameters may be missing this run";
       { cat {ev:katana-crawl}/katana.txt; grep -F '://{fqdn}' {ev:wayback-urls}/wayback.txt; } | grep -F '?'
       | sed -E 's/^[^?]*\?//' | sed 's/&/\n/g' | cut -d= -f1 | sort | uniq -c | sort -rn
   - summary: Find forms, hidden fields, and file uploads on the collected pages

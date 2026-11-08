@@ -19,7 +19,8 @@ steps:
   - summary: "Domain: look up the CNAME of every known subdomain"
     evidence: [ct-crtsh, subdomains-subfinder, subdomain-cnames]
     command: >-
-      { jq -r '.[].name_value' {ev:ct-crtsh}/crtsh.json; cat {ev:subdomains-subfinder}/subfinder.txt; }
+      grep -q '^\[' {ev:ct-crtsh}/crtsh.json || echo "ct-crtsh UNAVAILABLE: crt.sh returned no JSON (HTTP 502/503 is common); using subfinder only - recollect crt.sh";
+      { grep -q '^\[' {ev:ct-crtsh}/crtsh.json && jq -r '.[].name_value' {ev:ct-crtsh}/crtsh.json; cat {ev:subdomains-subfinder}/subfinder.txt; }
       | tr 'A-Z' 'a-z' | sed 's/^\*\.//' | sort -u
       | while read -r h; do c=$(dig +short CNAME "$h" | head -1); n="";
       [ -n "$c" ] && [ -z "$(dig +short A "$c")$(dig +short AAAA "$c")" ] && n=" [no address]";

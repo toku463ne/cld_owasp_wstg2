@@ -4,8 +4,12 @@ overview: >-
   same address, non-standard ports, and base paths, including forgotten staging,
   legacy, or administrative instances.
 pass: >-
-  All sources were collected successfully, and every application found is known to the
-  system owner and either in scope or explicitly out of scope.
+  Every application reachable on the target's hosts, ports, and virtual hosts is known to
+  the system owner and is in scope or explicitly out of scope. A passive OSINT source that
+  was unreachable (a CT log or web archive that returned 5xx or an error page) is recorded
+  and recollected; on its own it is noted, not a pass or a fail. For an FQDN target the
+  verdict rests on the server's own open ports and virtual hosts (steps 4 to 6) and the
+  external scan (step 7); the subdomain list belongs to the parent domain.
 fail: >-
   An unexpected application (old or staging environment, another department's tool,
   administrative console) is reachable on the target's hosts, ports, or virtual hosts.
@@ -14,13 +18,15 @@ notes:
   - "Domain targets: only passive sources (CT logs, passive DNS, archives). FQDN targets: ports and virtual hosts of the server itself."
   - If every port shows filtered or no response, the scan did not reach the target; do not judge from it.
   - nmap and ffuf ignore http_proxy/https_proxy. Behind a proxy, use the curl loop in step 4 for web ports, and add -x to ffuf.
+  - crt.sh and the Wayback Machine often return HTTP 502/503. A step that prints "... UNAVAILABLE" means the source was down, not that there is nothing there; mark that step '-' or 'no need', recollect it later, and judge the test from the sources that did run.
 finding_kinds: [non-public-service-exposed, internal-component-exposed]
 steps:
   - summary: "Domain: list subdomains from Certificate Transparency and passive sources"
     auto_run: true
     evidence: [ct-crtsh, subdomains-subfinder, dns-records]
     command: >-
-      { jq -r '.[].name_value' {ev:ct-crtsh}/crtsh.json; cat {ev:subdomains-subfinder}/subfinder.txt; }
+      grep -q '^\[' {ev:ct-crtsh}/crtsh.json || echo "ct-crtsh UNAVAILABLE: crt.sh returned no JSON (HTTP 502/503 is common); using subfinder only this run - recollect crt.sh, do not read this as 'no subdomains'";
+      { grep -q '^\[' {ev:ct-crtsh}/crtsh.json && jq -r '.[].name_value' {ev:ct-crtsh}/crtsh.json; cat {ev:subdomains-subfinder}/subfinder.txt; }
       | tr 'A-Z' 'a-z' | sed 's/^\*\.//' | sort -u | tee hosts-all.txt
   - summary: "Domain: resolve each name and group the names by address"
     command: >-
@@ -29,7 +35,9 @@ steps:
   - summary: "Domain: find hosts and paths only the web archive still knows"
     auto_run: true
     evidence: [wayback-urls]
-    command: sed -E 's#^[a-z]+://([^/:]+).*#\1#' {ev:wayback-urls}/wayback.txt | sort | uniq -c | sort -rn | head -50
+    command: >-
+      grep -qi '^[[:space:]]*<' {ev:wayback-urls}/wayback.txt && echo "wayback-urls UNAVAILABLE: the Wayback Machine returned an error page, not a URL list (HTTP 503 is common); recollect";
+      grep -qiE '^https?://' {ev:wayback-urls}/wayback.txt && sed -E 's#^[a-z]+://([^/:]+).*#\1#' {ev:wayback-urls}/wayback.txt | sort | uniq -c | sort -rn | head -50
   - summary: "FQDN: find open web and administrative ports on the server"
     evidence: [ports-web-common, dns-fqdn]
     command: >-
