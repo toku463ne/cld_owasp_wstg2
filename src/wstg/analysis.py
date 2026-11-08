@@ -20,6 +20,7 @@ import hashlib
 import json
 import os
 import re
+import sys
 import shlex
 import shutil
 import subprocess
@@ -39,6 +40,7 @@ LOCAL_TOOLS = {
     "comm", "perl", "find", "printf", "echo", "tee", "base64", "xxd", "cd", "true", "test",
     "openssl",   # x509 only, see below
     "gitleaks",  # detect --no-git / dir only (scans files), see below
+    "wstg-har",  # this project's HAR analyser (reads *.har, prints value-free facts)
 }
 SHELL_WORDS = {"{", "}", "!"}
 PUNCT = set("|&;()<>")
@@ -123,8 +125,11 @@ def run(cache_dir: Path, raw_command: str, rendered: str, ev_paths: dict[str, st
             pass
     cache_dir.mkdir(parents=True, exist_ok=True)
     work = Path(tempfile.mkdtemp(prefix=".run-", dir=cache_dir))
-    env = {"PATH": os.environ.get("PATH", "/usr/local/bin:/usr/bin:/bin"), "LANG": "C.UTF-8",
-           "HOME": str(work)}
+    # Put the running interpreter's bin dir on PATH so this project's console scripts
+    # (wstg-har) are found wherever the app is installed (venv, uv, system).
+    path = os.pathsep.join([str(Path(sys.executable).parent),
+                            os.environ.get("PATH", "/usr/local/bin:/usr/bin:/bin")])
+    env = {"PATH": path, "LANG": "C.UTF-8", "HOME": str(work)}
     status, note, code = "ok", "", None
     try:
         with open(work / ".out", "wb") as out:

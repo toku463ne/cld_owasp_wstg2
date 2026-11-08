@@ -22,18 +22,22 @@ steps:
       my @miss; for my $a ("Secure","HttpOnly","SameSite"){ push @miss,$a unless /(?:;|\s)\Q$a\E\b/i }
       printf "%s: %s\n", $n, (@miss ? "MISSING ".join(",",@miss) : "Secure,HttpOnly,SameSite present")'
       {ev:session-token-samples}/stdout.txt | sort -u | head -40 || echo "no Set-Cookie header in the samples"
-  - summary: Check the authenticated session cookie attributes (manual)
+  - summary: Check the authenticated cookie attributes from the HAR
+    auto_run: true
+    evidence: [har-browse]
+    command: wstg-har cookies {ev:har-browse}/items/*.har
+  - summary: Review the authenticated session cookie attributes (manual)
     evidence: [cookie-attr-tests]
     operation: >-
-      Capture the login response Set-Cookie headers (from the HAR, or
-      `curl -si -c cookies.txt --data '<login body>' {base_url}/<login>`) and, for each
-      session or authentication cookie, check Secure, HttpOnly, SameSite, Domain, and
-      Path, and any __Host-/__Secure- prefix. Record it in cookie-attr-tests, marking which
-      cookies are session/auth versus CSRF or tracking.
+      Using the HAR check above (step 2) and, if needed, a direct login
+      (`curl -si -c cookies.txt --data '<login body>' {base_url}/<login>`), confirm for each
+      session or authentication cookie: Secure, HttpOnly, SameSite, Domain, and Path, and
+      any __Host-/__Secure- prefix. Record it in cookie-attr-tests, marking which cookies are
+      session/auth versus CSRF or tracking.
   - summary: Judge the cookie attributes
     evidence: [cookie-attr-tests, session-token-samples]
     ai_task: >-
-      From steps 1 and 2 decide, per session or authentication cookie, whether an attribute
+      From steps 1 to 3 decide, per session or authentication cookie, whether an attribute
       is weak. Verdict: fail when such a cookie lacks Secure or HttpOnly, uses SameSite=None
       without need, or is scoped too broadly; pass when all session/auth cookies set Secure,
       HttpOnly, a Lax/Strict SameSite, and a tight scope; "-" when no cookie evidence

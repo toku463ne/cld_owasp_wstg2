@@ -17,7 +17,7 @@ Last updated: 2026-11-08
 | M6 | Findings | **Done** | List, create from WSTG page, detail/edit, status and dates, CVSS 3.1 |
 | M7 | AI prompt | **Done** | Criteria, verdicts, commands, evidence excerpts, findings |
 | M8 | Deployment | **Done** (checked on Kali) | `scripts/setup-kali.sh`, nginx :8083, user services, backup, test tools from `catalog/tools.yaml` |
-| M9 | More automation | Not started | |
+| M9 | More automation | **In progress** (part 1: HAR analysis) | `src/wstg/har.py` (`wstg-har` console script), wired into SESS-02/04/05, ATHN-01, CRYP-03 |
 
 ### M0 delivered
 - uv project (`src/wstg/`), Python 3.12, Flask + waitress, pytest.
@@ -126,6 +126,14 @@ Last updated: 2026-11-08
 - Tests in `tests/test_web_targets.py` (override to any status on page and index, invalid refused, clear back to auto, tester review persistence and guest read-only, row removal, admin-only, merged/unknown rejected) and `test_header_values_...`; full suite 237 passed.
 - Note: this extends the VISION status set (`-`, started, pass, fail) with `no need` and lets the tester override the computed status, at the owner's explicit request.
 
+### M9 part 1 delivered: HAR analysis (replacing manual Burp-history checks)
+- `src/wstg/har.py`, exposed as the console script `wstg-har` (`[project.scripts]` in `pyproject.toml`): a value-free analyser of the imported `har-browse` HAR files. Four views: `cookies` (Set-Cookie attributes per cookie name; a flag counts present only if on every occurrence, so a cookie sometimes set without Secure is flagged MISSING; cross-file attribute changes noted), `urls` (method/scheme/host/path + query parameter names, flagging CREDENTIAL-IN-URL / TOKEN-IN-URL), `cleartext` (plain-HTTP requests carrying a cookie or a credential/token field), `forms` (state-changing requests and whether they carry an anti-CSRF token, by field name or header). No dependency added (stdlib only); deliberately dependency-free rather than Playwright (deferred, see below).
+- Prints **no values** — only names, flags, methods, paths, and parameter names — so the rule that keeps HAR values out of the AI prompt holds here too, and auto-run steps that call it stay out of the prompt (their command names a `.har` file). `tests/test_har.py` asserts, across every view, that made-up secret values never appear in the output.
+- Allowed in auto-run: `wstg-har` added to `analysis.LOCAL_TOOLS`; `analysis.run` now prepends the running interpreter's bin dir (`sys.executable`'s parent) to `PATH` so the console script is found wherever the app is installed (venv, uv, system).
+- Wired into scenarios as auto-run steps that read `{ev:har-browse}/items/*.har`: SESS-02 (`cookies`, authenticated cookie attributes), SESS-04 (`urls`, token in URL), SESS-05 (`forms`, state-changing requests without a CSRF token), ATHN-01 (`cleartext` + `urls` for credentials over HTTP / in a URL), CRYP-03 (`cleartext` replaces a jq step that printed full URLs — now value-free). `ai_task` step references renumbered where a step was inserted.
+- Full suite 252 passed. Not run against any host; the HAR views are exercised on synthetic HAR fixtures only.
+- Deferred (owner decision pending): headless-browser HAR recording with Playwright + Chromium (adds a dependency and a browser); until then HAR files are captured by the tester in the browser and imported as `har-browse` manual evidence.
+
 ### M8 (pulled forward) delivered
 - `scripts/setup-kali.sh`: apt base packages, uv, data dirs (`/srv/wstg2/{evidence,db}`), config file and secret key generated once, `uv sync`, `check-config`, `migrate`, first admin, systemd user service `wstg2-web` (restarted on every run, lingering), nginx site rendered from `deploy/nginx/wstg2.conf.template` (port and allow list from the config), `nginx -t` with rollback, smoke test. Options `--no-packages`, `--no-nginx`, `--no-systemd`, `--dry-run`. Rerun after `git pull` to update a Kali host.
 - New config key `WSTG_WEB_PORT` (default 8083), read by the setup script only.
@@ -165,7 +173,8 @@ Last updated: 2026-11-08
 - Check on Kali: the new light probes against a lab target — `error-probes` (does `%c0%ae%c0%ae/` reach the server cleanly), `cors-probe` (CORS headers on `/` and `/api`), `graphql-introspection` (endpoints and the introspection response), `host-header-probe` (reflection) — and the many manual injection/logic commands.
 - Check on Kali: the ATHN `login-http` and `alt-auth-endpoints` curl `--next` chains against a lab target, and the manual-step commands (force browsing, cache-header loop, enumeration curl).
 - Check on Kali: the CONF evidence against a lab target (content-ffuf and backup-ffuf run time, Nikto JSON layout read by `jq '.. | objects | select(has("msg"))'`).
-- M9: headless-browser HAR recording (needs a decision on adding Playwright and a browser), HAR analysis (cookies, headers, parameters) to replace manual Burp checks.
+- M9 part 1 done: HAR analysis (`wstg-har`, cookies/urls/cleartext/forms) replaces the manual Burp-history checks on SESS-02/04/05, ATHN-01, CRYP-03. Check on Kali: the `wstg-har` console script is on PATH after `uv sync`, and the views against a real browser-exported HAR of a lab target.
+- M9 part 2 (deferred, owner decision): headless-browser HAR recording (adding Playwright and a browser) so the HAR is captured automatically instead of by hand.
 - Backup frequency is the owner's decision; `--backup-timer` installs a daily one only when asked. Evidence is copied with rsync (versions never change).
 - Login rate limiting is not implemented yet (consider in M8, or rely on nginx `limit_req`).
 - Session cookie is not `Secure` while the tool runs on plain HTTP (8083). Turn it on when moving to TLS on 443.

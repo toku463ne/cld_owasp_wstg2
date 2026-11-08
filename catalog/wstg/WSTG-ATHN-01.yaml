@@ -34,13 +34,19 @@ steps:
       as HAR into the har-browse evidence. The protocol must be https, the method should
       be POST, and no credential field may appear in the URL query. Repeat for password
       change and any re-authentication screen.
+  - summary: Check the HAR for credentials sent over plain HTTP or in a URL
+    auto_run: true
+    evidence: [har-browse]
+    command: >-
+      wstg-har cleartext {ev:har-browse}/items/*.har;
+      wstg-har urls {ev:har-browse}/items/*.har | grep -E 'CREDENTIAL-IN-URL|TOKEN-IN-URL' || true
   - summary: Judge whether credentials are always encrypted in transit
     evidence: [login-http, auth-pages, har-browse]
     ai_task: >-
-      From steps 1 to 3 decide whether credentials are ever exposed: a login or credential
+      From steps 1 to 4 decide whether credentials are ever exposed: a login or credential
       page served over plain HTTP without a redirect to HTTPS (step 1, status 200 over
       http), a login form whose action is an http:// URL (step 2), or a login submission in
       the HAR whose protocol is http or that carries a credential field name in the URL
-      query (step 3). Verdict: fail when any of these holds; pass when the login page, the
+      query (steps 3 and 4). Verdict: fail when any of these holds; pass when the login page, the
       form action, and the submission are all HTTPS and no credential is in a URL; "-" when
       the login-http and auth-pages evidence and the HAR are all missing.

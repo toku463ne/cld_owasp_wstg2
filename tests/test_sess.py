@@ -50,8 +50,9 @@ def test_sess04_finds_token_in_url_and_error_body(admin_client, store, site):
     s1 = p.split("Step 1")[1].split("Step 2")[0]
     assert "jsessionid=&lt;value&gt;" in s1 or "jsessionid=<value>" in s1
     assert "TOPSECRET" not in s1
-    s2 = p.split("Step 2")[1].split("Step 3")[0]
-    assert "PHPSESSID" in s2
+    # Step 2 is the HAR urls check (no HAR evidence here); the 404-body check is now Step 3.
+    s3 = p.split("Step 3")[1].split("Step 4")[0]
+    assert "PHPSESSID" in s3
 
 
 @pytest.mark.parametrize("tid", [f"WSTG-SESS-{n:02d}" for n in range(1, 10)])

@@ -23,6 +23,10 @@ steps:
       grep -rhoiE 'name=["'"'"']?(csrf|xsrf|_token|authenticity_token|__requestverificationtoken|anticsrf|_csrf)[^ "'"'"'>]*'
       {ev:katana-crawl}/responses {ev:auth-pages}/pages 2>/dev/null | sort | uniq -c | sort -rn | head
       || echo "no anti-CSRF token field seen in the collected forms (confirm per request)"
+  - summary: List state-changing requests in the HAR and whether they carry a CSRF token
+    auto_run: true
+    evidence: [har-browse]
+    command: wstg-har forms {ev:har-browse}/items/*.har
   - summary: Replay state-changing requests with the token removed or altered (manual)
     evidence: [csrf-tests]
     operation: >-
@@ -40,7 +44,7 @@ steps:
   - summary: Judge CSRF protection
     evidence: [csrf-tests]
     ai_task: >-
-      From steps 2 and 3 decide whether state-changing requests are protected. Verdict: fail
+      From steps 3 and 4 decide whether state-changing requests are protected. Verdict: fail
       when a request has no token or the token is not verified (removed/fixed/cross-user
       still works), state changes on GET, or there is no SameSite or Origin/Referer
       protection and a cross-site PoC succeeds; pass when a verified token or SameSite plus

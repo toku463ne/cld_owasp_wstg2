@@ -23,12 +23,10 @@ finding_kinds: [cleartext-sensitive-data, mixed-content, cookie-without-secure, 
 steps:
   - summary: Capture the main authenticated flows as a HAR
     evidence: [har-browse]
-  - summary: Find requests to http:// (not https://) that carry credentials, tokens, or personal data
+  - summary: Find requests to http:// (not https://) that carry credentials, tokens, or cookies
     auto_run: true
     evidence: [har-browse]
-    command: >-
-      jq -r '.log.entries[] | select(.request.url | startswith("http://"))
-      | [.request.method, .request.url] | @tsv' {ev:har-browse}/items/*.har | sort -u
+    command: wstg-har cleartext {ev:har-browse}/items/*.har
   - summary: Check that forms sending sensitive data post to an HTTPS action
     auto_run: true
     evidence: [http-root-https, har-browse]

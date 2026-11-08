@@ -21,6 +21,10 @@ steps:
       grep -oiE '[?&](sid|sessionid|session_id|phpsessid|jsessionid|aspsessionid|token|auth|access_token|jwt|cfid|cftoken)=[^&"'"'"'<> ]*'
       {ev:katana-crawl}/katana.txt 2>/dev/null | sed -E 's/=.*/=<value>/' | sort -u | head;
       grep -rhoiE '(localStorage|sessionStorage)\.(setItem|getItem)\([^)]*' {ev:site-assets}/site 2>/dev/null | sort -u | head
+  - summary: Check the HAR for the session token carried in a request URL
+    auto_run: true
+    evidence: [har-browse]
+    command: wstg-har urls {ev:har-browse}/items/*.har
   - summary: Check that error pages do not echo the session token
     auto_run: true
     evidence: [http-404]
@@ -38,7 +42,7 @@ steps:
   - summary: Judge session token exposure
     evidence: [session-exposure-tests, katana-crawl]
     ai_task: >-
-      From steps 1 to 3 decide whether the token is exposed outside a cookie. Verdict: fail
+      From steps 1 to 4 decide whether the token is exposed outside a cookie. Verdict: fail
       when it appears in a URL or redirect, in local/session storage, in a Referer to an
       external site, or in an error page or stack trace; pass when it is cookie-only
       everywhere observed; "-" when session-exposure-tests is missing and the crawl shows no
