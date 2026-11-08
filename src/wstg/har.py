@@ -12,7 +12,7 @@ parameter names are shown. So the same rule that keeps HAR values out of the AI 
 holds here, and auto-run steps that call this tool are still excluded from the prompt
 (their command names a `.har` file).
 
-Run as `wstg-har <view> FILE...` where view is cookies | urls | cleartext | forms.
+Run as `wstg-har <view> FILE...` where view is cookies | urls | cleartext | forms | xssi.
 Exit code is always 0 (a WSTG step reads the text output); unreadable files are noted.
 """
 import json
@@ -195,7 +195,82 @@ def view_forms(files: list[Path]) -> None:
         print("(no state-changing request in the HAR)")
 
 
-_VIEWS = {"cookies": view_cookies, "urls": view_urls, "cleartext": view_cleartext, "forms": view_forms}
+def _header(headers: list, name: str) -> str:
+    for h in headers or []:
+        if str(h.get("name", "")).lower() == name:
+            return str(h.get("value", ""))
+    return ""
+
+
+def _body_text(resp: dict) -> str:
+    content = resp.get("content") or {}
+    text = content.get("text") or ""
+    if text and "base64" in str(content.get("encoding") or "").lower():
+        import base64
+        try:
+            text = base64.b64decode(text).decode("utf-8", "replace")
+        except (ValueError, TypeError):
+            return ""
+    return text
+
+
+def _xssi_shape(body: str) -> str:
+    """Classify a response body as a cross-site <script> include would see it,
+    from its leading bytes only (no data values are returned)."""
+    s = body.lstrip()[:64]
+    if not s:
+        return "empty"
+    for guard in (")]}'", "while(1)", "while (1)", "for(;;)", "for (;;)", "&&&START&&&"):
+        if s.startswith(guard):
+            return "guarded (anti-XSSI prefix)"
+    if s[0] == "[":
+        return "array literal (includable)"
+    if re.match(r"[A-Za-z_$][\w$]*\s*\(", s):
+        return "JSONP / function call (includable)"
+    if s[0] == "{":
+        return "object literal (not a bare script statement)"
+    if s[:1] == "<":
+        return "HTML (not script/JSON)"
+    return "other"
+
+
+_INCLUDABLE = ("array literal (includable)", "JSONP / function call (includable)")
+
+
+def view_xssi(files: list[Path]) -> None:
+    """For each JS/JSON response in the HAR (by Content-Type, URL extension, or a
+    JSONP callback parameter), report the Content-Type, whether nosniff is set,
+    and the include shape — so a response that a cross-site <script src> could
+    read is flagged (WSTG-CLNT-13). Values are never printed, only the shape."""
+    seen, found = set(), False
+    for label, entries in _iter(files):
+        print(f"== {label}")
+        for e in entries:
+            req, resp = e.get("request") or {}, e.get("response") or {}
+            _, host, path, names = _url_parts(str(req.get("url", "")))
+            ct = _header(resp.get("headers"), "content-type").split(";")[0].strip().lower()
+            is_jsonp = any(n.lower() in ("callback", "jsonp", "cb") for n in names)
+            if not (("json" in ct or "javascript" in ct or "ecmascript" in ct)
+                    or path.lower().endswith((".json", ".js")) or is_jsonp):
+                continue
+            found = True
+            nosniff = "nosniff" in _header(resp.get("headers"), "x-content-type-options").lower()
+            shape = _xssi_shape(_body_text(resp))
+            line = f"{req.get('method', '?')} {path}   ct={ct or '(none)'}  nosniff={'yes' if nosniff else 'NO'}  shape={shape}"
+            # A candidate: includable shape served without nosniff or without a JS/JSON type.
+            if shape in _INCLUDABLE and (not nosniff or "json" not in ct and "javascript" not in ct and "ecmascript" not in ct):
+                line += "   <= XSSI CANDIDATE (confirm cross-site read)"
+            if is_jsonp:
+                line += "   [JSONP callback param]"
+            if line not in seen:
+                seen.add(line)
+                print("  " + line)
+    if not found:
+        print("(no JS/JSON response in the HAR; browse the authenticated JS/JSON endpoints and recapture)")
+
+
+_VIEWS = {"cookies": view_cookies, "urls": view_urls, "cleartext": view_cleartext,
+          "forms": view_forms, "xssi": view_xssi}
 
 
 def main(argv: list[str] | None = None) -> int:

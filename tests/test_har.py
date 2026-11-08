@@ -173,3 +173,55 @@ def test_empty_har_does_not_crash(tmp_path, capsys, view):
     f = _write(tmp_path, "e.har", _har([]))
     rc, _ = _run(capsys, view, f)
     assert rc == 0
+
+
+def _resp(url, ct, body, *, nosniff=False, encoding=None):
+    headers = [{"name": "Content-Type", "value": ct}]
+    if nosniff:
+        headers.append({"name": "X-Content-Type-Options", "value": "nosniff"})
+    content = {"mimeType": ct, "text": body}
+    if encoding:
+        content["encoding"] = encoding
+    return {"request": {"method": "GET", "url": url, "cookies": [], "headers": [], "postData": {}},
+            "response": {"headers": headers, "content": content}}
+
+
+def test_xssi_flags_array_literal_without_nosniff(tmp_path, capsys):
+    doc = _har([_resp("https://example.com/data.json", "application/json",
+                      '["hunter2","deadbeefcsrf"]')])
+    f = _write(tmp_path, "a.har", doc)
+    _, out = _run(capsys, "xssi", f)
+    assert "/data.json" in out and "array literal (includable)" in out
+    assert "XSSI CANDIDATE" in out            # json type but no nosniff
+    assert "hunter2" not in out               # no data values printed
+
+
+def test_xssi_jsonp_callback_is_flagged(tmp_path, capsys):
+    doc = _har([_resp("https://example.com/api?callback=cb", "application/javascript",
+                      'cb({"x":"s3cr3t-session-abc123"})', nosniff=True)])
+    f = _write(tmp_path, "a.har", doc)
+    _, out = _run(capsys, "xssi", f)
+    assert "JSONP / function call (includable)" in out and "[JSONP callback param]" in out
+
+
+def test_xssi_object_literal_not_a_candidate(tmp_path, capsys):
+    doc = _har([_resp("https://example.com/x.json", "application/json",
+                      '{"a":1}', nosniff=True)])
+    f = _write(tmp_path, "a.har", doc)
+    _, out = _run(capsys, "xssi", f)
+    assert "object literal" in out and "XSSI CANDIDATE" not in out
+
+
+def test_xssi_guard_prefix_is_safe(tmp_path, capsys):
+    doc = _har([_resp("https://example.com/feed.json", "application/json",
+                      ')]}\'\n["hunter2"]', nosniff=True)])
+    f = _write(tmp_path, "a.har", doc)
+    _, out = _run(capsys, "xssi", f)
+    assert "guarded (anti-XSSI prefix)" in out and "XSSI CANDIDATE" not in out
+
+
+def test_xssi_none_message(tmp_path, capsys):
+    doc = _har([_resp("https://example.com/", "text/html", "<html></html>")])
+    f = _write(tmp_path, "a.har", doc)
+    _, out = _run(capsys, "xssi", f)
+    assert "no JS/JSON response" in out

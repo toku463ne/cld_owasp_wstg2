@@ -53,6 +53,18 @@ def test_clnt03_lists_reflected_input_candidates(admin_client, store, site):
     assert "comment" in s1 and "bio" in s1                # form field names
 
 
+def test_clnt13_xssi_flags_includable_json_from_har(admin_client, store, site):
+    import json
+    har = {"log": {"entries": [
+        {"request": {"method": "GET", "url": f"{BASE}/me.json", "cookies": [], "headers": [], "postData": {}},
+         "response": {"headers": [{"name": "Content-Type", "value": "application/json"}],
+                      "content": {"mimeType": "application/json", "text": '["secretdata"]'}}}]}}
+    store.add_file(site, "har-browse", json.dumps(har).encode(), "walk.har", "", "admin")
+    s2 = page(admin_client, "WSTG-CLNT-13").split("Step 2")[1].split("Step 3")[0]
+    assert "/me.json" in s2 and "array literal (includable)" in s2 and "XSSI CANDIDATE" in s2
+    assert "secretdata" not in s2       # no response data leaks onto the page
+
+
 def test_clnt09_reports_missing_frame_headers(admin_client, store, site):
     put(store, site, "http-root-https", {"stdout.txt": "HTTP/1.1 200 OK\r\nServer: x\r\n", "body.html": "<html></html>"})
     s1 = page(admin_client, "WSTG-CLNT-09").split("Step 1")[1].split("Step 2")[0]

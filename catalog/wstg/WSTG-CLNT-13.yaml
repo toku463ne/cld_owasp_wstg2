@@ -18,18 +18,30 @@ steps:
     command: >-
       grep -oiE '/[^ "'"'"'<>]*\.(json|js)(\?[^ "'"'"'<>]*)?' {ev:katana-crawl}/katana.txt 2>/dev/null | sort -u | head;
       grep -oiE '[?&](callback|jsonp|cb)=[^&"'"'"'<> ]*' {ev:katana-crawl}/katana.txt 2>/dev/null | sort -u | head
-  - summary: Try to read the data cross-site (manual)
+  - summary: Classify the authenticated JS/JSON responses in the HAR for XSSI
+    auto_run: true
+    evidence: [har-browse]
+    command: wstg-har xssi {ev:har-browse}/items/*.har
+    operation: >-
+      Reads the JS/JSON responses captured while logged in and reports, per response, the
+      Content-Type, whether X-Content-Type-Options: nosniff is set, and the include shape
+      (array literal or JSONP = includable; object literal or an anti-XSSI prefix = safer).
+      Responses marked "XSSI CANDIDATE" are includable and lack nosniff or a correct type.
+      No response data is printed, only the shape.
+  - summary: Confirm the cross-site read with a PoC (manual)
     evidence: [xssi-tests]
     operation: >-
-      For each authenticated JS/JSON endpoint, check whether it can be loaded with a
-      <script src> from an external page and its data read with cookie authentication
-      (array-literal JSON, JSONP), and whether X-Content-Type-Options: nosniff, a correct
-      Content-Type, and anti-CSRF are present (`curl` to see the Content-Type). Record in
+      For each "XSSI CANDIDATE" from step 2 (and any JSONP endpoint), build an external HTML
+      page that includes it with `<script src="https://TARGET/ENDPOINT">` and, with the
+      victim's cookies, read the data (override the Array constructor or a global, or define
+      the JSONP callback). Confirm whether the data is actually readable and whether an
+      unguessable anti-CSRF token in the request prevents it. Save the PoC and result in
       xssi-tests.
   - summary: Judge cross-site script inclusion
-    evidence: [xssi-tests]
+    evidence: [xssi-tests, har-browse]
     ai_task: >-
-      From step 2 decide whether XSSI is possible. Verdict: fail when authenticated JS/JSON
-      data could be read cross-site via a script include; pass when it cannot be loaded as a
-      script or is token-protected with nosniff and a correct type; "-" when xssi-tests is
-      missing.
+      From steps 2 and 3 decide whether XSSI is possible. Verdict: fail when authenticated
+      JS/JSON data could be read cross-site via a script include (an includable shape without
+      nosniff/correct type, or a JSONP endpoint, confirmed by the PoC); pass when it cannot
+      be loaded as a script or is token-protected with nosniff and a correct type; "-" when
+      xssi-tests is missing.
