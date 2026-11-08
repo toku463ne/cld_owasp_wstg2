@@ -378,59 +378,63 @@ def status(step_count: int, step_verdicts: dict[int, str], has_evidence: bool = 
     return "-"
 
 
-# Status set by the tester, overriding the computed status for display.
 NO_NEED = "no need"
 # All possible statuses, in report order.
 STATUSES = ("-", "started", "pass", "fail", NO_NEED)
+# Statuses a tester may set as an override ("" = auto, i.e. computed from steps).
+STATUS_OVERRIDES = ("", "started", "pass", "fail", NO_NEED)
 
 
 def test_review(db: dbmod.Database, target: Target, test_id: str) -> dict:
-    """The tester's annotations for one test: {no_need, review, updated_at, updated_by}."""
-    r = db.one("SELECT no_need, tester_review, updated_at, updated_by FROM test_reviews "
+    """The tester's annotations for one test: {override, review, updated_at, updated_by}.
+
+    override is the tester-set status ('' = auto, i.e. use the computed status)."""
+    r = db.one("SELECT status_override, tester_review, updated_at, updated_by FROM test_reviews "
                "WHERE target_id = ? AND test_id = ?", (target.id, test_id))
     if not r:
-        return {"no_need": False, "review": "", "updated_at": "", "updated_by": ""}
-    return {"no_need": bool(r["no_need"]), "review": r["tester_review"],
+        return {"override": "", "review": "", "updated_at": "", "updated_by": ""}
+    return {"override": r["status_override"], "review": r["tester_review"],
             "updated_at": r["updated_at"], "updated_by": r["updated_by"]}
 
 
 def test_reviews(db: dbmod.Database, target: Target) -> dict[str, dict]:
-    """{test_id: {no_need, review, ...}} for every test with a tester annotation."""
+    """{test_id: {override, review, ...}} for every test with a tester annotation."""
     out = {}
-    for r in db.query("SELECT test_id, no_need, tester_review, updated_at, updated_by "
+    for r in db.query("SELECT test_id, status_override, tester_review, updated_at, updated_by "
                       "FROM test_reviews WHERE target_id = ?", (target.id,)):
-        out[r["test_id"]] = {"no_need": bool(r["no_need"]), "review": r["tester_review"],
+        out[r["test_id"]] = {"override": r["status_override"], "review": r["tester_review"],
                              "updated_at": r["updated_at"], "updated_by": r["updated_by"]}
     return out
 
 
-def _write_test_review(db: dbmod.Database, target: Target, test_id: str, no_need: bool,
+def _write_test_review(db: dbmod.Database, target: Target, test_id: str, override: str,
                        review: str, actor: str, action: str) -> None:
     review = review.strip()
     with db.tx() as conn:
-        if not no_need and not review:
+        if not override and not review:
             conn.execute("DELETE FROM test_reviews WHERE target_id = ? AND test_id = ?",
                          (target.id, test_id))
         else:
             conn.execute(
-                "INSERT INTO test_reviews (target_id, test_id, no_need, tester_review, updated_at, updated_by) "
+                "INSERT INTO test_reviews (target_id, test_id, status_override, tester_review, updated_at, updated_by) "
                 "VALUES (?, ?, ?, ?, ?, ?) "
                 "ON CONFLICT (target_id, test_id) DO UPDATE SET "
-                "no_need = excluded.no_need, tester_review = excluded.tester_review, "
+                "status_override = excluded.status_override, tester_review = excluded.tester_review, "
                 "updated_at = excluded.updated_at, updated_by = excluded.updated_by",
-                (target.id, test_id, int(no_need), review, dbmod.utcnow(), actor))
-        db.audit(conn, actor, action, target=target.name, test=test_id, no_need=int(no_need))
+                (target.id, test_id, override, review, dbmod.utcnow(), actor))
+        db.audit(conn, actor, action, target=target.name, test=test_id, status=override or "auto")
 
 
-def set_no_need(db: dbmod.Database, target: Target, test_id: str, value: bool, actor: str) -> None:
-    """Mark a test "no need" (not applicable) for this target, or clear it; the
-    tester review, if any, is kept."""
+def set_status_override(db: dbmod.Database, target: Target, test_id: str, status: str, actor: str) -> None:
+    """Set the tester's status override for a test; '' clears it (back to auto). The
+    tester review, if any, is kept. Step verdicts are never changed."""
+    if status not in STATUS_OVERRIDES:
+        raise TargetError(f"invalid status: {status!r}")
     cur = test_review(db, target, test_id)
-    _write_test_review(db, target, test_id, value, cur["review"], actor,
-                       "test.no_need" if value else "test.no_need_clear")
+    _write_test_review(db, target, test_id, status, cur["review"], actor, "test.status_override")
 
 
 def set_tester_review(db: dbmod.Database, target: Target, test_id: str, review: str, actor: str) -> None:
-    """Set (or clear) the tester's free-text review of a test; the no-need flag is kept."""
+    """Set (or clear) the tester's free-text review of a test; the status override is kept."""
     cur = test_review(db, target, test_id)
-    _write_test_review(db, target, test_id, cur["no_need"], review, actor, "test.tester_review")
+    _write_test_review(db, target, test_id, cur["override"], review, actor, "test.tester_review")

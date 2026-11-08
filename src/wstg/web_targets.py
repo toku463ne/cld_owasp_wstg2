@@ -135,10 +135,9 @@ def register(app: Flask, cfg: Config, db: dbmod.Database, cat: catmod.Catalog, s
             has_ev = any(e.id in have for e in cat.evidence_for(test.id))
             if test.merged_into:
                 st = None
-            elif reviews.get(test.id, {}).get("no_need"):
-                st = tmod.NO_NEED
             else:
-                st = tmod.status(len(sc.steps) if sc else 0, vs.get(test.id, {}), has_ev)
+                st = reviews.get(test.id, {}).get("override") \
+                    or tmod.status(len(sc.steps) if sc else 0, vs.get(test.id, {}), has_ev)
             rows.append({"test": test, "scenario": sc, "status": st,
                          "evidence": ai_files.evidence_state(cat, test.id, have) if sc else None,
                          "prompt": sc is not None and (prompts_dir / f"{test.id}.md").exists()})
@@ -249,26 +248,33 @@ def register(app: Flask, cfg: Config, db: dbmod.Database, cat: catmod.Catalog, s
         steps = ai_files.steps_for(cfg, db, cat, store, t, test_id, have)
         has_ev = any(e.id in have for e in cat.evidence_for(test_id))
         review = tmod.test_review(db, t, test_id)
-        st_value = tmod.NO_NEED if review["no_need"] else (tmod.status(len(steps), vs, has_ev) if sc else "-")
+        computed = tmod.status(len(steps), vs, has_ev) if sc else "-"
+        st_value = review["override"] or computed
         findings = fmod.list_for(db, t, test_id)
         ai_prompt = ai_files.build_prompt(cfg, db, cat, store, t, test_id, steps) if sc else ""
         setters = ai_review.setters(db, t, test_id)
         for s in steps:
             s["by_ai"] = setters.get(s["n"], "").startswith(ai_review.AI_PREFIX)
         return render_template("wstg_page.html", tab="index", test=test, scenario=sc, steps=steps,
-                               status=st_value, applicable=t.type in test.target_types,
+                               status=st_value, computed=computed, status_options=tmod.STATUS_OVERRIDES,
+                               applicable=t.type in test.target_types,
                                findings=findings, ai_prompt=ai_prompt, review=review,
                                ai=ai_review.latest(db, t, test_id) if sc else None)
 
-    @app.post("/t/<name>/wstg/<test_id>/no-need")
+    @app.post("/t/<name>/wstg/<test_id>/status")
     @admin_required
-    def wstg_no_need(name: str, test_id: str):
+    def wstg_status(name: str, test_id: str):
         t = load_target(name)
         if test_id not in cat.tests or cat.tests[test_id].merged_into:
             abort(404)
-        value = bool(request.form.get("no_need"))
-        tmod.set_no_need(db, t, test_id, value, g.user["username"])
-        flash(f"{test_id} marked \"no need\"." if value else f"{test_id}: \"no need\" cleared.")
+        status = request.form.get("status", "")
+        try:
+            tmod.set_status_override(db, t, test_id, status, g.user["username"])
+        except tmod.TargetError as e:
+            flash(str(e))
+        else:
+            flash(f"{test_id}: status set to \"{status}\"." if status
+                  else f"{test_id}: status back to automatic (computed from steps).")
         return redirect(url_for("wstg_page", name=t.name, test_id=test_id))
 
     @app.post("/t/<name>/wstg/<test_id>/tester-review")

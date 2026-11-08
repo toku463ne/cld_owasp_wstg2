@@ -178,45 +178,54 @@ def test_collect_one_evidence_buttons(admin_client, guest_client, db, cfg):
     assert rmod.last_job(db, t)["evidence_id"] == "http-404"
 
 
-def test_no_need_status_and_tester_review(admin_client, guest_client, db, cfg):
+def test_status_override_and_tester_review(admin_client, guest_client, db, cfg):
     tm.create(db, cfg, "example.com", "domain")
     f = tm.create(db, cfg, "www.example.com", "fqdn", parent="example.com")
 
-    # mark APIT-01 (GraphQL) "no need"
-    r = post(admin_client, "/t/www.example.com/wstg/WSTG-APIT-01/no-need", no_need="1")
+    # tester sets APIT-01 (GraphQL) to "no need"
+    r = post(admin_client, "/t/www.example.com/wstg/WSTG-APIT-01/status", status="no need")
     assert r.status_code == 302
-    assert tm.test_review(db, f, "WSTG-APIT-01")["no_need"] is True
+    assert tm.test_review(db, f, "WSTG-APIT-01")["override"] == "no need"
     page = admin_client.get("/t/www.example.com/wstg/WSTG-APIT-01").get_data(as_text=True)
-    assert 'status s-noneed">no need' in page and 'Unmark "no need"' in page
+    assert 'status s-noneed">no need' in page
     idx = admin_client.get("/t/www.example.com/").get_data(as_text=True)
     assert 'status s-noneed">no need' in idx
 
-    # clearing it restores the computed status
-    post(admin_client, "/t/www.example.com/wstg/WSTG-APIT-01/no-need")   # no no_need field = clear
-    assert tm.test_review(db, f, "WSTG-APIT-01")["no_need"] is False
+    # tester can set any status directly; it overrides the computed one
+    post(admin_client, "/t/www.example.com/wstg/WSTG-APIT-01/status", status="pass")
+    assert tm.test_review(db, f, "WSTG-APIT-01")["override"] == "pass"
+    assert 'status s-pass">pass' in admin_client.get("/t/www.example.com/").get_data(as_text=True)
 
-    # tester review: save, keep across a no-need toggle, show to guest
+    # an invalid status is refused (not stored)
+    post(admin_client, "/t/www.example.com/wstg/WSTG-APIT-01/status", status="bogus")
+    assert tm.test_review(db, f, "WSTG-APIT-01")["override"] == "pass"
+
+    # 'auto' (empty) clears the override, back to computed
+    post(admin_client, "/t/www.example.com/wstg/WSTG-APIT-01/status", status="")
+    assert tm.test_review(db, f, "WSTG-APIT-01")["override"] == ""
+
+    # tester review: save, keep across a status change, show to guest read-only
     post(admin_client, "/t/www.example.com/wstg/WSTG-APIT-01/tester-review",
          review="We do not use GraphQL; confirmed with the owner.")
     assert tm.test_review(db, f, "WSTG-APIT-01")["review"].startswith("We do not use GraphQL")
-    post(admin_client, "/t/www.example.com/wstg/WSTG-APIT-01/no-need", no_need="1")
+    post(admin_client, "/t/www.example.com/wstg/WSTG-APIT-01/status", status="no need")
     assert tm.test_review(db, f, "WSTG-APIT-01")["review"].startswith("We do not use GraphQL")   # kept
     gpage = guest_client.get("/t/www.example.com/wstg/WSTG-APIT-01").get_data(as_text=True)
     assert "We do not use GraphQL" in gpage and "Save tester review" not in gpage   # read-only for guest
 
     # clearing both removes the row
-    post(admin_client, "/t/www.example.com/wstg/WSTG-APIT-01/no-need")
+    post(admin_client, "/t/www.example.com/wstg/WSTG-APIT-01/status", status="")
     post(admin_client, "/t/www.example.com/wstg/WSTG-APIT-01/tester-review", review="")
     assert db.one("SELECT 1 FROM test_reviews WHERE target_id = ?", (f.id,)) is None
 
 
-def test_guest_cannot_set_no_need_or_tester_review(guest_client, db, cfg):
+def test_guest_cannot_set_status_or_tester_review(guest_client, db, cfg):
     tm.create(db, cfg, "www.example.com", "fqdn")
-    assert post(guest_client, "/t/www.example.com/wstg/WSTG-APIT-01/no-need", no_need="1").status_code == 403
+    assert post(guest_client, "/t/www.example.com/wstg/WSTG-APIT-01/status", status="no need").status_code == 403
     assert post(guest_client, "/t/www.example.com/wstg/WSTG-APIT-01/tester-review", review="x").status_code == 403
 
 
-def test_no_need_rejects_merged_and_unknown_tests(admin_client, db, cfg):
+def test_status_override_rejects_merged_and_unknown_tests(admin_client, db, cfg):
     tm.create(db, cfg, "www.example.com", "fqdn")
-    assert post(admin_client, "/t/www.example.com/wstg/WSTG-INPV-03/no-need", no_need="1").status_code == 404
-    assert post(admin_client, "/t/www.example.com/wstg/WSTG-NOPE-01/no-need", no_need="1").status_code == 404
+    assert post(admin_client, "/t/www.example.com/wstg/WSTG-INPV-03/status", status="pass").status_code == 404
+    assert post(admin_client, "/t/www.example.com/wstg/WSTG-NOPE-01/status", status="pass").status_code == 404
