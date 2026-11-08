@@ -126,11 +126,11 @@ evidence:
     kind: manual
     description: >-
       HAR files of the application's main flows: one anonymous, one per logged-in role.
-      Preferred: run `wstg capture {fqdn} --role ROLE` (ROLE = anon, user, admin...) on the
-      Kali host; in the browser window that opens, walk every main screen and function once
+      Preferred: on the Kali host run `wstg capture {fqdn} --role anon`, then once per
+      logged-in role `wstg capture {fqdn} --role user`, `wstg capture {fqdn} --role admin`,
+      and so on. In the browser window that opens, walk every main screen and function once
       (log in, profile, search, forms that send personal data, log out) and press Enter in
-      the terminal to save. The HAR and the storage state are stored here automatically; run
-      it once per role. Fallback without the capture tool: in the browser press F12, open
+      the terminal to save. The HAR and the storage state are stored here automatically. Fallback without the capture tool: in the browser press F12, open
       Network, tick "Preserve log" (Firefox: "Persist Logs"), press Ctrl+Shift+R, walk the
       application, then right-click the request list, choose "Save all as HAR (with sensitive
       data)" (older browsers: "Save all as HAR"), and upload the file with the caption

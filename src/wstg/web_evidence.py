@@ -19,6 +19,21 @@ from .web import admin_required, login_required
 LOG_TAIL = 200   # lines of stdout/stderr shown for a failed collection
 
 
+def _placeholders(store: evmod.Store, t: tmod.Target) -> dict[str, str]:
+    """Placeholder values for rendering an evidence description (e.g. {fqdn}).
+
+    Uses the scope's base URL/port when a scope record exists; falls back to the
+    target name so a description still shows a concrete command without one.
+    """
+    try:
+        return tmod.placeholder_values(store.cfg, t, tmod.get_scope(store.db, t))
+    except tmod.TargetError:
+        values = {"domain": t.domain or "{domain}"}
+        if t.type == "fqdn":
+            values.update(fqdn=t.name, base_url=f"https://{t.name}", port="443")
+        return values
+
+
 def register(app: Flask, store: evmod.Store, cat: catmod.Catalog) -> None:
 
     def resolve(name: str, eid: str) -> tuple[tmod.Target, catmod.Evidence]:
@@ -66,6 +81,7 @@ def register(app: Flask, store: evmod.Store, cat: catmod.Catalog) -> None:
                         failed_logs.append({"name": it.caption or it.file, "cut": len(lines) - LOG_TAIL if cut else 0,
                                             "text": "\n".join(lines[-LOG_TAIL:]) or "(empty)"})
         return render_template("evidence.html", tab="manual" if ev.kind == "manual" else "auto", ev=ev,
+                               description=catmod.render(ev.description, _placeholders(store, t)),
                                version=version, texts=texts, history=history,
                                is_latest=bool(version and latest and version.version == latest.version),
                                used_by=cat.tests_using(eid), failed=failed, failed_logs=failed_logs,

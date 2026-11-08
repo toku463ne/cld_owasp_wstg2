@@ -5,7 +5,7 @@
   <h2>{{ ev.title }} <code class="muted">{{ ev.id }}</code></h2>
   <span class="chip">{{ ev.kind }}{% if ev.level %} · {{ ev.level }}{% endif %}</span>
 </div>
-<p>{{ ev.description }}</p>
+<p>{{ description | ticks }}</p>
 {% if ev.kind == 'auto' %}<p><code>{{ ev.argv | reject('in', ['{proxy_args}', '{pause_args}']) | join(' ') }}</code></p>
 {% if ev.proxy_args %}<p class="muted small">With WSTG_HTTP_PROXY set, adds <code>{{ ev.proxy_args | join(' ') }}</code>.</p>{% endif %}
 {% if ev.pause_args %}<p class="muted small">With WSTG_PAUSE set, adds <code>{{ ev.pause_args | join(' ') }}</code> (seconds between requests). WSTG_PAUSE is {{ pause if pause else 'not set' }}.</p>{% endif %}
