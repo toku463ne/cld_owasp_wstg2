@@ -25,15 +25,18 @@ steps:
     command: >-
       grep -rhioE '<form[^>]*action=["'"'"']?[^ "'"'"'>]+' {ev:auth-pages}/pages 2>/dev/null | sort -u | head -40
       || echo "no form action found in the collected login pages"
-  - summary: Capture the login submission and check its transport (manual)
+  - summary: Record the login submission as a HAR (manual browsing)
     evidence: [har-browse]
     operation: >-
-      In the inspection browser open the login page, press F12, open Network, tick
-      "Preserve log" (Firefox: "Persist Logs"), then log in with the test account (solve
-      any CAPTCHA yourself). Right-click the login request (usually a POST) and save all
-      as HAR into the har-browse evidence. The protocol must be https, the method should
-      be POST, and no credential field may appear in the URL query. Repeat for password
-      change and any re-authentication screen.
+      Record the login with the test account into the har-browse evidence. Preferred:
+      run `wstg capture {fqdn} --role login`, then in the browser window that opens log in
+      with the test account (solve any CAPTCHA yourself) and also walk through password
+      change and any re-authentication screen; close by pressing Enter in the terminal.
+      Fallback without the capture tool: open the login page, press F12, open Network, tick
+      "Preserve log" (Firefox: "Persist Logs"), log in, right-click the login request
+      (usually a POST) and save all as HAR into har-browse. The transport is checked
+      automatically in the next step; here just make sure the login (and any credential
+      re-entry) is in the HAR.
   - summary: Check the HAR for credentials sent over plain HTTP or in a URL
     auto_run: true
     evidence: [har-browse]
