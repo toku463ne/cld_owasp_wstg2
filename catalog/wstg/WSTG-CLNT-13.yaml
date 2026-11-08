@@ -23,25 +23,32 @@ steps:
     evidence: [har-browse]
     command: wstg-har xssi {ev:har-browse}/items/*.har
     operation: >-
-      Reads the JS/JSON responses captured while logged in and reports, per response, the
-      Content-Type, whether X-Content-Type-Options: nosniff is set, and the include shape
-      (array literal or JSONP = includable; object literal or an anti-XSSI prefix = safer).
-      Responses marked "XSSI CANDIDATE" are includable and lack nosniff or a correct type.
-      No response data is printed, only the shape.
-  - summary: Confirm the cross-site read with a PoC (manual)
+      Reads the JS/JSON responses captured while logged in and decides exploitability from
+      the HAR alone, per response: the Content-Type, whether X-Content-Type-Options: nosniff
+      is set, the include shape (array literal or JSONP = includable; object literal or an
+      anti-XSSI prefix = safer), and `cross-site-auth` — whether the request's auth cookies
+      would ride a cross-site `<script src>`. A cross-site script include is a subresource
+      request, so only a `SameSite=None` cookie is sent; Lax/Strict are not. Verdicts:
+      `XSSI EXPLOITABLE` (includable, not protected, and an auth cookie is SameSite=None);
+      `XSSI CANDIDATE` (same, but the auth cookie has no SameSite: legacy browsers only);
+      otherwise it notes why it is safe. No response data is printed, only shapes and flags.
+  - summary: Confirm the cross-site read with a PoC (manual, only if needed)
     evidence: [xssi-tests]
     operation: >-
-      For each "XSSI CANDIDATE" from step 2 (and any JSONP endpoint), build an external HTML
-      page that includes it with `<script src="https://TARGET/ENDPOINT">` and, with the
-      victim's cookies, read the data (override the Array constructor or a global, or define
-      the JSONP callback). Confirm whether the data is actually readable and whether an
-      unguessable anti-CSRF token in the request prevents it. Save the PoC and result in
-      xssi-tests.
+      Only needed to prove an `XSSI EXPLOITABLE`/`CANDIDATE` from step 2, or a JSONP endpoint
+      (step 2 already decides the SameSite/shape/nosniff facts). Build an external HTML page
+      that includes it with `<script src="https://TARGET/ENDPOINT">` and, with the victim's
+      cookies, read the data (define the JSONP callback; for a bare array only legacy
+      browsers leak it). Confirm the data is readable and whether an unguessable anti-CSRF
+      token in the request prevents it. Save the PoC and result in xssi-tests.
   - summary: Judge cross-site script inclusion
     evidence: [xssi-tests, har-browse]
     ai_task: >-
-      From steps 2 and 3 decide whether XSSI is possible. Verdict: fail when authenticated
-      JS/JSON data could be read cross-site via a script include (an includable shape without
-      nosniff/correct type, or a JSONP endpoint, confirmed by the PoC); pass when it cannot
-      be loaded as a script or is token-protected with nosniff and a correct type; "-" when
-      xssi-tests is missing.
+      Decide whether XSSI is possible, mainly from step 2 (step 3 confirms only when needed).
+      Verdict: fail when an authenticated JS/JSON response is includable, is not protected by
+      nosniff plus a correct type, and its auth cookie is SameSite=None (`XSSI EXPLOITABLE`),
+      or a JSONP endpoint leaks data cross-site; pass when the response is not includable, is
+      protected by nosniff and a correct type, or the auth cookie is SameSite=Lax/Strict so it
+      is not sent on a cross-site script include; "-" when no JS/JSON response was captured.
+      Treat a `CANDIDATE` (no SameSite, legacy-only) as a low-severity note unless the PoC in
+      step 3 confirms it.

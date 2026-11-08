@@ -175,30 +175,53 @@ def test_empty_har_does_not_crash(tmp_path, capsys, view):
     assert rc == 0
 
 
-def _resp(url, ct, body, *, nosniff=False, encoding=None):
+def _resp(url, ct, body, *, nosniff=False, encoding=None, req_cookies=(), set_cookie=None):
     headers = [{"name": "Content-Type", "value": ct}]
     if nosniff:
         headers.append({"name": "X-Content-Type-Options", "value": "nosniff"})
+    if set_cookie:
+        headers.append({"name": "Set-Cookie", "value": set_cookie})
     content = {"mimeType": ct, "text": body}
     if encoding:
         content["encoding"] = encoding
-    return {"request": {"method": "GET", "url": url, "cookies": [], "headers": [], "postData": {}},
+    return {"request": {"method": "GET", "url": url,
+                        "cookies": [{"name": n, "value": "v"} for n in req_cookies],
+                        "headers": [], "postData": {}},
             "response": {"headers": headers, "content": content}}
 
 
-def test_xssi_flags_array_literal_without_nosniff(tmp_path, capsys):
+def test_xssi_exploitable_when_auth_cookie_samesite_none(tmp_path, capsys):
     doc = _har([_resp("https://example.com/data.json", "application/json",
-                      '["hunter2","deadbeefcsrf"]')])
+                      '["hunter2","deadbeefcsrf"]',
+                      req_cookies=("SID",), set_cookie="SID=x; Secure; SameSite=None")])
     f = _write(tmp_path, "a.har", doc)
     _, out = _run(capsys, "xssi", f)
     assert "/data.json" in out and "array literal (includable)" in out
-    assert "XSSI CANDIDATE" in out            # json type but no nosniff
+    assert "cross-site-auth=exploitable" in out and "XSSI EXPLOITABLE" in out
     assert "hunter2" not in out               # no data values printed
+
+
+def test_xssi_not_exploitable_when_auth_cookie_samesite_lax(tmp_path, capsys):
+    doc = _har([_resp("https://example.com/data.json", "application/json",
+                      '["x"]', req_cookies=("SID",), set_cookie="SID=x; SameSite=Lax")])
+    f = _write(tmp_path, "a.har", doc)
+    _, out = _run(capsys, "xssi", f)
+    assert "cross-site-auth=protected" in out
+    assert "XSSI EXPLOITABLE" not in out and "XSSI CANDIDATE" not in out
+
+
+def test_xssi_legacy_when_auth_cookie_has_no_samesite(tmp_path, capsys):
+    doc = _har([_resp("https://example.com/data.json", "application/json",
+                      '["x"]', req_cookies=("SID",), set_cookie="SID=x; Path=/")])
+    f = _write(tmp_path, "a.har", doc)
+    _, out = _run(capsys, "xssi", f)
+    assert "cross-site-auth=legacy" in out and "XSSI CANDIDATE" in out
 
 
 def test_xssi_jsonp_callback_is_flagged(tmp_path, capsys):
     doc = _har([_resp("https://example.com/api?callback=cb", "application/javascript",
-                      'cb({"x":"s3cr3t-session-abc123"})', nosniff=True)])
+                      'cb({"x":"s3cr3t-session-abc123"})', nosniff=True,
+                      req_cookies=("SID",), set_cookie="SID=x; SameSite=None")])
     f = _write(tmp_path, "a.har", doc)
     _, out = _run(capsys, "xssi", f)
     assert "JSONP / function call (includable)" in out and "[JSONP callback param]" in out
@@ -206,18 +229,19 @@ def test_xssi_jsonp_callback_is_flagged(tmp_path, capsys):
 
 def test_xssi_object_literal_not_a_candidate(tmp_path, capsys):
     doc = _har([_resp("https://example.com/x.json", "application/json",
-                      '{"a":1}', nosniff=True)])
+                      '{"a":1}', nosniff=True, req_cookies=("SID",), set_cookie="SID=x; SameSite=None")])
     f = _write(tmp_path, "a.har", doc)
     _, out = _run(capsys, "xssi", f)
-    assert "object literal" in out and "XSSI CANDIDATE" not in out
+    assert "object literal" in out and "XSSI EXPLOITABLE" not in out
 
 
 def test_xssi_guard_prefix_is_safe(tmp_path, capsys):
     doc = _har([_resp("https://example.com/feed.json", "application/json",
-                      ')]}\'\n["hunter2"]', nosniff=True)])
+                      ')]}\'\n["hunter2"]', nosniff=True,
+                      req_cookies=("SID",), set_cookie="SID=x; SameSite=None")])
     f = _write(tmp_path, "a.har", doc)
     _, out = _run(capsys, "xssi", f)
-    assert "guarded (anti-XSSI prefix)" in out and "XSSI CANDIDATE" not in out
+    assert "guarded (anti-XSSI prefix)" in out and "XSSI EXPLOITABLE" not in out
 
 
 def test_xssi_none_message(tmp_path, capsys):

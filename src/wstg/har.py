@@ -235,15 +235,55 @@ def _xssi_shape(body: str) -> str:
 
 
 _INCLUDABLE = ("array literal (includable)", "JSONP / function call (includable)")
+_SAMESITE_RE = re.compile(r";\s*samesite\s*=\s*([a-z]+)", re.I)
+
+
+def _samesite_map(all_entries: list) -> dict[str, str]:
+    """cookie name -> weakest SameSite seen in its Set-Cookie headers ('none',
+    'lax', 'strict', or '' when the attribute is absent). 'none' and '' win,
+    since those are what let a cookie ride a cross-site request."""
+    order = {"none": 0, "": 1, "lax": 2, "strict": 3}
+    out: dict[str, str] = {}
+    for e in all_entries:
+        for h in (e.get("response") or {}).get("headers") or []:
+            if str(h.get("name", "")).lower() != "set-cookie":
+                continue
+            value = str(h.get("value", ""))
+            name = value.split("=", 1)[0].strip()
+            m = _SAMESITE_RE.search(value)
+            ss = m.group(1).lower() if m else ""
+            if name and (name not in out or order[ss] < order[out[name]]):
+                out[name] = ss
+    return out
+
+
+def _xssi_posture(req: dict, samesite: dict[str, str]) -> tuple[str, str]:
+    """From the cookies the request carried and their SameSite, decide whether a
+    cross-site <script src> would carry authentication. Returns (code, note)."""
+    cookies = [str(c.get("name", "")) for c in req.get("cookies") or [] if c.get("name")]
+    if not cookies:
+        return "no-auth", "no cookie sent to this response (data may be public)"
+    states = {samesite.get(c, "?") for c in cookies}
+    if "none" in states:
+        return "exploitable", "an auth cookie is SameSite=None: sent on a cross-site <script> request"
+    if "" in states or "?" in states:
+        return "legacy", ("an auth cookie has no SameSite: modern browsers default to Lax and block it, "
+                          "legacy browsers send it")
+    return "protected", "auth cookies are SameSite=Lax/Strict: not sent on a cross-site <script> request"
 
 
 def view_xssi(files: list[Path]) -> None:
     """For each JS/JSON response in the HAR (by Content-Type, URL extension, or a
     JSONP callback parameter), report the Content-Type, whether nosniff is set,
-    and the include shape — so a response that a cross-site <script src> could
-    read is flagged (WSTG-CLNT-13). Values are never printed, only the shape."""
+    the include shape, and whether the request's auth cookies would ride a
+    cross-site <script src> (SameSite). A cross-site <script> is a subresource
+    request, so only SameSite=None cookies are sent; Lax/Strict are not. This
+    lets the step decide exploitability without a new request (WSTG-CLNT-13).
+    Values are never printed, only shapes, header flags, and cookie names."""
+    loaded = list(_iter(files))
+    samesite = _samesite_map([e for _, entries in loaded for e in entries])
     seen, found = set(), False
-    for label, entries in _iter(files):
+    for label, entries in loaded:
         print(f"== {label}")
         for e in entries:
             req, resp = e.get("request") or {}, e.get("response") or {}
@@ -256,10 +296,20 @@ def view_xssi(files: list[Path]) -> None:
             found = True
             nosniff = "nosniff" in _header(resp.get("headers"), "x-content-type-options").lower()
             shape = _xssi_shape(_body_text(resp))
-            line = f"{req.get('method', '?')} {path}   ct={ct or '(none)'}  nosniff={'yes' if nosniff else 'NO'}  shape={shape}"
-            # A candidate: includable shape served without nosniff or without a JS/JSON type.
-            if shape in _INCLUDABLE and (not nosniff or "json" not in ct and "javascript" not in ct and "ecmascript" not in ct):
-                line += "   <= XSSI CANDIDATE (confirm cross-site read)"
+            typed = "json" in ct or "javascript" in ct or "ecmascript" in ct
+            code, note = _xssi_posture(req, samesite)
+            line = (f"{req.get('method', '?')} {path}   ct={ct or '(none)'}  "
+                    f"nosniff={'yes' if nosniff else 'NO'}  shape={shape}  cross-site-auth={code}")
+            # Includable shape, not protected by nosniff+type, and auth rides cross-site.
+            if shape in _INCLUDABLE and not (nosniff and typed):
+                if code == "exploitable":
+                    line += f"   <= XSSI EXPLOITABLE ({note})"
+                elif code == "legacy":
+                    line += f"   <= XSSI CANDIDATE ({note})"
+                elif code == "no-auth":
+                    line += "   <= includable, but no auth cookie (confirm the data is sensitive)"
+                else:
+                    line += f"   -- includable, but {note}"
             if is_jsonp:
                 line += "   [JSONP callback param]"
             if line not in seen:
