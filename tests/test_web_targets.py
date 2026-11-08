@@ -229,3 +229,23 @@ def test_status_override_rejects_merged_and_unknown_tests(admin_client, db, cfg)
     tm.create(db, cfg, "www.example.com", "fqdn")
     assert post(admin_client, "/t/www.example.com/wstg/WSTG-INPV-03/status", status="pass").status_code == 404
     assert post(admin_client, "/t/www.example.com/wstg/WSTG-NOPE-01/status", status="pass").status_code == 404
+
+
+def test_optext_breaks_commands_and_numbered_steps():
+    from wstg.web_targets import optext
+    out = str(optext("Do this: 1. run `curl -s http://example.test/`. 2. check `grep x`."))
+    # each embedded command (a code span with a space) is on its own line
+    assert "\n<code>curl -s http://example.test/</code>\n" in out
+    assert "<code>grep x</code>" in out
+    # the inline numbered sub-steps are broken onto their own lines
+    assert "\n1. run" in out and "\n2. check" in out
+    # a short code span (no space) stays inline, nothing is dropped
+    inline = str(optext("set `Secure` on the cookie"))
+    assert "<code>Secure</code>" in inline and "\n" not in inline
+
+
+def test_optext_escapes_html_payloads():
+    from wstg.web_targets import optext
+    out = str(optext("send `<h1>x</h1>` and see &lt;h1&gt;"))
+    assert "&lt;h1&gt;x&lt;/h1&gt;" in out      # payload shown as text, not raw tags
+    assert "<h1>" not in out

@@ -134,7 +134,7 @@
     <pre>{{ s.auto.output or '(no output)' }}</pre></details>
   {% endif %}
   {% endif %}
-  {% if s.operation %}<p class="operation">{{ s.operation | ticks }}</p>{% endif %}
+  {% if s.operation %}<p class="operation">{{ s.operation | optext }}</p>{% endif %}
   {% if s.step.ai_task %}<div class="note ai-task"><b>Judged by the AI review.</b> Copy the AI prompt, paste it into the AI chat, and import the answer in <a href="#ai-review">AI review</a>. Task given to the AI: {{ s.step.ai_task | ticks }}</div>{% endif %}
   {% if s.evidence %}
   <table class="evidence">

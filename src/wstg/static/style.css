@@ -61,9 +61,12 @@ code { background: var(--th); padding: 0 3px; border-radius: 3px; }
 .status.s-noneed { color: var(--muted); border-style: dashed; }
 tr.merged td { color: var(--muted); }
 .pre-wrap { white-space: pre-wrap; }
+/* Keep authored line breaks in step operations readable (they are a flowing
+   paragraph otherwise). */
+.operation { white-space: pre-wrap; }
 .warnbox, .okbox { border: 1px solid var(--warn); border-radius: 4px; padding: 6px 10px; margin: 8px 0; }
 .okbox { border-color: var(--ok); }
-.note { font-size: 13px; color: var(--muted); margin-top: 4px; }
+.note { font-size: 13px; color: var(--muted); margin-top: 4px; white-space: pre-wrap; }
 .note.warn { color: var(--warn); border-left: 3px solid var(--warn); padding-left: 8px; }
 .chip.warn { color: var(--warn); border-color: var(--warn); }
 .criteria { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }

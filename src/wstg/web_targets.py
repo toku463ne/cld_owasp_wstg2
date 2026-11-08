@@ -23,11 +23,28 @@ from .config import Config
 from .web import admin_required, login_required
 
 _TICKS_RE = re.compile(r"`([^`]+)`")
+# Spaces that sit right before an inline numbered sub-step ("1. ", "2. " ...).
+_NUM_STEP_RE = re.compile(r"(?<=\S) +(?=\d{1,2}\. +[A-Za-z`])")
 
 
 def ticks(text: str) -> Markup:
     """Escape text and show `code` spans as <code>."""
     return Markup(_TICKS_RE.sub(lambda m: f"<code>{m.group(1)}</code>", str(escape(text or ""))))
+
+
+def optext(text: str) -> Markup:
+    """Render a step operation: like `ticks`, but also put each embedded command
+    (a `code` span with a space) and each inline numbered sub-step on its own
+    line, so a long operation is not one wall of text. The line breaks are shown
+    by the `.operation` pre-wrap style; the source data is unchanged."""
+    esc = _NUM_STEP_RE.sub("\n", str(escape(text or "")))
+
+    def code(m: re.Match) -> str:
+        inner = m.group(1)
+        return f"\n<code>{inner}</code>\n" if " " in inner else f"<code>{inner}</code>"
+
+    out = re.sub(r"\n{2,}", "\n", _TICKS_RE.sub(code, esc)).strip("\n")
+    return Markup(out)
 
 
 _STATUS_CLASS = {"-": "none", "": "none", "no need": "noneed"}
@@ -40,6 +57,7 @@ def status_class(status: str) -> str:
 
 def register(app: Flask, cfg: Config, db: dbmod.Database, cat: catmod.Catalog, store: evmod.Store) -> None:
     app.jinja_env.filters["ticks"] = ticks
+    app.jinja_env.filters["optext"] = optext
     app.jinja_env.filters["statusclass"] = status_class
 
     def load_target(name: str) -> tmod.Target:
