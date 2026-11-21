@@ -222,20 +222,6 @@ def cmd_capture(args) -> int:
     return 0
 
 
-def cmd_takeover_probe(args) -> int:
-    from . import takeover
-    r = _runner(_cfg())
-    t = _target(r, args.target)
-    try:
-        text, plan, saved = takeover.probe(r.cfg, r.db, r.store, t, actor="cli", dry_run=args.dry_run)
-    except takeover.ProbeError as e:
-        raise config.ConfigError(str(e)) from None
-    print(text, end="")
-    if saved:
-        print(f"saved as {takeover.EVIDENCE_ID} v{saved.version} for {t.name}")
-    return 0
-
-
 def _target(r, name):
     from . import targets as tmod
     t = tmod.get(r.db, name)
@@ -370,11 +356,6 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--url", default=None, help="start URL (default: the scope base URL)")
     s.add_argument("--headless", action="store_true", help="run the browser headless (for automation/testing)")
     s.set_defaults(func=cmd_capture)
-
-    s = sub.add_parser("takeover-probe", help="WSTG-CONF-10: fetch in-scope subdomains with a CNAME, save the answers")
-    s.add_argument("target", help="the domain target")
-    s.add_argument("--dry-run", action="store_true", help="only show which hosts would be fetched or skipped")
-    s.set_defaults(func=cmd_takeover_probe)
 
     s = sub.add_parser("ai-prompts", help="save AI prompts to <evidence>/<target>/_ai/prompts for an AI agent")
     s.add_argument("target")

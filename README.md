@@ -244,7 +244,6 @@ uv run wstg tools-check --remote          # tools on the jump host of WSTG_DIREC
 uv run wstg worker [--once]               # run queued automatic evidence jobs (systemd: wstg2-worker)
 uv run wstg collect TARGET [--mode light|full] [--evidence ID [--force]] [--run]   # queue (or with --run, run now) a collection
 uv run wstg capture TARGET [--role NAME] [--url URL]     # record a browsing session as a HAR (opens a Chromium window on this host)
-uv run wstg takeover-probe DOMAIN [--dry-run]           # WSTG-CONF-10: fetch in-scope subdomains with a CNAME, save the answers
 uv run wstg backup [--dest DIR] [--keep 14]              # copy the database; rsync the evidence folder yourself
 ```
 

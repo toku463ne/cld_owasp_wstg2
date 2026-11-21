@@ -32,6 +32,11 @@
 #                does not exist when it was never collected, so the tool must cope).
 #                A job collects the inputs first, and collects this again when an input
 #                got a new version in the same job. Not allowed with direct.
+#   fqdn_targets domain auto only: the command contacts the domain's registered FQDN
+#                targets. "{fqdn_target_urls}" in argv becomes "--url <base URL>" for each
+#                FQDN target whose own scope record allows it now, and "--note <why>" for
+#                the others; nothing else may be contacted. The only exception to
+#                "domain targets run passive commands only".
 #
 # Placeholders: {domain} {fqdn} {base_url} {port} {out} (see src/wstg/catalog.py).
 evidence:

@@ -78,6 +78,9 @@ PROXY_ARGS = "{proxy_args}"
 PROXY_PLACEHOLDERS = {"proxy_url", "proxy_hostport"}
 PAUSE_ARGS = "{pause_args}"
 PAUSE_PLACEHOLDERS = {"pause"}
+# Domain evidence with `fqdn_targets: true`: replaced by "--url <base URL>" for each
+# registered FQDN target of the domain whose own scope record allows it.
+FQDN_TARGET_URLS = "{fqdn_target_urls}"
 OPTIONAL_ARGS = {PROXY_ARGS: ("proxy_args", PROXY_PLACEHOLDERS), PAUSE_ARGS: ("pause_args", PAUSE_PLACEHOLDERS)}
 MAX_TIMEOUT = 4 * 3600
 TOOL_INSTALLS = ("apt", "npm", "none")
@@ -125,6 +128,7 @@ class Evidence:
     incomplete_if: tuple[str, ...] = ()  # regexes on stdout/stderr meaning "stopped early"
     load_note: str = ""
     inputs: tuple[str, ...] = ()      # auto only: evidence read through {ev:ID} in argv (collected first)
+    fqdn_targets: bool = False        # domain auto only: contacts its registered FQDN targets (each scope-checked)
     source: str = ""                  # file it was defined in
 
 
@@ -259,7 +263,7 @@ def _load_index(path: Path, problems: list[str]) -> tuple[str, dict[str, Test]]:
 
 EVIDENCE_KEYS = {"id", "title", "target_type", "kind", "description", "level", "passive", "heavy",
                  "argv", "files", "timeout", "ok_exit_codes", "load_note",
-                 "proxy_args", "direct", "pause_args", "incomplete_if", "inputs"}
+                 "proxy_args", "direct", "pause_args", "incomplete_if", "inputs", "fqdn_targets"}
 
 
 def _load_evidence(dir_: Path, problems: list[str]) -> dict[str, Evidence]:
@@ -285,7 +289,8 @@ def _load_evidence(dir_: Path, problems: list[str]) -> dict[str, Evidence]:
                 ok_exit_codes=tuple(int(x) for x in e.get("ok_exit_codes", [0])), load_note=_str(e.get("load_note")),
                 proxy_args=_strs(e.get("proxy_args")), direct=bool(e.get("direct", False)),
                 pause_args=_strs(e.get("pause_args")), incomplete_if=_strs(e.get("incomplete_if")),
-                inputs=_strs(e.get("inputs")), source=path.name,
+                inputs=_strs(e.get("inputs")), fqdn_targets=bool(e.get("fqdn_targets", False)),
+                source=path.name,
             )
             _check_evidence(ev, problems)
             out[eid] = ev
@@ -307,8 +312,17 @@ def _check_evidence(ev: Evidence, problems: list[str]) -> None:
             problems.append(f"{w}: auto evidence needs level light or full")
         if ev.heavy and ev.level != "full":
             problems.append(f"{w}: heavy evidence must be level full (excluded from light mode)")
-        if ev.target_type == "domain" and not ev.passive:
+        if ev.target_type == "domain" and not ev.passive and not ev.fqdn_targets:
             problems.append(f"{w}: domain targets run passive commands only (set passive: true or change target_type)")
+        if ev.fqdn_targets:
+            if ev.target_type != "domain" or ev.passive:
+                problems.append(f"{w}: fqdn_targets is for domain evidence that is not passive")
+            if ev.argv.count(FQDN_TARGET_URLS) != 1:
+                problems.append(f"{w}: fqdn_targets needs exactly one \"{FQDN_TARGET_URLS}\" element in argv")
+            if ev.direct:
+                problems.append(f"{w}: fqdn_targets cannot be direct")
+        elif FQDN_TARGET_URLS in ev.argv:
+            problems.append(f"{w}: argv has \"{FQDN_TARGET_URLS}\" but not fqdn_targets: true")
         if ev.heavy and not ev.load_note:
             problems.append(f"{w}: heavy evidence needs a load_note")
         if not 1 <= ev.timeout <= MAX_TIMEOUT:
@@ -335,6 +349,7 @@ def _check_evidence(ev: Evidence, problems: list[str]) -> None:
         for k, v in (("argv", ev.argv), ("level", ev.level), ("files", ev.files),
                      ("proxy_args", ev.proxy_args), ("direct", ev.direct),
                      ("pause_args", ev.pause_args), ("incomplete_if", ev.incomplete_if), ("inputs", ev.inputs),
+                     ("fqdn_targets", ev.fqdn_targets),
                      ("ok_exit_codes", ev.ok_exit_codes != (0,))):
             if v:
                 problems.append(f"{w}: manual evidence must not set {k}")
@@ -342,7 +357,7 @@ def _check_evidence(ev: Evidence, problems: list[str]) -> None:
             problems.append(f"{w}: manual evidence needs a description of what to capture")
     allowed = PLACEHOLDERS[ev.target_type]
     for s in ev.argv:
-        if s in OPTIONAL_ARGS:
+        if s in OPTIONAL_ARGS or s == FQDN_TARGET_URLS:
             continue
         for name in PLACEHOLDER_RE.findall(s):
             if name not in allowed:

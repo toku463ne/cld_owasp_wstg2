@@ -124,6 +124,25 @@ def plan(cat: catmod.Catalog, target: tmod.Target, mode: str) -> list[catmod.Evi
     return catmod.order_by_inputs(evs, cat.evidence)
 
 
+def fqdn_target_urls(db: dbmod.Database, target: tmod.Target) -> tuple[list[str], list[str]]:
+    """(base URLs, notes) of the registered FQDN targets of a domain target that their
+    own scope record lets a command contact now. Targets whose scope record is not
+    valid, or whose base URL is outside it, are left out with a note."""
+    urls, notes = [], []
+    for t in tmod.list_all(db):
+        if t.type != "fqdn" or t.parent_name != target.name:
+            continue
+        scope = tmod.get_scope(db, t)
+        url = (scope.base_url or f"https://{t.name}").rstrip("/") + "/"
+        try:
+            tmod.check_command(t, scope, [url], passive=False)
+        except tmod.ScopeError as e:
+            notes.append(f"{t.name}: not contacted ({e})")
+            continue
+        urls.append(url)
+    return urls, notes
+
+
 def input_paths(cfg: Config, target: tmod.Target, ev: catmod.Evidence,
                 cat: catmod.Catalog) -> dict[str, str]:
     """{input id: folder of its newest complete version} for {ev:ID} in argv. An input
@@ -274,11 +293,22 @@ class Runner:
         except RunError as e:
             shutil.rmtree(tmp, ignore_errors=True)
             return Outcome("failed", str(e))
+        child_args: list[str] = []
+        if ev.fqdn_targets:
+            # Each URL was checked against its own FQDN target's scope record; the
+            # rest of the command contacts nothing, so it gets the passive check.
+            urls, notes = fqdn_target_urls(self.db, target)
+            child_args = [x for u in urls for x in ("--url", u)] + [x for n in notes for x in ("--note", n)]
+
+        def expand(a: list[str]) -> list[str]:
+            return [y for x in a for y in (child_args if x == catmod.FQDN_TARGET_URLS else [x])]
+        argv, run_argv, rec_argv = expand(argv), expand(run_argv), expand(rec_argv)
+        checked = [a for a in argv if a not in child_args] if ev.fqdn_targets else argv
         leftover = [a for a in argv if catmod.PLACEHOLDER_RE.search(a) or catmod.EV_REF_RE.search(a)]
         try:
             if leftover:
                 raise tmod.ScopeError(f"unfilled placeholder in {leftover[0]!r}")
-            tmod.check_command(target, scope, argv, passive=ev.passive)
+            tmod.check_command(target, scope, checked, passive=ev.passive or ev.fqdn_targets)
         except tmod.ScopeError as e:
             shutil.rmtree(tmp, ignore_errors=True)
             return Outcome("refused", str(e))

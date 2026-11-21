@@ -13,7 +13,7 @@ fail: >-
 notes:
   - Never claim the resource (create the bucket, app, or page) to prove it. The DNS record and the provider's error message are the evidence.
   - "Typical unclaimed messages: S3 NoSuchBucket, GitHub Pages \"There isn't a GitHub Pages site here\", Heroku \"No such app\", Azure \"404 Web Site not found\", Fastly \"unknown domain\", Shopify \"Sorry, this shop is currently unavailable\". See https://github.com/EdOverflow/can-i-take-over-xyz for the current list of services that can be claimed."
-  - Steps 1 to 4 are for the domain target; steps 5 to 7 for an FQDN target.
+  - Steps 1 to 4 are for the domain target; steps 5 and 6 for an FQDN target.
 finding_kinds: [subdomain-takeover]
 steps:
   - summary: "Domain: look up the CNAME of every known subdomain (collected automatically)"
@@ -33,21 +33,19 @@ steps:
     command: >-
       cat {ev:subdomain-cnames}/cname-check.txt {ev:subdomain-cnames}/items/* 2>/dev/null
       | grep -hiE ' -> .*(\.s3[.-][a-z0-9.-]*amazonaws\.com|\.s3\.amazonaws\.com|\.s3-website|\.github\.io|herokuapp\.com|herokudns\.com|\.azurewebsites\.net|\.cloudapp\.net|\.cloudapp\.azure\.com|\.trafficmanager\.net|\.blob\.core\.windows\.net|\.azureedge\.net|\.cloudfront\.net|\.fastly\.net|\.pantheonsite\.io|\.ghost\.io|myshopify\.com|\.netlify\.app|\.vercel\.app|\.surge\.sh|\.bitbucket\.io|\.wordpress\.com|\.zendesk\.com|\.readme\.io|\.statuspage\.io|\.helpscoutdocs\.com|\.elasticbeanstalk\.com|\.storage\.googleapis\.com)|\[no address\]' || echo "no candidate"
-  - summary: "Domain: fetch each in-scope subdomain with a CNAME and look for the provider's unclaimed-resource message"
-    evidence: [subdomain-cnames, takeover-responses]
-    command: uv run wstg takeover-probe {domain} --dry-run; uv run wstg takeover-probe {domain}
+  - summary: "Domain: fetch each target host with a CNAME and look for the provider's unclaimed-resource message"
+    auto_run: true
+    evidence: [takeover-responses, subdomain-cnames]
+    command: cat {ev:takeover-responses}/stdout.txt
     operation: >-
-      Run on the Kali host, in the project directory. The first command only lists which
-      subdomains would be fetched and which are skipped; the second sends one GET / per
-      fetched host (https, http when https does not answer; no redirects followed) and
-      saves the answers as takeover-responses. Only hosts allowed by a valid scope record
-      (authorization and period in force) of this domain or of one of its FQDN targets
-      are contacted: to include a subdomain, add it (or *.{domain}) to the domain's scope
-      record first, once its owner has authorized it. Subdomains whose CNAME target has
-      no address are not fetched (DNS already shows them dangling).
-      Subdomains registered as FQDN targets need no manual run: their automatic
-      collection probes them (cname-takeover, step 7 on the FQDN target).
-    load_note: One or two requests per in-scope subdomain with a CNAME; out-of-scope hosts are never contacted. WSTG_PAUSE applies between hosts.
+      Collected automatically with the domain (light and full mode), after
+      subdomain-cnames. Only the registered FQDN targets of this domain are contacted,
+      each only when its own scope record allows it, and only when its CNAME target
+      resolves: one GET of its base URL, no redirects followed. To probe another
+      subdomain from step 2, add it as an FQDN target (with its scope record) and collect
+      takeover-responses again (Automatic evidence, or `uv run wstg collect {domain}
+      --evidence takeover-responses --force --run`). Candidates that are not targets are
+      judged from DNS only.
   - summary: "Domain: judge each candidate"
     evidence: [subdomain-cnames, takeover-responses]
     ai_task: >-
@@ -56,9 +54,9 @@ steps:
       Use your knowledge of which services can be taken over and the message each shows
       for an unclaimed resource. Verdict: fail when a subdomain shows an unclaimed-resource
       message or its CNAME target does not resolve at such a service; pass when no
-      candidate remains; "-" when subdomain-cnames is missing. Candidates skipped as out
-      of scope in takeover-responses are not judged from their answer; list them as
-      "not probed (out of scope)" and judge them from DNS only.
+      candidate remains; "-" when subdomain-cnames is missing. Candidates that are not
+      registered targets (not in takeover-responses) were not probed; list them as "not
+      probed (not a target)" and judge them from DNS only.
   - summary: "FQDN: read the CNAME chain of the target itself"
     auto_run: true
     evidence: [dns-fqdn]
@@ -68,14 +66,3 @@ steps:
     evidence: [http-root-https]
     command: >-
       grep -oiE "NoSuchBucket|The specified bucket does not exist|There isn.t a GitHub Pages site here|No such app|herokucdn\.com/error-pages/no-such-app|404 Web Site not found|Fastly error: unknown domain|Sorry, this shop is currently unavailable|Domain (is )?not configured|project not found|The thing you were looking for is no longer here|Repository not found|NoSuchContainer|The specified container does not exist" {ev:http-root-https}/body.html || echo "no unclaimed-resource message"
-  - summary: "FQDN: fetch the target through its CNAME and look for an unclaimed-resource message"
-    auto_run: true
-    evidence: [cname-takeover]
-    command: cat {ev:cname-takeover}/stdout.txt
-    operation: >-
-      Collected automatically with the FQDN target (light and full mode), from the CNAME
-      found in the parent domain's subdomain-cnames: one GET of the target's base URL,
-      only when the host has a CNAME whose target resolves. "UNCLAIMED-RESOURCE MESSAGE"
-      or "DANGLING CNAME" means a takeover candidate (fail); "has no CNAME" means not a
-      candidate. Collect the domain's subdomain-cnames first so the list is reused;
-      otherwise the CNAME is looked up directly.

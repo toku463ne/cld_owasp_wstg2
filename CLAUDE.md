@@ -51,7 +51,8 @@ Rules:
 ### Evidence model
 - Evidence has an **evidence ID** and can be shared by several WSTG tests. Which WSTG uses which evidence is defined per WSTG scenario (data, not ad-hoc code).
 - Evidence is editable and shows its collection date. An edit creates a **new version**; the original is kept.
-- Each target has a **scope record** (allowed hosts/ports, authorization reference, validity period). Every command is checked against it before running; domain targets run passive commands only.
+- Each target has a **scope record** (allowed hosts/ports, authorization reference, validity period). Every command is checked against it before running; domain targets run passive commands only,
+  except evidence marked `fqdn_targets`, which contacts only the domain's registered FQDN targets, each checked against its own scope record.
 - No Burp dependency: traffic-based checks use Python HTTP clients, curl, headless-browser HAR recording, and HAR import.
 
 Implementation plan and milestones: [`docs/PLAN.md`](docs/PLAN.md).
@@ -118,7 +119,6 @@ uv run wstg worker [--once]               # run queued automatic evidence jobs
 uv run wstg collect TARGET [--mode light|full] [--evidence ID [--force]] [--run]
 uv run wstg capture TARGET [--role NAME] [--url URL] [--headless]
                                           # record a browsing session as a HAR (headful Chromium, Playwright)
-uv run wstg takeover-probe DOMAIN [--dry-run]  # WSTG-CONF-10 step 3: GET / of in-scope subdomains with a CNAME
 uv run wstg ai-prompts TARGET [--test WSTG-..] [--evidence complete|any|all] [--existing skip|overwrite]
                                           # save AI prompts to <evidence>/TARGET/_ai/prompts
 uv run wstg ai-import TARGET [--overwrite] [--findings]  # import _ai/answers/WSTG-*.json
@@ -130,7 +130,7 @@ uv run pytest -q                          # tests (temporary directories only)
 Code layout: `src/wstg/` (`config.py`, `db.py` + `migrations/NNNN_*.sql`, `users.py`,
 `web.py`, `web_targets.py`, `web_evidence.py` + `templates/` + `static/`, `cli.py`, `catalog.py`,
 `targets.py` (targets, scope check, status), `evidence.py` (versioned store), `runner.py`
-(jobs, worker, evidence `inputs` ordering), `har.py` (`wstg-har`), `dnscheck.py` (`wstg-dns`), `takeover.py`, `analysis.py` (auto-run step commands), `prompt.py` + `ai_review.py` + `ai_files.py`
+(jobs, worker, evidence `inputs` ordering), `har.py` (`wstg-har`), `dnscheck.py` (`wstg-dns`), `analysis.py` (auto-run step commands), `prompt.py` + `ai_review.py` + `ai_files.py`
 (AI prompt, answer import, prompt/answer files)), catalog data in `catalog/`
 (`wstg_index.yaml`, `evidence/*.yaml`, `wstg/WSTG-*.yaml`, `tools.yaml`; schema in `catalog/evidence/core.yaml`
 and `src/wstg/catalog.py`), tests in `tests/`, setup in

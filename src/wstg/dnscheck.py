@@ -1,11 +1,13 @@
 """CNAME checks for WSTG-CONF-10 (subdomain takeover).
 
-`wstg-dns takeover --host H --cnames DIR --url URL` (automatic evidence
-`cname-takeover` of an FQDN target): the CNAME of H from the parent domain's
-subdomain-cnames folder (looked up with dig when the list is missing or does not
-name H); when H has a CNAME whose target resolves, one GET of URL (the target's
-base URL, the only host contacted; no redirects followed). No CNAME or a dangling
-CNAME: no request. Exit 3/4 when DNS or the request failed (collect again).
+`wstg-dns probe --cnames DIR --url URL... [--note TEXT...] [--pause S]` (automatic
+evidence `takeover-responses` of a domain target): for each URL, the base URL of a
+registered FQDN target of the domain whose scope record allows it (the runner passes
+only those), takes the host's CNAME from the subdomain-cnames folder (looked up with
+dig when the list does not name it) and, only when the CNAME target resolves, sends
+one GET of the URL (no redirects followed, TLS not verified, 600 bytes kept). No
+CNAME or a dangling CNAME: no request. Exit 3 when DNS failed, 4 when a request got
+no answer (the collection fails and is retried).
 
 CNAME of every known subdomain, from collected subdomain lists:
 
@@ -31,7 +33,12 @@ import http.client
 import json
 import os
 import re
+import ssl
 import subprocess
+import time
+import urllib.error
+import urllib.request
+from urllib.parse import urlsplit
 import sys
 import tempfile
 from pathlib import Path
@@ -183,41 +190,97 @@ def _listed_cname(folder: Path, host: str) -> tuple[str, str] | None:
     return None
 
 
-def cmd_takeover(args) -> int:
-    """Takeover probe of one target host: its CNAME from the domain's list (or looked up),
-    then one GET of the target URL when the CNAME target resolves. Only `--url` is
-    contacted. Exit 4 when the request gets no answer (the collection is retried)."""
-    from . import takeover        # fetch() and the unclaimed-message patterns
-    host = args.host.lower().rstrip(".")
-    listed = _listed_cname(Path(args.cnames), host) if args.cnames else None
-    if listed is not None:
-        cname, flags = listed
-        print(f"# CNAME of {host} from subdomain-cnames: {cname or '(none)'} {flags}".rstrip())
-    else:
-        why = "not collected" if not (args.cnames and Path(args.cnames).is_dir()) else "does not list it"
-        line = lookup([host], args.dig)[0]
-        m = re.match(r"^\S+ -> ?(\S*)(.*)$", line)
-        cname, flags = m.group(1), m.group(2).strip()
-        print(f"# subdomain-cnames {why}; looked up: {host} -> {cname or '(none)'} {flags}".rstrip())
-        if "lookup failed" in flags:
-            print(f"DNS lookup failed ({flags}); collect again", file=sys.stderr)
-            return 3
-    if not cname:
-        print(f"{host} has no CNAME: not a takeover candidate; no request sent")
-        return 0
-    if "no address" in flags:
-        print(f"DANGLING CNAME: {host} -> {cname} does not resolve; no request sent "
-              "(a third party may be able to claim the resource)")
-        return 0
-    scheme = args.url.split(":", 1)[0].lower()
-    proxy = os.environ.get(f"{scheme}_proxy") or os.environ.get(f"{scheme.upper()}_PROXY") or ""
+BODY_BYTES = 600
+TIMEOUT = 10
+UNCLAIMED_RE = re.compile(
+    r"NoSuchBucket|The specified bucket does not exist|There isn.t a GitHub Pages site here|No such app|"
+    r"herokucdn\.com/error-pages/no-such-app|404 Web Site not found|Fastly error: unknown domain|"
+    r"Sorry, this shop is currently unavailable|Domain (is )?not configured|project not found|"
+    r"The thing you were looking for is no longer here|Repository not found|NoSuchContainer|"
+    r"The specified container does not exist", re.I)
+
+
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, *args, **kwargs):
+        return None          # a redirect could lead out of scope: never followed
+
+
+def fetch(url: str, proxy: str = "") -> str:
+    """One GET without following redirects; a short summary of the answer."""
+    ctx = ssl.create_default_context()
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
+    proxies = {"http": proxy, "https": proxy} if proxy else {}
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler(proxies), _NoRedirect,
+                                         urllib.request.HTTPSHandler(context=ctx))
+    req = urllib.request.Request(url, headers={"User-Agent": "wstg-takeover-probe"})
     try:
-        print(f"GET {args.url} (through CNAME {cname}; no redirects followed)")
-        print(takeover.fetch(args.url, proxy))
-    except (OSError, ValueError, http.client.HTTPException) as e:
-        print(f"no answer: {getattr(e, 'reason', e)}")
-        print(f"{args.url} did not answer; collect again", file=sys.stderr)
-        return 4
+        resp = opener.open(req, timeout=TIMEOUT)
+    except urllib.error.HTTPError as e:     # 3xx/4xx/5xx: the body is what we need
+        resp = e
+    status = getattr(resp, "status", None) or resp.code
+    headers = resp.headers
+    body = resp.read(BODY_BYTES).decode("utf-8", "replace")
+    resp.close()
+    lines = [f"status {status}; server {headers.get('Server', '-')}"]
+    if headers.get("Location"):
+        lines.append(f"location {headers['Location']}")
+    hit = UNCLAIMED_RE.search(body)
+    if hit:
+        lines.append(f"UNCLAIMED-RESOURCE MESSAGE: {hit.group(0)}")
+    lines.append("body: " + re.sub(r"\s+", " ", body).strip())
+    return "\n".join(lines)
+
+
+def cmd_probe(args) -> int:
+    folder = Path(args.cnames) if args.cnames else None
+    urls = args.url or []
+    print(f"# takeover probe of {len(urls)} registered FQDN target(s) in scope; other hosts are never contacted")
+    for n in args.note or []:
+        print(f"# {n}")
+    if not urls:
+        print("(no registered FQDN target with a valid scope record: nothing fetched; add the subdomains"
+              " as FQDN targets to probe them)")
+        return 0
+    dns_failed = no_answer = 0
+    fetched = 0
+    for url in urls:
+        host = (urlsplit(url).hostname or "").lower()
+        print(f"===== {host}")
+        listed = _listed_cname(folder, host) if folder and folder.is_dir() else None
+        if listed is not None:
+            cname, flags = listed
+            print(f"CNAME (subdomain-cnames): {cname or '(none)'} {flags}".rstrip())
+        else:
+            line = lookup([host], args.dig)[0]
+            m = re.match(r"^\S+ -> ?(\S*)(.*)$", line)
+            cname, flags = m.group(1), m.group(2).strip()
+            print(f"CNAME (looked up; not in subdomain-cnames): {cname or '(none)'} {flags}".rstrip())
+            if "lookup failed" in flags:
+                dns_failed += 1
+                continue
+        if not cname:
+            print("no CNAME: not a takeover candidate; no request sent")
+            continue
+        if "no address" in flags:
+            print(f"DANGLING CNAME: {cname} does not resolve; no request sent"
+                  " (a third party may be able to claim the resource)")
+            continue
+        if fetched and args.pause:
+            time.sleep(args.pause)
+        fetched += 1
+        scheme = url.split(":", 1)[0].lower()
+        proxy = os.environ.get(f"{scheme}_proxy") or os.environ.get(f"{scheme.upper()}_PROXY") or ""
+        print(f"GET {url} (no redirects followed)")
+        try:
+            print(fetch(url, proxy))
+        except (OSError, ValueError, http.client.HTTPException) as e:
+            no_answer += 1
+            print(f"no answer: {getattr(e, 'reason', e)}")
+    if dns_failed or no_answer:
+        print(f"{dns_failed} DNS lookup(s) failed, {no_answer} request(s) got no answer; collect again",
+              file=sys.stderr)
+        return 3 if dns_failed else 4
     return 0
 
 
@@ -230,13 +293,14 @@ def main(argv: list[str] | None = None) -> int:
     s.add_argument("--subfinder", help="subfinder.txt (subdomains-subfinder evidence)")
     s.add_argument("-o", "--output", help="also write the list to this file")
     s.add_argument("--dig", default="dig", help=argparse.SUPPRESS)
-    s = sub.add_parser("takeover", help="takeover probe of one target host through its CNAME (WSTG-CONF-10)")
-    s.add_argument("--host", required=True, help="the target host (FQDN)")
-    s.add_argument("--cnames", help="subdomain-cnames version folder of the parent domain")
-    s.add_argument("--url", required=True, help="the one URL to fetch (the target's base URL)")
+    s = sub.add_parser("probe", help="takeover probe of the registered FQDN targets (WSTG-CONF-10)")
+    s.add_argument("--cnames", help="subdomain-cnames version folder")
+    s.add_argument("--url", action="append", help="base URL of a registered, in-scope FQDN target (repeatable)")
+    s.add_argument("--note", action="append", help="a line for the output header (repeatable)")
+    s.add_argument("--pause", type=int, default=0, help="seconds between requests")
     s.add_argument("--dig", default="dig", help=argparse.SUPPRESS)
     args = ap.parse_args(argv)
-    return cmd_cnames(args) if args.cmd == "cnames" else cmd_takeover(args)
+    return cmd_cnames(args) if args.cmd == "cnames" else cmd_probe(args)
 
 
 if __name__ == "__main__":

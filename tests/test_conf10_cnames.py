@@ -1,5 +1,6 @@
 """WSTG-CONF-10 automation: evidence inputs (ordering, rendering, re-collect),
-the `wstg-dns cnames` lookup (with a fake dig), and the in-scope takeover probe.
+the `wstg-dns cnames` lookup (with a fake dig), and the takeover probe of the
+registered FQDN targets (fqdn_targets).
 No real DNS query or HTTP request is made."""
 
 import json
@@ -12,7 +13,6 @@ from wstg import catalog as catmod
 from wstg import dnscheck
 from wstg import evidence as evmod
 from wstg import runner as rmod
-from wstg import takeover
 from wstg import targets as tm
 
 PY = sys.executable
@@ -115,8 +115,8 @@ def test_cnames_lookup_failure_is_not_complete(tmp_path, fake_dig):
 
 # ---- catalog: inputs ------------------------------------------------------------
 
-def _ev(eid, argv=("true",), inputs=(), level="light", target_type="domain", kind="auto", **kw):
-    return catmod.Evidence(id=eid, title=eid, target_type=target_type, kind=kind, level=level, passive=True,
+def _ev(eid, argv=("true",), inputs=(), level="light", target_type="domain", kind="auto", passive=True, **kw):
+    return catmod.Evidence(id=eid, title=eid, target_type=target_type, kind=kind, level=level, passive=passive,
                            argv=tuple(argv), inputs=tuple(inputs), **kw)
 
 
@@ -202,64 +202,7 @@ def test_job_collects_inputs_first_and_recollects_when_an_input_changes(cfg, db,
     assert {i["status"] for i in run("full")} == {"skipped"}
 
 
-# ---- takeover probe ------------------------------------------------------------------
-
-def _cnames(store, target, text):
-    tmp = store.begin(target, "subdomain-cnames")
-    (tmp / "stdout.txt").write_text(text)
-    (tmp / "cname-check.txt").write_text(text)
-    store.commit(target, "subdomain-cnames", tmp, source="auto", actor="test", status="complete",
-                 summary="collected", items=[evmod.Item("text", "stdout.txt", "", 0),
-                                             evmod.Item("file", "cname-check.txt", "", 0)])
-
-
-def test_takeover_probe_contacts_only_in_scope_hosts(cfg, db, domain):
-    store = evmod.Store(cfg, db)
-    shop = tm.create(db, cfg, "shop.example.com", "fqdn", parent="example.com")
-    tm.update_scope(db, shop, allowed_hosts="shop.example.com", allowed_ports="443,80",
-                    base_url="https://shop.example.com", authorization_ref="Contract 2026-001",
-                    valid_from="2000-01-01", valid_until="2099-12-31", actor="test")
-    expired = tm.create(db, cfg, "blog.example.com", "fqdn", parent="example.com")
-    tm.update_scope(db, expired, allowed_hosts="blog.example.com", allowed_ports="443",
-                    base_url="https://blog.example.com", authorization_ref="Contract 2020-001",
-                    valid_from="2000-01-01", valid_until="2001-01-01", actor="test")
-    _cnames(store, domain, "# ct-crtsh: 4 names\n"
-                           "shop.example.com -> shops.myshopify.com\n"
-                           "blog.example.com -> blog.ghost.io\n"
-                           "old.example.com -> gone.s3.amazonaws.com [no address]\n"
-                           "www.example.com -> \n"
-                           "docs.example.com -> docs.github.io\n")
-    calls = []
-
-    def fetcher(url, proxy):
-        calls.append(url)
-        if url.startswith("https://"):
-            raise OSError("connection refused")
-        return "status 404; server -\nUNCLAIMED-RESOURCE MESSAGE: Sorry, this shop is currently unavailable\nbody: ..."
-
-    text, plan, _ = takeover.probe(cfg, db, store, domain, actor="test", dry_run=True, fetcher=fetcher)
-    assert calls == [] and "would fetch shop.example.com" in text
-    text, plan, saved = takeover.probe(cfg, db, store, domain, actor="test", fetcher=fetcher)
-    assert calls == ["https://shop.example.com/", "http://shop.example.com/"]      # http fallback, in scope
-    assert "[https] no answer: connection refused" in text and "UNCLAIMED-RESOURCE MESSAGE" in text
-    assert "blog.example.com -> blog.ghost.io\nskipped: out of scope" in text     # expired scope
-    assert "docs.example.com -> docs.github.io\nskipped: out of scope" in text
-    assert "old.example.com" in text and "not fetched" in text
-    assert "www.example.com" not in text                                          # no CNAME
-    v = store.load(domain.name, "takeover-responses")
-    assert v.version == saved.version and v.items[0].file.endswith(".txt")
-
-
-def test_takeover_probe_needs_a_domain_and_the_cnames(cfg, db, domain):
-    store = evmod.Store(cfg, db)
-    with pytest.raises(takeover.ProbeError, match="not collected"):
-        takeover.probe(cfg, db, store, domain, actor="test")
-    fq = tm.create(db, cfg, "www.example.com", "fqdn", parent="example.com")
-    with pytest.raises(takeover.ProbeError, match="not a domain target"):
-        takeover.probe(cfg, db, store, fq, actor="test")
-
-
-# ---- automatic takeover probe of an FQDN target (cname-takeover) ----------------------
+# ---- takeover probe of the registered FQDN targets (takeover-responses) ----------
 
 def _cname_dir(tmp_path, text):
     d = tmp_path / "subdomain-cnames" / "v0001"
@@ -268,55 +211,89 @@ def _cname_dir(tmp_path, text):
     return d
 
 
-def test_takeover_fetches_only_the_target_url_when_it_has_a_live_cname(tmp_path, fake_dig, monkeypatch, capsys):
-    dig, set_table = fake_dig
-    set_table({})
-    calls = []
-    monkeypatch.setattr(takeover, "fetch", lambda url, proxy: calls.append(url) or
-                        "status 404; server -\nUNCLAIMED-RESOURCE MESSAGE: NoSuchBucket\nbody: ...")
-    d = _cname_dir(tmp_path, "www.example.com -> www-bucket.s3.amazonaws.com\nshop.example.com -> \n"
-                             "old.example.com -> gone.s3.amazonaws.com [no address]\n")
-    args = ["takeover", "--cnames", str(d), "--dig", dig]
-    assert dnscheck.main(args + ["--host", "www.example.com", "--url", "https://www.example.com/"]) == 0
-    out = capsys.readouterr().out
-    assert calls == ["https://www.example.com/"] and "UNCLAIMED-RESOURCE MESSAGE: NoSuchBucket" in out
-    assert "from subdomain-cnames: www-bucket.s3.amazonaws.com" in out
-    assert dnscheck.main(args + ["--host", "shop.example.com", "--url", "https://shop.example.com/"]) == 0
-    assert "has no CNAME" in capsys.readouterr().out
-    assert dnscheck.main(args + ["--host", "old.example.com", "--url", "https://old.example.com/"]) == 0
-    assert "DANGLING CNAME" in capsys.readouterr().out
-    assert calls == ["https://www.example.com/"]                      # no request for the other two
-
-
-def test_takeover_looks_up_the_cname_when_not_listed_and_fails_on_no_answer(tmp_path, fake_dig, monkeypatch, capsys):
+def test_probe_fetches_only_given_urls_with_a_live_cname(tmp_path, fake_dig, monkeypatch, capsys):
     dig, set_table = fake_dig
     set_table({"app.example.com CNAME": _ok(("app.example.com", "CNAME", "app.herokuapp.com")),
                "app.herokuapp.com A": _ok(("app.herokuapp.com", "A", "192.0.2.20")),
                "app.herokuapp.com AAAA": _ok()})
+    calls = []
 
-    def refused(url, proxy):
-        raise OSError("connection refused")
-    monkeypatch.setattr(takeover, "fetch", refused)
-    rc = dnscheck.main(["takeover", "--host", "app.example.com", "--cnames", str(tmp_path / "missing"),
-                        "--url", "https://app.example.com/", "--dig", dig])
+    def fake_fetch(url, proxy):
+        calls.append(url)
+        if "app." in url:
+            raise OSError("connection refused")
+        return "status 404; server -\nUNCLAIMED-RESOURCE MESSAGE: NoSuchBucket\nbody: ..."
+    monkeypatch.setattr(dnscheck, "fetch", fake_fetch)
+    d = _cname_dir(tmp_path, "www.example.com -> www-bucket.s3.amazonaws.com\nshop.example.com -> \n"
+                             "old.example.com -> gone.s3.amazonaws.com [no address]\n"
+                             "other.example.com -> other.github.io\n")
+    rc = dnscheck.main(["probe", "--cnames", str(d), "--dig", dig,
+                        "--url", "https://www.example.com/", "--url", "https://shop.example.com/",
+                        "--url", "https://old.example.com/", "--url", "https://app.example.com:8443/",
+                        "--note", "blog.example.com: not contacted (scope record expired)"])
     out = capsys.readouterr().out
-    assert "subdomain-cnames not collected; looked up: app.example.com -> app.herokuapp.com" in out
+    # other.example.com is in the list but not a target: never contacted
+    assert calls == ["https://www.example.com/", "https://app.example.com:8443/"]
+    assert "UNCLAIMED-RESOURCE MESSAGE: NoSuchBucket" in out
+    assert "===== shop.example.com\nCNAME (subdomain-cnames): (none)\nno CNAME" in out
+    assert "DANGLING CNAME: gone.s3.amazonaws.com" in out
+    assert "CNAME (looked up; not in subdomain-cnames): app.herokuapp.com" in out
+    assert "# blog.example.com: not contacted (scope record expired)" in out
     assert rc == 4 and "no answer: connection refused" in out          # failed collection, retried
 
 
-def test_cname_takeover_evidence_contacts_only_the_target(cfg, db):
+def test_probe_without_targets_contacts_nothing(tmp_path, capsys):
+    assert dnscheck.main(["probe", "--cnames", str(tmp_path)]) == 0
+    assert "nothing fetched" in capsys.readouterr().out
+
+
+def test_fqdn_targets_is_validated():
+    bad = [
+        _ev("a", ["x", "{fqdn_target_urls}"]),                                       # flag missing
+        _ev("b", ["x"], fqdn_targets=True),                                            # token missing
+        catmod.Evidence(id="c", title="c", target_type="fqdn", kind="auto", level="light",
+                        argv=("x", "{fqdn_target_urls}"), fqdn_targets=True),          # not a domain
+    ]
+    problems = []
+    for e in bad:
+        catmod._check_evidence(e, problems)
+    text = "\n".join(problems)
+    assert "evidence a: argv has \"{fqdn_target_urls}\" but not fqdn_targets" in text
+    assert "evidence b: fqdn_targets needs exactly one" in text
+    assert "evidence c: fqdn_targets is for domain evidence that is not passive" in text
+
+
+def _scope(db, t, hosts, ports, base, until="2099-12-31"):
+    tm.update_scope(db, t, allowed_hosts=hosts, allowed_ports=ports, base_url=base,
+                    authorization_ref="Contract 2026-001", valid_from="2000-01-01", valid_until=until, actor="test")
+
+
+def test_domain_job_passes_only_in_scope_fqdn_targets(cfg, db, domain):
+    for name, ports, base, until in (("www.example.com", "443", "https://www.example.com", "2099-12-31"),
+                                     ("blog.example.com", "443", "https://blog.example.com", "2001-01-01"),
+                                     ("shop.example.com", "443", "https://shop.example.com:8443", "2099-12-31")):
+        _scope(db, tm.create(db, cfg, name, "fqdn", parent="example.com"), name, ports, base, until)
+    _scope(db, tm.create(db, cfg, "www.example.org", "fqdn"), "www.example.org", "443", "https://www.example.org")
+    urls, notes = rmod.fqdn_target_urls(db, domain)
+    assert urls == ["https://www.example.com/"]
+    assert any(n.startswith("blog.example.com: not contacted") for n in notes)
+    assert any(n.startswith("shop.example.com: not contacted") and "port 8443" in n for n in notes)
+    # a synthetic evidence that prints its argv: the token becomes --url/--note, and the
+    # domain-passive rule does not refuse it
+    probe = _ev("probe", [PY, "-c", "import sys; print(sys.argv[1:])", "{fqdn_target_urls}"],
+                fqdn_targets=True, passive=False)
+    cat = catmod.Catalog(wstg_version="4.2", tests={}, evidence={"probe": probe})
+    store = evmod.Store(cfg, db)
+    r = rmod.Runner(cfg, db, cat, store)
+    out = r.collect(domain, probe)
+    assert out.status == "complete", out.message
+    text = (store.load(domain.name, "probe").path / "stdout.txt").read_text()
+    assert "'--url', 'https://www.example.com/'" in text and "blog.example.com: not contacted" in text
+    assert "www.example.org" not in text                                          # not a child of this domain
+
+
+def test_real_catalog_takeover_responses_is_automatic():
     cat = catmod.load()
-    ev = cat.evidence["cname-takeover"]
-    dom = tm.create(db, cfg, "example.com", "domain")
-    site = tm.create(db, cfg, "www.example.com", "fqdn", parent="example.com")
-    tm.update_scope(db, site, allowed_hosts="www.example.com", allowed_ports="443", base_url="https://www.example.com",
-                    authorization_ref="Contract 2026-001", valid_from="2000-01-01", valid_until="2099-12-31",
-                    actor="test")
-    scope = tm.get_scope(db, site)
-    values = tm.placeholder_values(cfg, site, scope) | {"out": "/tmp/x"}
-    paths = rmod.input_paths(cfg, site, ev, cat)
-    assert paths["subdomain-cnames"].endswith("/example.com/subdomain-cnames/latest")   # the parent's folder
-    argv, _, _ = rmod.build_argv(ev, values, "", 0, paths)
-    assert tm.contacted(argv, site) == [("www.example.com", None), ("www.example.com", 443)]
-    tm.check_command(site, scope, argv, passive=ev.passive)             # in scope: no error
-    assert ev.target_type == "fqdn" and not ev.passive and dom.type == "domain"
+    ev = cat.evidence["takeover-responses"]
+    assert ev.kind == "auto" and ev.target_type == "domain" and ev.fqdn_targets and not ev.passive
+    assert ev.inputs == ("subdomain-cnames",) and "cname-takeover" not in cat.evidence
