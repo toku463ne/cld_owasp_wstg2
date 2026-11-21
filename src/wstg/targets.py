@@ -364,6 +364,43 @@ def set_verdict(db: dbmod.Database, target: Target, test_id: str, step: int, ver
         db.audit(conn, actor, "verdict.set", target=target.name, test=test_id, step=step, verdict=verdict)
 
 
+MAX_STEP_COMMENT = 10000
+
+
+def step_comments(db: dbmod.Database, target: Target, test_id: str | None = None) -> dict:
+    """{test_id: {step: {"comment", "updated_at", "updated_by"}}} for the target (or one test)."""
+    sql = "SELECT test_id, step, comment, updated_at, updated_by FROM step_comments WHERE target_id = ?"
+    args: tuple = (target.id,)
+    if test_id:
+        sql += " AND test_id = ?"
+        args += (test_id,)
+    out: dict[str, dict[int, dict]] = {}
+    for r in db.query(sql, args):
+        out.setdefault(r["test_id"], {})[r["step"]] = {k: r[k] for k in ("comment", "updated_at", "updated_by")}
+    return out
+
+
+def set_step_comment(db: dbmod.Database, target: Target, test_id: str, step: int, comment: str,
+                     actor: str) -> None:
+    """Set a step's tester comment (stands in for evidence there is nothing to attach
+    for); an empty comment removes it."""
+    comment = (comment or "").replace("\r\n", "\n").strip()
+    if len(comment) > MAX_STEP_COMMENT:
+        raise TargetError(f"the comment is longer than {MAX_STEP_COMMENT} characters")
+    with db.tx() as conn:
+        if not comment:
+            conn.execute("DELETE FROM step_comments WHERE target_id=? AND test_id=? AND step=?",
+                         (target.id, test_id, step))
+            db.audit(conn, actor, "step_comment.clear", target=target.name, test=test_id, step=step)
+            return
+        conn.execute(
+            "INSERT INTO step_comments (target_id, test_id, step, comment, updated_at, updated_by)"
+            " VALUES (?,?,?,?,?,?) ON CONFLICT (target_id, test_id, step) DO UPDATE SET"
+            " comment=excluded.comment, updated_at=excluded.updated_at, updated_by=excluded.updated_by",
+            (target.id, test_id, step, comment, dbmod.utcnow(), actor))
+        db.audit(conn, actor, "step_comment.set", target=target.name, test=test_id, step=step)
+
+
 def status(step_count: int, step_verdicts: dict[int, str], has_evidence: bool = False) -> str:
     """WSTG status: '-', 'started', 'pass', 'fail', 'no need'.
 

@@ -109,3 +109,5 @@ td code { overflow-wrap: anywhere; }
 .ai-box textarea { width: 100%; box-sizing: border-box; font-family: ui-monospace, monospace; font-size: 12px; }
 .auto-out { margin: 6px 0; } .auto-out summary { cursor: pointer; color: var(--muted, #666); font-size: .9em; }
 .auto-out pre { max-height: 22em; overflow: auto; }
+.step-comment { margin: 8px 0 2px; } .step-comment summary { cursor: pointer; font-weight: 600; font-size: .95em; }
+.step-comment textarea { width: 100%; }

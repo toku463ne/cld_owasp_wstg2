@@ -15,7 +15,10 @@ these rules:
 
 - "-" (no decision) never changes a step.
 - A "pass" is refused when an evidence of the step is missing or its last
-  collection failed: a missing or failed collection is never a pass.
+  collection failed: a missing or failed collection is never a pass. A tester
+  comment on a step stands in for the missing *manual* evidence of that step
+  (there was nothing to attach), in every step of the test that uses it; it
+  never stands in for automatic evidence.
 - A verdict set by a tester (not by an earlier AI import) is kept unless
   `overwrite` is set.
 - Applied verdicts are recorded as set by "ai:<user>", so the page can tell
@@ -222,15 +225,27 @@ def create_finding(db: dbmod.Database, target: tmod.Target, review_id: int, inde
         raise
 
 
-def missing_evidence(store: evmod.Store, cat: catmod.Catalog, target: tmod.Target, step: catmod.Step) -> list[str]:
-    """Evidence of a step without a usable (complete) version."""
+def missing_evidence(store: evmod.Store, cat: catmod.Catalog, target: tmod.Target, step: catmod.Step,
+                     covered: set[str] | frozenset = frozenset()) -> list[str]:
+    """Evidence of a step without a usable (complete) version. `covered`: manual
+    evidence that a tester comment stands in for (see `commented_evidence`)."""
     out = []
     for eid in step.evidence:
         ev = cat.evidence[eid]
+        if eid in covered and ev.kind == "manual":
+            continue
         owner = tmod.evidence_owner(target, ev.target_type)
         if not owner or not store.load(owner, eid):
             out.append(eid)
     return out
+
+
+def commented_evidence(db: dbmod.Database, cat: catmod.Catalog, target: tmod.Target, test_id: str) -> set[str]:
+    """Manual evidence of the steps of a test that have a tester comment."""
+    sc = cat.scenarios[test_id]
+    comments = tmod.step_comments(db, target, test_id).get(test_id, {})
+    return {eid for n in comments if 1 <= n <= len(sc.steps) for eid in sc.steps[n - 1].evidence
+            if cat.evidence[eid].kind == "manual"}
 
 
 def apply(db: dbmod.Database, store: evmod.Store, cat: catmod.Catalog, target: tmod.Target,
@@ -240,6 +255,7 @@ def apply(db: dbmod.Database, store: evmod.Store, cat: catmod.Catalog, target: t
     current = {r["step"]: r for r in db.query(
         "SELECT step, verdict, updated_by FROM step_verdicts WHERE target_id = ? AND test_id = ?",
         (target.id, review.test))}
+    covered = commented_evidence(db, cat, target, review.test)
     results = []
     for s in review.steps:
         n, v = s["step"], s["verdict"]
@@ -249,7 +265,7 @@ def apply(db: dbmod.Database, store: evmod.Store, cat: catmod.Catalog, target: t
             res.update(outcome="no decision", note="the AI did not decide; step unchanged")
         elif cur and cur["verdict"] == v:
             res.update(outcome="unchanged", note="already " + v)
-        elif v == "pass" and (missing := missing_evidence(store, cat, target, sc.steps[n - 1])):
+        elif v == "pass" and (missing := missing_evidence(store, cat, target, sc.steps[n - 1], covered)):
             res.update(outcome="refused", note="evidence missing or failed: " + ", ".join(missing))
         elif cur and not cur["updated_by"].startswith(AI_PREFIX) and not overwrite:
             res.update(outcome="kept", note=f"tester verdict {cur['verdict']} kept (by {cur['updated_by']})")

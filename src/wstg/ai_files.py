@@ -88,7 +88,7 @@ def evidence_paths(cfg: Config, cat: catmod.Catalog, t: tmod.Target) -> dict[str
 def steps_for(cfg: Config, db: dbmod.Database, cat: catmod.Catalog, store: evmod.Store,
               t: tmod.Target, test_id: str, have: dict | None = None) -> list[dict]:
     """The steps of a scenario as the WSTG page and the AI prompt show them
-    (rendered commands, auto-run output, evidence rows, verdicts)."""
+    (rendered commands, auto-run output, evidence rows, verdicts, tester comments)."""
     sc = cat.scenarios.get(test_id)
     if not sc:
         return []
@@ -96,12 +96,13 @@ def steps_for(cfg: Config, db: dbmod.Database, cat: catmod.Catalog, store: evmod
     ev_paths = evidence_paths(cfg, cat, t)
     have = collected(db, cat, store, t) if have is None else have
     vs = tmod.verdicts(db, t, test_id).get(test_id, {})
+    comments = tmod.step_comments(db, t, test_id).get(test_id, {})
     cache_dir = folder(cfg, t).parent / ".analysis"
     steps = []
     for i, st in enumerate(sc.steps, 1):
         command = catmod.render(st.command, values, ev_paths)
         steps.append({
-            "n": i, "step": st, "verdict": vs.get(i, "-"),
+            "n": i, "step": st, "verdict": vs.get(i, "-"), "comment": comments.get(i),
             "auto": analysis.run(cache_dir, st.command, command, ev_paths) if st.auto_run else None,
             "command": command,
             "operation": catmod.render(st.operation, values, ev_paths),
