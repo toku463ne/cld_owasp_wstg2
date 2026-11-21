@@ -18,7 +18,7 @@
   are masked in the recorded command line.
 - WSTG_DIRECT_SSH: evidence marked `direct` (tools that cannot use a proxy)
   runs on that jump host over SSH instead (see `Remote`).
-- Evidence with `inputs` reads other evidence ({ev:ID} in argv = that evidence's
+- Evidence with `inputs` reads other evidence, automatic or manual ({ev:ID} in argv = that evidence's
   newest complete version folder, or a path that does not exist when it was never
   collected). A job orders it after its inputs, and collects it again when one of
   its inputs got a new version in the same job (its old version is then stale).

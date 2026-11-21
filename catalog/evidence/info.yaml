@@ -190,17 +190,37 @@ evidence:
       Screenshot of the Wappalyzer browser extension popup on the top page and on one
       logged-in screen, with product names and versions visible.
 
-  - id: entry-points
-    title: Entry point inventory
+  - id: entry-point-list
+    title: Entry points typed by the tester
     target_type: fqdn
     kind: manual
     description: >-
-      The inventory of every input the application accepts, one block per entry point
-      (method, path, parameter names and where they are sent, whether login is required).
-      Do not write it from scratch: on the WSTG-INFO-06 page, step 7, press "Save output
-      to Entry point inventory" to save the draft made from the HAR files, then edit it
-      here as step 7 says (set the login lines from step 6, add what only the crawl or
-      the forms show) and press "Save as new version".
+      Paths the tester knows, one per line (for example /login, /myaccount). Typed in the
+      box of WSTG-INFO-06 step 3, which saves this and collects entry-points.
+
+  - id: entry-points
+    title: Entry point inventory
+    target_type: fqdn
+    kind: auto
+    level: full
+    inputs: [entry-point-list, har-browse, katana-crawl, content-ffuf, default-content, admin-paths,
+             metafiles, wayback-urls]
+    description: >-
+      One block per path: where it was found, the answer without cookies and with each
+      logged-in session captured by `wstg capture` (status, type, size, redirect), whether
+      it needs login (OPEN when it answers the same without login although it was seen
+      only logged in), its query parameters, and the forms on the page (field names,
+      hidden fields, file uploads). Paths come from entry-point-list (all), and up to 100
+      from the HAR, crawl, ffuf hits, default/admin paths that answered 200, robots.txt,
+      sitemap.xml, and the web archive. GET only, no redirects followed, state-changing
+      paths (logout, delete, ...) never requested; no cookie or field value is stored.
+    argv: [wstg-entry, --base, "{base_url}/", --list, "{ev:entry-point-list}", --har, "{ev:har-browse}",
+           --katana, "{ev:katana-crawl}", --ffuf, "{ev:content-ffuf}", --default, "{ev:default-content}",
+           --admin, "{ev:admin-paths}", --metafiles, "{ev:metafiles}", --wayback, "{ev:wayback-urls}",
+           "{pause_args}"]
+    pause_args: [--pause, "{pause}"]
+    timeout: 1800
+    load_note: Up to two GETs (without and with login) per listed path plus up to 100 found paths; WSTG_PAUSE applies.
 
   - id: workflow-map
     title: Execution path map

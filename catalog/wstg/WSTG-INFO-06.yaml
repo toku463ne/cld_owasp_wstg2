@@ -13,72 +13,37 @@ fail: >-
 notes:
   - Coverage is the goal. A crawl without login misses most of the application; the logged-in HAR is required.
   - A missing HAR or crawl is not a pass; the inventory is incomplete until both walkthroughs exist.
-  - "When replaying requests without cookies, use GET only: replaying POST/PUT/DELETE can change data."
+  - The tool replays GET only and never requests paths that look state-changing (logout, delete, ...).
 finding_kinds: [unauthenticated-endpoint]
 steps:
   - summary: Walk through the application in the browser, anonymous and logged in, and save HAR files
     operation: Follow the capture instructions of the HAR evidence; visit every menu, form, and wizard step once.
     evidence: [har-browse]
-  - summary: List requests (method, URL, body type) from the HAR files and the crawl
-    auto_run: true
-    evidence: [har-browse, katana-crawl]
-    command: >-
-      jq -r '.log.entries[].request | [.method, (.url | sub("\\?.*"; "")), (.postData.mimeType // "-")] | @tsv'
-      {ev:har-browse}/items/*.har | sort -u; grep -c . {ev:katana-crawl}/katana.txt
-  - summary: List parameter, JSON field, cookie, and custom header names
+  - summary: List the requests and their parameters from the HAR files
     auto_run: true
     evidence: [har-browse]
-    command: >-
-      jq -r '.log.entries[].request | (.queryString[]?.name | "query " + .), (.postData.params[]?.name | "form " + .),
-      (.cookies[]?.name | "cookie " + .), (.headers[] | select(.name | test("^(x-|authorization$)"; "i")) | "header " + .name),
-      (select((.postData.mimeType // "") | test("json")) | .postData.text | fromjson? | paths(scalars) | map(tostring) | "json " + join("."))'
-      {ev:har-browse}/items/*.har | sort | uniq -c | sort -rn
-  - summary: Add query parameters seen in the crawl and the web archive
-    auto_run: true
-    evidence: [katana-crawl, wayback-urls]
-    command: >-
-      grep -qi '^[[:space:]]*<' {ev:wayback-urls}/wayback.txt && echo "wayback-urls UNAVAILABLE: the Wayback Machine returned an error page (HTTP 503 is common); recollect - archived parameters may be missing this run";
-      { cat {ev:katana-crawl}/katana.txt; grep -F '://{fqdn}' {ev:wayback-urls}/wayback.txt; } | grep -F '?'
-      | sed -E 's/^[^?]*\?//' | sed 's/&/\n/g' | cut -d= -f1 | sort | uniq -c | sort -rn
-  - summary: Find forms, hidden fields, and file uploads on the collected pages
-    auto_run: true
-    evidence: [site-assets]
-    command: grep -rhoiE '<form[^>]*>|<input[^>]*type=.?(hidden|file)[^>]*>' {ev:site-assets}/site | sort -u
-  - summary: Replay logged-in GET requests without cookies to find entry points open without login
-    evidence: [har-browse]
-    command: >-
-      jq -r '.log.entries[] | select(.request.method == "GET") | .request.url' {ev:har-browse}/items/*.har
-      | grep -F '{base_url}' | sort -u | while read -r u; do echo "$(curl -sk -m 10 -o /dev/null -w '%{http_code} %{size_download}' "$u") $u"; done
-    load_note: One GET per unique URL in the HAR. Run it only on the logged-in HAR and skip logout or other state-changing GET URLs.
-  - summary: Write the entry point inventory (draft built from the HAR files)
-    auto_run: true
-    evidence: [entry-points, har-browse, katana-crawl, site-assets]
     command: wstg-har entry-points --host {fqdn} {ev:har-browse}/items/*.har
-    save_output_to: entry-points
     operation: >-
-      The output above is a draft of the inventory: one block per entry point (method
-      and path; ID-like parts of the path shown as <id>, <uuid>, <hex>, <token>), its
-      parameters by where they are sent, a login guess, and notes. Finish it in four
-      steps.
-      (1) Press "Save output to Entry point inventory" under the output. The draft is
-      saved as a text item and its evidence page opens with the text in an edit box.
-      (2) In that edit box, for every block whose login line is
-      `likely (seen only logged in)`, look the URL up in the output of step 6 and change
-      the line to `login: yes` when step 6 shows 302 (to the login page), 401, or 403, or
-      to `login: NO - open without login` when step 6 shows 200 with about the same size
-      as when logged in (that block is a fail of this test: create a finding).
-      (3) At the end of the text, add a line `== Not browsed` and under it one line per
-      URL or parameter that steps 4 and 5 show but the draft does not (for example
-      `GET /search  params: query: sort, lang  (crawl)` or
-      `POST /contact  params: form: name, mail, _token  (hidden field)`).
-      (4) Press "Save as new version". If step 6 was not run, write in the step's tester
-      comment why, instead of changing the login lines.
+      One block per method and path seen in the browser (POST bodies included), with the
+      parameter names by where they are sent. ID-like parts of a path are shown as <id>.
+  - summary: Probe every entry point with and without login (collected automatically)
+    auto_run: true
+    evidence: [entry-points, entry-point-list, har-browse, katana-crawl, content-ffuf, default-content,
+               admin-paths, metafiles, wayback-urls]
+    input_list: entry-point-list
+    collects: entry-points
+    command: cat {ev:entry-points}/stdout.txt
+    operation: >-
+      Optional: type paths you know in the box (one per line, for example /login and
+      /myaccount) and press "Save and collect". Paths found by the HAR, crawl, ffuf,
+      robots/sitemap, and archive are added automatically. Lines marked OPEN answer the
+      same without login although they were seen only logged in: check each one.
+  - summary: Judge the entry point inventory
+    evidence: [entry-points, har-browse]
     ai_task: >-
-      Check the entry-points evidence (the tester's inventory, drafted by this step's
-      command from the HAR files) against the HAR summary, the crawl, the web archive
-      parameters, and the forms in the evidence: list entry points or parameters that are
-      missing from it, and every block whose login line is still "likely" (not yet checked
-      with the replay of step 6). Verdict "-" when the entry-points evidence is not saved
-      (this step records an inventory; it has no pass or fail of its own); pass when it is
-      saved and covers the HAR and crawl; fail only when a block marked as needing login is
-      shown to answer without it (that is the test's fail criterion).
+      From steps 2 and 3, summarise the entry points (method, path, parameters and where
+      they are sent, forms, file uploads) and whether each needs login. Verdict: fail when
+      an entry point that should need login answers with its content without cookies
+      (step 3 "OPEN", confirmed by its content or purpose); pass when the logged-in HAR and
+      the probe exist and no such entry point is found; "-" when the HAR or entry-points
+      is missing, or no logged-in session was compared.

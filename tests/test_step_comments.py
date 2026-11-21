@@ -78,39 +78,3 @@ def test_comment_stands_in_for_manual_evidence_only(cfg, db, site):
     assert res[2]["outcome"] == "refused" and "auth-pages" in res[2]["note"]
     # step 4 also uses registration-tests (covered by the step 3 comment), but enum-tests is still missing
     assert res[4]["outcome"] == "refused" and "enum-tests" in res[4]["note"] and "registration-tests" not in res[4]["note"]
-
-
-def test_save_step_output_into_its_manual_evidence(admin_client, guest_client, cfg, db, site):
-    store = evmod.Store(cfg, db)
-    har = {"log": {"entries": [
-        {"request": {"method": "GET", "url": "https://www.example.com/search?q=SECRET1", "cookies": [], "headers": []},
-         "response": {"status": 200, "headers": []}},
-        {"request": {"method": "POST", "url": "https://www.example.com/api/orders",
-                     "cookies": [{"name": "SID", "value": "SECRET2"}], "headers": [],
-                     "postData": {"mimeType": "application/json", "text": json.dumps({"qty": "SECRET3"})}},
-         "response": {"status": 200, "headers": []}}]}}
-    store.add_file(site, "har-browse", json.dumps(har).encode(), "anon-20261121-010203.har", "", "admin")
-    url = "/t/www.example.com/wstg/WSTG-INFO-06"
-    page = admin_client.get(url).get_data(as_text=True)
-    assert "Save output to Entry point inventory</button>" in page and "/steps/7/save-output" in page
-    assert "/steps/7/save-output" not in guest_client.get(url).get_data(as_text=True)
-    assert post(guest_client, url + "/steps/7/save-output").status_code == 403
-    assert post(admin_client, url + "/steps/6/save-output").status_code == 404     # step without the key
-    r = post(admin_client, url + "/steps/7/save-output")
-    assert r.status_code == 302 and "/evidence/entry-points" in r.headers["Location"]
-    v = store.load(site.name, "entry-points")
-    text = (v.path / v.items[0].file).read_text()
-    assert "== Entry points on www.example.com" in text and "POST    /api/orders" in text
-    assert "json: qty" in text and "SECRET" not in text
-    assert v.items[0].caption.startswith("Output of WSTG-INFO-06 step 7")
-
-
-def test_save_output_to_is_validated(tmp_path):
-    import shutil
-    from wstg import catalog as catmod
-    root = tmp_path / "catalog"
-    shutil.copytree(catmod.CATALOG_DIR, root)
-    f = root / "wstg" / "WSTG-INFO-06.yaml"
-    f.write_text(f.read_text().replace("save_output_to: entry-points", "save_output_to: har-browse-x"))
-    with pytest.raises(catmod.CatalogError, match="save_output_to must name manual evidence"):
-        catmod.load(root)

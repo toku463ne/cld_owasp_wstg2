@@ -150,7 +150,8 @@ class Step:
     load_note: str = ""
     ai_task: str = ""                 # judged by the AI review: instruction added to the AI prompt
     auto_run: bool = False            # the tool runs the command itself (local analysis only)
-    save_output_to: str = ""          # manual evidence the auto-run output can be saved into (a button)
+    input_list: str = ""              # manual evidence edited in a text box on the step ...
+    collects: str = ""                # ... and the automatic evidence collected from it (a button)
 
 
 @dataclass(frozen=True)
@@ -369,8 +370,8 @@ def _check_evidence(ev: Evidence, problems: list[str]) -> None:
 
 
 def _check_inputs(evidence: dict[str, Evidence], problems: list[str]) -> None:
-    """`inputs`: other automatic evidence an automatic evidence reads (as {ev:ID} in
-    argv). They must exist, be automatic, be reachable from the target (same type,
+    """`inputs`: other evidence an automatic evidence reads (as {ev:ID} in argv; the
+    files of manual evidence are under items/). They must exist, be reachable from the target (same type,
     or the parent domain's for an FQDN), not form a cycle, and the reader must run
     locally (a jump host cannot see the local evidence folder)."""
     for ev in evidence.values():
@@ -386,8 +387,6 @@ def _check_inputs(evidence: dict[str, Evidence], problems: list[str]) -> None:
                 problems.append(f"{w}: lists itself in inputs")
             elif not src:
                 problems.append(f"{w}: unknown input '{i}'")
-            elif src.kind != "auto":
-                problems.append(f"{w}: input '{i}' is not automatic evidence")
             elif not (src.target_type == ev.target_type or (src.target_type, ev.target_type) == ("domain", "fqdn")):
                 problems.append(f"{w}: input '{i}' is {src.target_type} evidence, not readable from {ev.target_type} targets")
     try:
@@ -420,7 +419,7 @@ def order_by_inputs(evs: list[Evidence], evidence: dict[str, Evidence]) -> list[
 
 
 SCENARIO_KEYS = {"id", "overview", "pass", "fail", "notes", "steps", "finding_kinds"}
-STEP_KEYS = {"summary", "command", "operation", "evidence", "load_note", "ai_task", "auto_run", "save_output_to"}
+STEP_KEYS = {"summary", "command", "operation", "evidence", "load_note", "ai_task", "auto_run", "input_list", "collects"}
 
 
 def _load_scenarios(dir_: Path, tests: dict[str, Test], evidence: dict[str, Evidence],
@@ -448,7 +447,8 @@ def _load_scenarios(dir_: Path, tests: dict[str, Test], evidence: dict[str, Evid
             st = Step(summary=_str(s["summary"]), command=_str(s.get("command")),
                       operation=_str(s.get("operation")), evidence=_strs(s.get("evidence")),
                       load_note=_str(s.get("load_note")), ai_task=_str(s.get("ai_task")),
-                      auto_run=s.get("auto_run") is True, save_output_to=_str(s.get("save_output_to")))
+                      auto_run=s.get("auto_run") is True, input_list=_str(s.get("input_list")),
+                      collects=_str(s.get("collects")))
             if s.get("auto_run") not in (None, True, False):
                 problems.append(f"{sw}: auto_run must be true or false")
             if st.auto_run:
@@ -456,12 +456,13 @@ def _load_scenarios(dir_: Path, tests: dict[str, Test], evidence: dict[str, Evid
                 if not st.command:
                     problems.append(f"{sw}: auto_run needs a command")
                 problems.extend(f"{sw}: auto_run: {p}" for p in analysis.check(st.command))
-            if st.save_output_to:
-                target_ev = evidence.get(st.save_output_to)
-                if not st.auto_run:
-                    problems.append(f"{sw}: save_output_to needs auto_run")
-                if st.save_output_to not in st.evidence or not target_ev or target_ev.kind != "manual":
-                    problems.append(f"{sw}: save_output_to must name manual evidence listed in the step")
+            if st.input_list or st.collects:
+                lst, col = evidence.get(st.input_list), evidence.get(st.collects)
+                if not (lst and lst.kind == "manual" and st.input_list in st.evidence):
+                    problems.append(f"{sw}: input_list must name manual evidence listed in the step")
+                if not (col and col.kind == "auto" and st.collects in st.evidence and st.input_list in col.inputs):
+                    problems.append(f"{sw}: collects must name automatic evidence listed in the step"
+                                    " that has the input_list in its inputs")
             if not (st.command or st.operation or st.evidence or st.ai_task):
                 problems.append(f"{sw}: needs a command, an operation, evidence, or an AI task")
             for eid in st.evidence:

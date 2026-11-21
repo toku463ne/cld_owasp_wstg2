@@ -336,8 +336,10 @@ _AUTH_HEADERS = ("authorization", "x-api-key", "x-auth-token", "x-access-token")
 
 
 def _role(file_name: str) -> str:
-    """Role label from a HAR file name: `wstg capture --role user` saves `user-<stamp>.har`."""
+    """Role label from a HAR file name: `wstg capture --role user` saves `user-<stamp>.har`,
+    stored as `items/NNN-user-<stamp>.har`."""
     stem = file_name[:-4] if file_name.lower().endswith(".har") else file_name
+    stem = re.sub(r"^\d{3}-", "", stem)           # the evidence store numbers items: 001-anon-....har
     return _STAMP_RE.sub("", stem) or stem
 
 

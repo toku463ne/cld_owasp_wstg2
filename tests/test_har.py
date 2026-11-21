@@ -303,3 +303,10 @@ def test_entry_points_without_anonymous_har_warns(tmp_path, capsys):
 
 def test_entry_points_host_option_needs_files(capsys):
     assert har.main(["entry-points", "--host", "www.example.com"]) == 2
+
+
+def test_entry_points_role_ignores_the_store_item_number(tmp_path, capsys):
+    f = _write(tmp_path, "001-anon-20261108-052427.har", _har([_ep_entry("GET", "https://www.example.com/a")]))
+    _, out = _run(capsys, "entry-points", "--host", "www.example.com", f)
+    assert "-> anon (anonymous)" in out and "no anonymous HAR" not in out
+    assert "login: no (anonymous HAR)" in out

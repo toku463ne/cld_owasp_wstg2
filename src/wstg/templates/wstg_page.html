@@ -132,15 +132,18 @@
   <details class="auto-out" open><summary>Output, run by the tool {{ s.auto.ran_at }}
     (exit {{ s.auto.exit_code }}{% for k, v in (s.auto.versions or {}).items() %} · {{ k }} {{ v }}{% endfor %}){% if s.auto.note %} · {{ s.auto.note }}{% endif %}</summary>
     <pre>{{ s.auto.output or '(no output)' }}</pre></details>
-  {% if s.step.save_output_to and can_write and s.auto.status == 'ok' %}
-  <form method="post" class="inline" action="{{ url_for('wstg_step_save_output', name=target.name, test_id=test.id, n=s.n) }}">
-    <input type="hidden" name="csrf" value="{{ csrf }}">
-    {% for e in s.evidence if e.ev.id == s.step.save_output_to %}<button title="Adds this output as a text item of {{ e.ev.title }} and opens it for editing">Save output to {{ e.ev.title }}</button>{% endfor %}
-  </form>
-  {% endif %}
   {% endif %}
   {% endif %}
   {% if s.operation %}<p class="operation">{{ s.operation | optext }}</p>{% endif %}
+  {% if s.step.collects %}
+  {% if can_write %}
+  <form method="post" class="stack step-input" action="{{ url_for('wstg_step_collect', name=target.name, test_id=test.id, n=s.n) }}">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <textarea name="text" rows="5" aria-label="Paths for step {{ s.n }}" placeholder="/login&#10;/myaccount">{{ s.input_text }}</textarea>
+    <div><button>Save and collect</button></div>
+  </form>
+  {% elif s.input_text %}<pre class="text-item">{{ s.input_text }}</pre>{% endif %}
+  {% endif %}
   {% if s.step.ai_task %}<div class="note ai-task"><b>Judged by the AI review.</b> Copy the AI prompt, paste it into the AI chat, and import the answer in <a href="#ai-review">AI review</a>. Task given to the AI: {{ s.step.ai_task | ticks }}</div>{% endif %}
   {% if s.evidence %}
   <table class="evidence">

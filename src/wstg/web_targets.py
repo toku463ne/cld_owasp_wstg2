@@ -415,33 +415,34 @@ def register(app: Flask, cfg: Config, db: dbmod.Database, cat: catmod.Catalog, s
               " Evidence, step comments, and findings are kept.")
         return redirect(url_for("wstg_page", name=t.name, test_id=test_id))
 
-    @app.post("/t/<name>/wstg/<test_id>/steps/<int:n>/save-output")
+    @app.post("/t/<name>/wstg/<test_id>/steps/<int:n>/collect")
     @admin_required
-    def wstg_step_save_output(name: str, test_id: str, n: int):
-        """Save the step's auto-run output (run again here, not taken from the form) as a
-        text item of the manual evidence named by the step's save_output_to."""
+    def wstg_step_collect(name: str, test_id: str, n: int):
+        """Save the step's input box as its input_list evidence (a new version when the
+        text changed) and queue a collection of its `collects` evidence."""
         t = load_target(name)
         sc = cat.scenarios.get(test_id)
-        if not sc or not 1 <= n <= len(sc.steps) or not sc.steps[n - 1].save_output_to:
+        if not sc or not 1 <= n <= len(sc.steps) or not sc.steps[n - 1].collects:
             abort(404)
         st = sc.steps[n - 1]
-        s = ai_files.steps_for(cfg, db, cat, store, t, test_id)[n - 1]
-        ev = cat.evidence[st.save_output_to]
-        owner = tmod.evidence_owner(t, ev.target_type)
-        auto = s["auto"]
-        if not owner or not auto or auto.status != "ok" or not auto.output.strip():
-            flash(f"Step {n} has no output to save yet.")
-        else:
-            try:
-                v = store.add_text(tmod.get(db, owner), ev.id, auto.output,
-                                   f"Output of {test_id} step {n} (run {auto.ran_at}); edit it here", g.user["username"])
-            except evmod.EvidenceError as e:
-                flash(f"Not saved: {e}")
-            else:
-                flash(f"Step {n} output saved to {ev.title} (v{v.version}). Edit it below, then press "
-                      "\"Save as new version\".")
-                return redirect(url_for("evidence_page", name=owner, eid=ev.id) + f"#item-{len(v.items)}")
-        return redirect(url_for("wstg_page", name=t.name, test_id=test_id) + f"#step-{n}")
+        back = redirect(url_for("wstg_page", name=t.name, test_id=test_id) + f"#step-{n}")
+        text = request.form.get("text", "").replace("\r\n", "\n").strip()
+        try:
+            if text != ai_files.list_text(store, t, st.input_list):
+                v = store.load(t.name, st.input_list)
+                if v and v.items and v.items[0].type == "text" and text:
+                    store.edit_item(t, st.input_list, 0, text=text, actor=g.user["username"])
+                elif v and v.items and v.items[0].type == "text":
+                    store.remove_item(t, st.input_list, 0, g.user["username"])
+                elif text:
+                    store.add_text(t, st.input_list, text, "entry list", g.user["username"])
+            job = rmod.enqueue(db, cat, t, "", g.user["username"], evidence_id=st.collects, force=True)
+        except (evmod.EvidenceError, rmod.RunError) as e:
+            flash(f"Not collected: {e}")
+            return back
+        flash(f"Queued job {job}: {cat.evidence[st.collects].title} is being collected by the worker."
+              " Reload this page in a moment to see the result.")
+        return back
 
     @app.post("/t/<name>/wstg/<test_id>/steps/<int:n>/comment")
     @admin_required

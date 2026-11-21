@@ -134,7 +134,6 @@ def test_inputs_are_validated():
     text = "\n".join(problems)
     assert "evidence a: argv reads {ev:zzz} but 'zzz' is not listed in inputs" in text
     assert "cycle" in text
-    assert "input 'm' is not automatic evidence" in text
     assert "input 'f' is fqdn evidence, not readable from domain targets" in text
     assert "unknown input 'nope'" in text
     assert "evidence g: evidence with inputs cannot be direct" in text

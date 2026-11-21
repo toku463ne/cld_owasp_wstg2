@@ -85,6 +85,17 @@ def evidence_paths(cfg: Config, cat: catmod.Catalog, t: tmod.Target) -> dict[str
     return out
 
 
+def list_text(store: evmod.Store, t: tmod.Target, evidence_id: str) -> str:
+    """The text of the first text item of a manual evidence (the step's input box)."""
+    v = store.load(t.name, evidence_id) if evidence_id else None
+    if not v or not v.items or v.items[0].type != "text":
+        return ""
+    try:
+        return (v.path / v.items[0].file).read_text(errors="replace").strip()
+    except OSError:
+        return ""
+
+
 def steps_for(cfg: Config, db: dbmod.Database, cat: catmod.Catalog, store: evmod.Store,
               t: tmod.Target, test_id: str, have: dict | None = None) -> list[dict]:
     """The steps of a scenario as the WSTG page and the AI prompt show them
@@ -103,6 +114,7 @@ def steps_for(cfg: Config, db: dbmod.Database, cat: catmod.Catalog, store: evmod
         command = catmod.render(st.command, values, ev_paths)
         steps.append({
             "n": i, "step": st, "verdict": vs.get(i, "-"), "comment": comments.get(i),
+            "input_text": list_text(store, t, st.input_list) if st.input_list else "",
             "auto": analysis.run(cache_dir, st.command, command, ev_paths) if st.auto_run else None,
             "command": command,
             "operation": catmod.render(st.operation, values, ev_paths),
