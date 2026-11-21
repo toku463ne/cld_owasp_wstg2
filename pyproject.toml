@@ -18,6 +18,7 @@ wstg = "wstg.cli:main"
 wstg-har = "wstg.har:main"
 wstg-dns = "wstg.dnscheck:main"
 wstg-entry = "wstg.entrypoints:main"
+wstg-trav = "wstg.traversal:main"
 
 [build-system]
 requires = ["uv_build>=0.11.8,<0.12.0"]

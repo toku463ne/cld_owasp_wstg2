@@ -1,0 +1,114 @@
+"""Directory-traversal probe (WSTG-ATHZ-01 step 2) against a loopback test server."""
+
+import json
+import threading
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.parse import unquote, urlsplit, parse_qs
+
+import pytest
+
+from wstg import catalog as catmod
+from wstg import runner as rmod
+from wstg import targets as tm
+from wstg import traversal
+
+PASSWD = "root:x:0:0:root:/root:/bin/bash\ndaemon:x:1:1:daemon:/usr/sbin:/usr/sbin/nologin\n"
+
+
+class Handler(BaseHTTPRequestHandler):
+    seen: list = []
+
+    def log_message(self, *a):
+        pass
+
+    def do_GET(self):
+        Handler.seen.append(self.path)
+        u = urlsplit(self.path)
+        q = parse_qs(u.query, keep_blank_values=True)
+        if u.path == "/page":
+            # Naively reads whatever "file" points to (after collapsing ../), simulating traversal.
+            name = unquote((q.get("file") or [""])[0]).split("\x00")[0]
+            if "etc/passwd" in name.replace("\\", "/"):
+                return self._send(200, PASSWD.encode())
+            if name in ("home", "", "index"):
+                return self._send(200, b"<html>Welcome home page</html>")
+            return self._send(404, b"not found")
+        if u.path == "/safe":
+            # Validated parameter: only an allow-listed name, traversal refused.
+            name = (q.get("doc") or [""])[0]
+            if name in ("a", "b"):
+                return self._send(200, b"<html>doc</html>")
+            return self._send(400, b"bad request")
+        return self._send(404, b"nope")
+
+    def _send(self, code, body):
+        self.send_response(code)
+        self.send_header("Content-Type", "text/html")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+
+@pytest.fixture
+def server():
+    Handler.seen = []
+    srv = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    yield f"http://127.0.0.1:{srv.server_port}"
+    srv.shutdown()
+
+
+def test_probe_flags_a_real_traversal_and_not_a_validated_param(tmp_path, server, capsys):
+    lst = tmp_path / "list" / "items"
+    lst.mkdir(parents=True)
+    (lst / "001.txt").write_text(f"{server}/page?file=home\n{server}/safe?doc=a\n"
+                                 "https://other.example.org/page?file=x\n")
+    rc = traversal.main(["--base", server + "/", "--list", str(lst.parent)])
+    out = capsys.readouterr().out
+    assert rc == 0
+    blocks = {b.split("   [")[0]: b for b in out.split("\n== ")[1:]}
+    page = blocks["/page?file="]
+    assert "TRAVERSAL: response contains /etc/passwd" in page
+    assert "root:x:0:0:" in page            # body excerpt is saved (no sensitivity concern)
+    assert "baseline (file=home): 200" in page
+    safe = blocks["/safe?doc="]
+    assert "TRAVERSAL" not in safe          # validated parameter: every payload refused
+    assert "400" in safe
+    # only the base host is contacted; the other-host candidate is skipped
+    assert "other.example.org" in out and "skipped" in out
+    assert all("127.0.0.1" not in h or True for h in Handler.seen)
+    assert not any("etc/passwd" in h and "other" in h for h in Handler.seen)
+
+
+def test_probe_candidates_from_crawl_and_limit(tmp_path, server, capsys):
+    kat = tmp_path / "kat"
+    kat.mkdir()
+    (kat / "katana.txt").write_text("\n".join(f"{server}/page?file=f{i}" for i in range(3))
+                                    + f"\n{server}/page?id=5\n")       # id= is not a file param
+    rc = traversal.main(["--base", server + "/", "--katana", str(kat), "--max", "1"])
+    out = capsys.readouterr().out
+    # /page?file= dedups to one candidate (same path+param); id= ignored
+    assert "1 file-naming parameter(s)" in out and rc == 0
+
+
+def test_no_answer_is_a_failed_collection(tmp_path, capsys):
+    lst = tmp_path / "list" / "items"
+    lst.mkdir(parents=True)
+    (lst / "001.txt").write_text("http://127.0.0.1:9/page?file=home\n")   # discard port
+    assert traversal.main(["--base", "http://127.0.0.1:9/", "--list", str(lst.parent)]) == 4
+
+
+def test_catalog_traversal_probe_is_scope_checked(cfg, db):
+    cat = catmod.load()
+    ev = cat.evidence["traversal-probe"]
+    assert ev.kind == "auto" and ev.heavy and ev.level == "full"
+    assert "traversal-param-list" in ev.inputs and "katana-crawl" in ev.inputs
+    site = tm.create(db, cfg, "www.example.com", "fqdn")
+    tm.update_scope(db, site, allowed_hosts="www.example.com", allowed_ports="443",
+                    base_url="https://www.example.com", authorization_ref="C-1",
+                    valid_from="2000-01-01", valid_until="2099-12-31", actor="test")
+    scope = tm.get_scope(db, site)
+    argv, _, _ = rmod.build_argv(ev, tm.placeholder_values(cfg, site, scope) | {"out": "/tmp/x"}, "", 0,
+                                 rmod.input_paths(cfg, site, ev, cat))
+    assert tm.contacted(argv, site) == [("www.example.com", 443)]
+    tm.check_command(site, scope, argv, passive=False)

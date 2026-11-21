@@ -21,17 +21,24 @@ steps:
     command: >-
       grep -oiE '[?&](file|path|page|lang|template|include|doc|document|download|dir|folder|name|img|image|url|load|read|view)=[^&"'"'"'<> ]*'
       {ev:katana-crawl}/katana.txt 2>/dev/null | sort -u | head -60 || echo "no file-naming parameter seen in the crawl (look in the HAR and forms)"
-  - summary: Send traversal and inclusion payloads to each file parameter (manual)
-    evidence: [traversal-tests]
+  - summary: Send traversal and inclusion payloads to each file parameter (collected automatically)
+    auto_run: true
+    evidence: [traversal-probe, traversal-param-list, katana-crawl, har-browse]
+    input_list: traversal-param-list
+    collects: traversal-probe
+    command: >-
+      cat {ev:traversal-probe}/stdout.txt 2>/dev/null
+      || echo "Not collected yet. Optionally type candidate URLs below, then press Save and collect."
     operation: >-
-      For each candidate parameter, try out-of-directory references and record the
-      response, for example `curl -sk -i "{base_url}/page?file=../../../../etc/passwd"`
-      and the encoded variants `%2e%2e%2f`, double-encoded `%252e%252e%252f`, `....//`,
-      an absolute path, and a trailing `%00.png`. A response containing the file's
-      content is a traversal. Save each request and response in traversal-tests.
-    load_note: Sending many traversal variants (for example with a fuzzer) can trip a WAF and fill error logs; send a small set by hand first.
-  - summary: Check for file inclusion (configuration, source, or code execution) (manual)
-    evidence: [traversal-tests]
+      Optional: type URLs with a file-naming parameter in the box (one per line, for
+      example `{base_url}/page?file=home`) and press "Save and collect". Parameters found
+      in the crawl and the HAR are added automatically. Each is sent its original value
+      and a set of traversal / inclusion payloads; a line flagged TRAVERSAL returned a
+      known file's content (see the excerpt). Collect it with the owner's agreement: it
+      can trip a WAF and fill error logs.
+    load_note: About ten payloads per file-naming parameter (heavy). WSTG_PAUSE slows it down.
+  - summary: Check for file inclusion that runs the file (manual)
+    evidence: [traversal-tests, traversal-probe]
     operation: >-
       Where a parameter selects a page or template, try to include a configuration file
       or source file, and (only with the owner's agreement) a file that would prove code
@@ -40,9 +47,9 @@ steps:
   - summary: Judge directory traversal and file inclusion
     evidence: [traversal-tests, katana-crawl]
     ai_task: >-
-      From steps 2 and 3 decide whether any file parameter reads or includes an
+      From the traversal-probe output (step 2) and traversal-tests (step 3) decide whether any file parameter reads or includes an
       out-of-scope file. Verdict: fail when a traversal sequence, absolute path, encoded
       variant, or inclusion payload returned an out-of-directory file or executed one;
       pass when every parameter normalised or refused the reference; "-" when
-      traversal-tests is missing. Report a traversal and a code-executing inclusion
+      traversal-probe is missing. Report a traversal and a code-executing inclusion
       separately.
