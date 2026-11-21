@@ -132,6 +132,12 @@
   <details class="auto-out" open><summary>Output, run by the tool {{ s.auto.ran_at }}
     (exit {{ s.auto.exit_code }}{% for k, v in (s.auto.versions or {}).items() %} · {{ k }} {{ v }}{% endfor %}){% if s.auto.note %} · {{ s.auto.note }}{% endif %}</summary>
     <pre>{{ s.auto.output or '(no output)' }}</pre></details>
+  {% if s.step.save_output_to and can_write and s.auto.status == 'ok' %}
+  <form method="post" class="inline" action="{{ url_for('wstg_step_save_output', name=target.name, test_id=test.id, n=s.n) }}">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    {% for e in s.evidence if e.ev.id == s.step.save_output_to %}<button title="Adds this output as a text item of {{ e.ev.title }} and opens it for editing">Save output to {{ e.ev.title }}</button>{% endfor %}
+  </form>
+  {% endif %}
   {% endif %}
   {% endif %}
   {% if s.operation %}<p class="operation">{{ s.operation | optext }}</p>{% endif %}

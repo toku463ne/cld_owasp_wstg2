@@ -195,9 +195,12 @@ evidence:
     target_type: fqdn
     kind: manual
     description: >-
-      Text table of every input the application accepts, one row per entry point:
-      method, URL, parameter names and where they go (query, body form, JSON, XML,
-      header, cookie, file upload, hidden field), and whether login is required.
+      The inventory of every input the application accepts, one block per entry point
+      (method, path, parameter names and where they are sent, whether login is required).
+      Do not write it from scratch: on the WSTG-INFO-06 page, step 7, press "Save output
+      to Entry point inventory" to save the draft made from the HAR files, then edit it
+      here as step 7 says (set the login lines from step 6, add what only the crawl or
+      the forms show) and press "Save as new version".
 
   - id: workflow-map
     title: Execution path map

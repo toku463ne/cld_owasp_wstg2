@@ -150,6 +150,7 @@ class Step:
     load_note: str = ""
     ai_task: str = ""                 # judged by the AI review: instruction added to the AI prompt
     auto_run: bool = False            # the tool runs the command itself (local analysis only)
+    save_output_to: str = ""          # manual evidence the auto-run output can be saved into (a button)
 
 
 @dataclass(frozen=True)
@@ -419,7 +420,7 @@ def order_by_inputs(evs: list[Evidence], evidence: dict[str, Evidence]) -> list[
 
 
 SCENARIO_KEYS = {"id", "overview", "pass", "fail", "notes", "steps", "finding_kinds"}
-STEP_KEYS = {"summary", "command", "operation", "evidence", "load_note", "ai_task", "auto_run"}
+STEP_KEYS = {"summary", "command", "operation", "evidence", "load_note", "ai_task", "auto_run", "save_output_to"}
 
 
 def _load_scenarios(dir_: Path, tests: dict[str, Test], evidence: dict[str, Evidence],
@@ -447,7 +448,7 @@ def _load_scenarios(dir_: Path, tests: dict[str, Test], evidence: dict[str, Evid
             st = Step(summary=_str(s["summary"]), command=_str(s.get("command")),
                       operation=_str(s.get("operation")), evidence=_strs(s.get("evidence")),
                       load_note=_str(s.get("load_note")), ai_task=_str(s.get("ai_task")),
-                      auto_run=s.get("auto_run") is True)
+                      auto_run=s.get("auto_run") is True, save_output_to=_str(s.get("save_output_to")))
             if s.get("auto_run") not in (None, True, False):
                 problems.append(f"{sw}: auto_run must be true or false")
             if st.auto_run:
@@ -455,6 +456,12 @@ def _load_scenarios(dir_: Path, tests: dict[str, Test], evidence: dict[str, Evid
                 if not st.command:
                     problems.append(f"{sw}: auto_run needs a command")
                 problems.extend(f"{sw}: auto_run: {p}" for p in analysis.check(st.command))
+            if st.save_output_to:
+                target_ev = evidence.get(st.save_output_to)
+                if not st.auto_run:
+                    problems.append(f"{sw}: save_output_to needs auto_run")
+                if st.save_output_to not in st.evidence or not target_ev or target_ev.kind != "manual":
+                    problems.append(f"{sw}: save_output_to must name manual evidence listed in the step")
             if not (st.command or st.operation or st.evidence or st.ai_task):
                 problems.append(f"{sw}: needs a command, an operation, evidence, or an AI task")
             for eid in st.evidence:
