@@ -249,3 +249,57 @@ def test_xssi_none_message(tmp_path, capsys):
     f = _write(tmp_path, "a.har", doc)
     _, out = _run(capsys, "xssi", f)
     assert "no JS/JSON response" in out
+
+
+def _ep_entry(method, url, *, cookies=(), headers=(), post=None, status=200):
+    e = _entry(method, url, req_cookies=list(cookies), post=post,
+               headers=[{"name": n, "value": "Bearer-token-xyz789"} for n in headers])
+    e["response"]["status"] = status
+    return e
+
+
+def test_entry_points_inventory_groups_params_and_guesses_login(tmp_path, capsys):
+    anon = _write(tmp_path, "anon-20261121-010203.har", _har([
+        _ep_entry("GET", "https://www.example.com/search?q=hunter2&page=2"),
+        _ep_entry("GET", "https://www.example.com/static/app.js"),
+        _ep_entry("GET", "https://cdn.example.net/lib.js"),
+    ]))
+    user = _write(tmp_path, "user-20261121-010304.har", _har([
+        _ep_entry("GET", "https://www.example.com/user/123/orders", cookies=["SID"]),
+        _ep_entry("GET", "https://www.example.com/user/456/orders", cookies=["SID"]),
+        _ep_entry("POST", "https://www.example.com/api/orders", cookies=["SID"], headers=["X-CSRF-Token"],
+                  post={"mimeType": "application/json",
+                        "text": json.dumps({"items": [{"id": 1, "qty": 2}], "note": "s3cr3t-session-abc123"})}),
+        _ep_entry("POST", "https://www.example.com/profile/avatar", cookies=["SID"],
+                  post={"mimeType": "multipart/form-data",
+                        "params": [{"name": "file", "fileName": "a.png"}, {"name": "csrf", "value": "deadbeefcsrf"}]}),
+        _ep_entry("GET", "https://www.example.com/logout", cookies=["SID"], status=302),
+        _ep_entry("GET", "https://www.example.com/news/latest"),
+        _ep_entry("GET", "https://www.example.com/reset/a1B2c3D4e5F6g7H8i9J0k1"),
+    ]))
+    rc, out = _run(capsys, "entry-points", "--host", "www.example.com", anon, user)
+    assert rc == 0
+    assert "user-20261121-010304.har -> user" in out and "-> anon (anonymous)" in out
+    assert "GET     /search\n          login: no (anonymous HAR)\n          params: query: q, page" in out
+    # /user/123 and /user/456 are one entry point; seen only with a cookie
+    assert out.count("/user/<id>/orders") == 1
+    assert "/user/<id>/orders\n          login: likely (seen only logged in)" in out
+    assert "json: items[].id, items[].qty, note" in out and "header: x-csrf-token" in out
+    assert "STATE-CHANGING" in out and "FILE UPLOAD" in out and "file: file; multipart: csrf" in out
+    assert "/logout" in out and "STATE-CHANGING GET?" in out and "status 302" in out
+    assert "/news/latest\n          login: no (sent without cookies)" in out
+    assert "/reset/<token>" in out and "a1B2c3D4" not in out
+    assert "/static/app.js" not in out and "1 static requests skipped" in out
+    assert "other hosts skipped (host: requests): cdn.example.net: 1" in out
+    assert "cookies sent (name: requests): SID: 5" in out
+
+
+def test_entry_points_without_anonymous_har_warns(tmp_path, capsys):
+    f = _write(tmp_path, "walk.har", _har([_ep_entry("GET", "https://www.example.com/a", cookies=["SID"])]))
+    _, out = _run(capsys, "entry-points", f)
+    assert "no anonymous HAR" in out
+    assert "GET     www.example.com/a" in out      # no --host: the host is shown
+
+
+def test_entry_points_host_option_needs_files(capsys):
+    assert har.main(["entry-points", "--host", "www.example.com"]) == 2

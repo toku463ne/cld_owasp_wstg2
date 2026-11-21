@@ -50,13 +50,29 @@ steps:
       jq -r '.log.entries[] | select(.request.method == "GET") | .request.url' {ev:har-browse}/items/*.har
       | grep -F '{base_url}' | sort -u | while read -r u; do echo "$(curl -sk -m 10 -o /dev/null -w '%{http_code} %{size_download}' "$u") $u"; done
     load_note: One GET per unique URL in the HAR. Run it only on the logged-in HAR and skip logout or other state-changing GET URLs.
-  - summary: Write the entry point inventory
-    operation: Combine the lists above into one table (method, URL, parameters and location, login required) and save it as text. The AI review drafts the table; check it and save it.
+  - summary: Write the entry point inventory (draft built from the HAR files)
+    auto_run: true
     evidence: [entry-points, har-browse, katana-crawl, site-assets]
+    command: wstg-har entry-points --host {fqdn} {ev:har-browse}/items/*.har
+    operation: >-
+      The command prints a draft inventory from the HAR files: one entry per method and
+      path (ID-like path segments become <id>, <uuid>, <hex>, <token>), with the parameter
+      names grouped by where they are sent (query, form, multipart, file, json, xml,
+      header), a login guess, and notes (STATE-CHANGING, STATE-CHANGING GET?, FILE UPLOAD,
+      response status, roles that used it). Login guess: `no (anonymous HAR)` = seen in a
+      HAR whose file name starts with anon; `no (sent without cookies)` = sent with no
+      cookie or auth header; `likely (seen only logged in)` = confirm with the cookie-less
+      replay of step 6 and change it to `yes` or `NO - open without login`. Then:
+      (1) copy the output into the "Entry point inventory" manual evidence as text;
+      (2) add the URLs and parameters that steps 4 and 5 found but the HAR does not have
+      (crawl, web archive, hidden fields, upload forms), marked "not browsed";
+      (3) set the login column from step 6; (4) save. Only names are listed, never values.
     ai_task: >-
-      Draft the entry point inventory from the HAR summary, the crawl, the web archive, and the
-      forms in the evidence: one row per method and URL path with its parameter names and
-      where they are sent (query, form body, JSON, cookie, header), and whether a login is
-      needed. Mark file uploads and state-changing requests. Verdict "-" (this step records
-      an inventory; it has no pass or fail of its own) unless the entry-points evidence is
-      saved, then pass.
+      Check the entry-points evidence (the tester's inventory, drafted by this step's
+      command from the HAR files) against the HAR summary, the crawl, the web archive
+      parameters, and the forms in the evidence: list entry points or parameters that are
+      missing from it, and every row whose login column is still "likely" (not yet checked
+      with the replay of step 6). Verdict "-" when the entry-points evidence is not saved
+      (this step records an inventory; it has no pass or fail of its own); pass when it is
+      saved and covers the HAR and crawl; fail only when a row marked as needing login is
+      shown to answer without it (that is the test's fail criterion).
