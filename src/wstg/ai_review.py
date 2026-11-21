@@ -15,9 +15,9 @@ these rules:
 
 - "-" (no decision) never changes a step.
 - A "pass" is refused when an evidence of the step is missing or its last
-  collection failed: a missing or failed collection is never a pass. A tester
-  comment on a step stands in for the missing *manual* evidence of that step
-  (there was nothing to attach), in every step of the test that uses it; it
+  collection failed: a missing or failed collection is never a pass. A manual
+  evidence the tester marked collected by a comment (there was nothing to attach)
+  stands in for its missing version, in every step of the test that uses it; it
   never stands in for automatic evidence.
 - A verdict set by a tester (not by an earlier AI import) is kept unless
   `overwrite` is set.
@@ -241,11 +241,12 @@ def missing_evidence(store: evmod.Store, cat: catmod.Catalog, target: tmod.Targe
 
 
 def commented_evidence(db: dbmod.Database, cat: catmod.Catalog, target: tmod.Target, test_id: str) -> set[str]:
-    """Manual evidence of the steps of a test that have a tester comment."""
-    sc = cat.scenarios[test_id]
-    comments = tmod.step_comments(db, target, test_id).get(test_id, {})
-    return {eid for n in comments if 1 <= n <= len(sc.steps) for eid in sc.steps[n - 1].evidence
-            if cat.evidence[eid].kind == "manual"}
+    """Manual evidence a tester marked collected by a comment (it stands in for an
+    evidence there is nothing to attach for), among the evidence this test uses."""
+    used = {e.id for e in cat.evidence_for(test_id)}
+    comments = tmod.evidence_comments_visible(db, target)
+    return {eid for eid, c in comments.items()
+            if c["collected"] and eid in used and cat.evidence.get(eid) and cat.evidence[eid].kind == "manual"}
 
 
 def apply(db: dbmod.Database, store: evmod.Store, cat: catmod.Catalog, target: tmod.Target,

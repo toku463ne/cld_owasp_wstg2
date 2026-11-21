@@ -82,6 +82,7 @@ def register(app: Flask, store: evmod.Store, cat: catmod.Catalog) -> None:
                                             "text": "\n".join(lines[-LOG_TAIL:]) or "(empty)"})
         return render_template("evidence.html", tab="manual" if ev.kind == "manual" else "auto", ev=ev,
                                description=catmod.render(ev.description, _placeholders(store, t)),
+                               comment=tmod.evidence_comments(store.db, t, eid).get(eid),
                                version=version, texts=texts, history=history,
                                is_latest=bool(version and latest and version.version == latest.version),
                                used_by=cat.tests_using(eid), failed=failed, failed_logs=failed_logs,
@@ -126,6 +127,24 @@ def register(app: Flask, store: evmod.Store, cat: catmod.Catalog) -> None:
             flash("Text added.")
         except evmod.EvidenceError as e:
             flash(str(e))
+        return back(t, eid)
+
+    @app.post("/t/<name>/evidence/<eid>/comment")
+    @admin_required
+    def evidence_comment(name: str, eid: str):
+        t, ev = resolve(name, eid)
+        comment = "" if "clear" in request.form else request.form.get("comment", "")
+        collected = "collected" in request.form and "clear" not in request.form
+        try:
+            tmod.set_evidence_comment(store.db, t, eid, comment, collected, g.user["username"])
+        except tmod.TargetError as e:
+            flash(str(e))
+        else:
+            flash(f"{eid}: tester comment {'removed' if 'clear' in request.form else 'saved'}"
+                  f"{' (marked collected)' if collected else ''}.")
+        ret = request.form.get("return", "")
+        if ret.startswith("/") and not ret.startswith("//"):
+            return redirect(ret)
         return back(t, eid)
 
     @app.post("/t/<name>/evidence/<eid>/items/<int:index>/edit")

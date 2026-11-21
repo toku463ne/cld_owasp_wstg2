@@ -66,13 +66,24 @@ def folder(cfg: Config, target: tmod.Target) -> Path:
 
 
 def collected(db: dbmod.Database, cat: catmod.Catalog, store: evmod.Store, t: tmod.Target) -> dict[str, dict]:
-    """{evidence_id: newest complete version row} visible from t (own + parent domain)."""
+    """{evidence_id: newest complete version row} visible from t (own + parent domain).
+    A manual evidence the tester marked collected by a comment (no file to attach) is
+    included too, unless it already has a complete version."""
     out = {}
     parent = tmod.get(db, t.parent_name) if t.parent_name else None
     if parent:
         out.update({k: dict(v, owner=parent.name) for k, v in store.latest_rows(parent).items()
                     if cat.evidence.get(k) and cat.evidence[k].target_type == "domain"})
     out.update({k: dict(v, owner=t.name) for k, v in store.latest_rows(t).items()})
+    for tgt, domain_only in ((parent, True), (t, False)):
+        if not tgt:
+            continue
+        for eid, c in tmod.evidence_comments(db, tgt).items():
+            ev = cat.evidence.get(eid)
+            if (c["collected"] and eid not in out and ev and ev.kind == "manual"
+                    and (not domain_only or ev.target_type == "domain")):
+                out[eid] = {"owner": tgt.name, "by_comment": True, "item_count": 0, "version": None,
+                            "created_at": c["updated_at"], "updated_by": c["updated_by"], "comment": c["comment"]}
     return out
 
 
@@ -107,19 +118,19 @@ def steps_for(cfg: Config, db: dbmod.Database, cat: catmod.Catalog, store: evmod
     ev_paths = evidence_paths(cfg, cat, t)
     have = collected(db, cat, store, t) if have is None else have
     vs = tmod.verdicts(db, t, test_id).get(test_id, {})
-    comments = tmod.step_comments(db, t, test_id).get(test_id, {})
+    comments = tmod.evidence_comments_visible(db, t)
     cache_dir = folder(cfg, t).parent / ".analysis"
     steps = []
     for i, st in enumerate(sc.steps, 1):
         command = catmod.render(st.command, values, ev_paths)
         steps.append({
-            "n": i, "step": st, "verdict": vs.get(i, "-"), "comment": comments.get(i),
+            "n": i, "step": st, "verdict": vs.get(i, "-"),
             "input_text": list_text(store, t, st.input_list) if st.input_list else "",
             "auto": analysis.run(cache_dir, st.command, command, ev_paths) if st.auto_run else None,
             "command": command,
             "operation": catmod.render(st.operation, values, ev_paths),
             "evidence": [{"ev": cat.evidence[eid], "owner": tmod.evidence_owner(t, cat.evidence[eid].target_type),
-                          "row": have.get(eid),
+                          "row": have.get(eid), "comment": comments.get(eid),
                           "used_by": [x for x in cat.tests_using(eid) if x != test_id]}
                          for eid in st.evidence],
         })

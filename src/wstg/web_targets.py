@@ -166,12 +166,11 @@ def register(app: Flask, cfg: Config, db: dbmod.Database, cat: catmod.Catalog, s
         vs = tmod.verdicts(db, t)
         have = collected(t)
         reviews = tmod.test_reviews(db, t)
-        comments = tmod.step_comments(db, t)
         rows = []
         prompts_dir = ai_files.folder(cfg, t) / "prompts"
         for test in tests_for(t):
             sc = cat.scenarios.get(test.id)
-            has_ev = any(e.id in have for e in cat.evidence_for(test.id)) or bool(comments.get(test.id))
+            has_ev = any(e.id in have for e in cat.evidence_for(test.id))
             if test.merged_into:
                 st = None
             else:
@@ -285,7 +284,7 @@ def register(app: Flask, cfg: Config, db: dbmod.Database, cat: catmod.Catalog, s
         have = collected(t)
         vs = tmod.verdicts(db, t, test_id).get(test_id, {})
         steps = ai_files.steps_for(cfg, db, cat, store, t, test_id, have)
-        has_ev = any(e.id in have for e in cat.evidence_for(test_id)) or any(s["comment"] for s in steps)
+        has_ev = any(e.id in have for e in cat.evidence_for(test_id))
         review = tmod.test_review(db, t, test_id)
         computed = tmod.status(len(steps), vs, has_ev) if sc else "-"
         st_value = review["override"] or computed
@@ -414,7 +413,7 @@ def register(app: Flask, cfg: Config, db: dbmod.Database, cat: catmod.Catalog, s
             abort(404)
         out = ai_review.reset_test(db, t, test_id, g.user["username"])
         flash(f"{test_id} reset: {out['verdicts']} step verdict(s) and {out['ai_reviews']} AI review(s) removed."
-              " Evidence, step comments, and findings are kept.")
+              " Evidence, tester comments, and findings are kept.")
         return redirect(url_for("wstg_page", name=t.name, test_id=test_id))
 
     @app.post("/t/<name>/wstg/<test_id>/steps/<int:n>/collect")
@@ -445,22 +444,6 @@ def register(app: Flask, cfg: Config, db: dbmod.Database, cat: catmod.Catalog, s
         flash(f"Queued job {job}: {cat.evidence[st.collects].title} is being collected by the worker."
               " Reload this page in a moment to see the result.")
         return back
-
-    @app.post("/t/<name>/wstg/<test_id>/steps/<int:n>/comment")
-    @admin_required
-    def wstg_step_comment(name: str, test_id: str, n: int):
-        t = load_target(name)
-        sc = cat.scenarios.get(test_id)
-        if not sc or not 1 <= n <= len(sc.steps):
-            abort(404)
-        comment = "" if "clear" in request.form else request.form.get("comment", "")
-        try:
-            tmod.set_step_comment(db, t, test_id, n, comment, g.user["username"])
-        except tmod.TargetError as e:
-            flash(str(e))
-        else:
-            flash(f"{test_id} step {n}: comment {'saved' if comment.strip() else 'removed'}.")
-        return redirect(url_for("wstg_page", name=t.name, test_id=test_id) + f"#step-{n}")
 
     @app.post("/t/<name>/wstg/<test_id>/steps/<int:n>")
     @admin_required

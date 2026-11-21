@@ -27,8 +27,8 @@
   {% if can_write and scenario %}
   <form method="post" class="inline" action="{{ url_for('wstg_reset', name=target.name, test_id=test.id) }}">
     <input type="hidden" name="csrf" value="{{ csrf }}">
-    <button class="danger" title="Clears every step verdict and the imported AI reviews of this test. Evidence, step comments, and findings are kept."
-      data-confirm="Reset {{ test.id }}? Every step verdict and the imported AI reviews of this test are removed. Evidence, step comments, and findings are kept.">Reset test</button></form>
+    <button class="danger" title="Clears every step verdict and the imported AI reviews of this test. Evidence, tester comments, and findings are kept."
+      data-confirm="Reset {{ test.id }}? Every step verdict and the imported AI reviews of this test are removed. Evidence, tester comments, and findings are kept.">Reset test</button></form>
   {% endif %}
 </div>
 {% if review.override %}<div class="warnbox">Status set to <b>{{ review.override }}</b> by the tester{% if review.updated_by %} ({{ review.updated_by }}, {{ review.updated_at }}){% endif %}, overriding the computed status (<span class="status s-{{ computed | statusclass }}">{{ computed }}</span>). Step verdicts, if any, are kept.</div>{% endif %}
@@ -98,7 +98,7 @@
       <textarea name="answer" rows="8" placeholder="Paste the whole AI answer (it must end with the ```json block the prompt asks for)" required></textarea>
       <label><input type="checkbox" name="overwrite" value="1"> Overwrite verdicts set by a tester</label>
       <label><input type="checkbox" name="findings" value="1"> Also create the findings the AI proposes (skips titles that already exist)</label>
-      <p class="muted small">Proposed verdicts are applied to the steps. A pass is refused when a step's evidence is missing or failed (missing manual evidence is accepted when a step that uses it has a tester comment); "-" leaves a step unchanged.</p>
+      <p class="muted small">Proposed verdicts are applied to the steps. A pass is refused when a step's evidence is missing or failed (a manual evidence with no file is accepted when the tester marked it collected by a comment); "-" leaves a step unchanged.</p>
       <div><button>Import and apply</button></div>
     </form>
   </details>
@@ -162,25 +162,30 @@
         {% if e.owner and e.owner != target.name %}<br><span class="muted">from {{ e.owner }}</span>{% endif %}
         {% if e.ev.kind == 'auto' %}<br><code class="muted small">{{ e.ev.argv | reject('in', ['{proxy_args}', '{pause_args}']) | join(' ') }}</code>{% else %}<br><span class="muted">{{ e.ev.description }}</span>{% endif %}</td>
       <td class="nowrap">{{ e.ev.kind }}{% if e.ev.level %} · {{ e.ev.level }}{% endif %}{% if e.ev.heavy %} <span class="chip warn">heavy</span>{% endif %}</td>
-      <td class="nowrap">{% if not e.owner %}<span class="muted">no parent domain</span>{% elif e.row %}{{ e.row.created_at }}<br><span class="muted">v{{ e.row.version }} · {{ e.row.item_count }} item(s)</span>{% else %}<span class="muted">not collected</span>{% endif %}</td>
+      <td class="nowrap">{% if not e.owner %}<span class="muted">no parent domain</span>{% elif e.row and e.row.by_comment %}<span title="marked collected by a tester comment">by tester comment</span><br><span class="muted">{{ e.row.created_at }}</span>{% elif e.row %}{{ e.row.created_at }}<br><span class="muted">v{{ e.row.version }} · {{ e.row.item_count }} item(s)</span>{% else %}<span class="muted">not collected</span>{% endif %}</td>
       <td>{{ test_links(e.used_by, target) }}</td>
     </tr>
     {% endfor %}
   </table>
-  {% endif %}
+  {% for e in s.evidence if e.ev.kind == 'manual' and e.owner %}
+  {% set c = e.comment %}
   {% if can_write %}
-  <details class="step-comment" {{ 'open' if s.comment }}>
-    <summary>Tester comment{% if s.comment %} <span class="muted small">· updated {{ s.comment.updated_at }} by {{ s.comment.updated_by }}</span>{% else %} <span class="muted small">(none; add one when there is no evidence to attach)</span>{% endif %}</summary>
-    <form method="post" class="stack" action="{{ url_for('wstg_step_comment', name=target.name, test_id=test.id, n=s.n) }}">
+  <details class="step-comment" {{ 'open' if c }}>
+    <summary>Tester comment — <b>{{ e.ev.title }}</b> <code class="muted">{{ e.ev.id }}</code>{% if c %} <span class="muted small">· updated {{ c.updated_at }} by {{ c.updated_by }}{% if c.collected %} · marked collected{% endif %}</span>{% else %} <span class="muted small">(none; add one when there is no evidence to attach)</span>{% endif %}</summary>
+    <form method="post" class="stack" action="{{ url_for('evidence_comment', name=e.owner, eid=e.ev.id) }}">
       <input type="hidden" name="csrf" value="{{ csrf }}">
-      <textarea name="comment" rows="3" aria-label="Tester comment of step {{ s.n }}"
-        placeholder="What you observed when there is nothing to attach as evidence, for example: user names are generated by the system, so no variant can be registered. It goes into the AI prompt.">{{ s.comment.comment if s.comment }}</textarea>
-      <div><button>Save comment</button>{% if s.comment %} <button name="clear" value="1" class="danger" data-confirm="Remove the comment of step {{ s.n }}?">Remove</button>{% endif %}</div>
+      <input type="hidden" name="return" value="{{ url_for('wstg_page', name=target.name, test_id=test.id) }}#step-{{ s.n }}">
+      <textarea name="comment" rows="3" aria-label="Tester comment for {{ e.ev.id }}"
+        placeholder="What you observed when there is nothing to attach as evidence, for example: user names are generated by the system, so no variant can be registered. It goes into the AI prompt.">{{ c.comment if c }}</textarea>
+      <label class="small"><input type="checkbox" name="collected" value="1" {{ 'checked' if c and c.collected }}> Mark this evidence collected (nothing to attach; counts it as collected)</label>
+      <div><button>Save comment</button>{% if c %} <button name="clear" value="1" class="danger" data-confirm="Remove the comment for {{ e.ev.id }}?">Remove</button>{% endif %}</div>
     </form>
   </details>
-  {% elif s.comment %}
-  <div class="step-comment"><b>Tester comment</b> <span class="muted small">updated {{ s.comment.updated_at }} by {{ s.comment.updated_by }}</span>
-    <p class="pre-wrap">{{ s.comment.comment }}</p></div>
+  {% elif c %}
+  <div class="step-comment"><b>Tester comment — {{ e.ev.title }}</b> <span class="muted small">updated {{ c.updated_at }} by {{ c.updated_by }}{% if c.collected %} · marked collected{% endif %}</span>
+    <p class="pre-wrap">{{ c.comment }}</p></div>
+  {% endif %}
+  {% endfor %}
   {% endif %}
 </section>
 {% endfor %}

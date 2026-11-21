@@ -364,41 +364,55 @@ def set_verdict(db: dbmod.Database, target: Target, test_id: str, step: int, ver
         db.audit(conn, actor, "verdict.set", target=target.name, test=test_id, step=step, verdict=verdict)
 
 
-MAX_STEP_COMMENT = 10000
+MAX_EVIDENCE_COMMENT = 10000
 
 
-def step_comments(db: dbmod.Database, target: Target, test_id: str | None = None) -> dict:
-    """{test_id: {step: {"comment", "updated_at", "updated_by"}}} for the target (or one test)."""
-    sql = "SELECT test_id, step, comment, updated_at, updated_by FROM step_comments WHERE target_id = ?"
+def evidence_comments(db: dbmod.Database, target: Target, evidence_id: str | None = None) -> dict:
+    """{evidence_id: {"comment", "collected" (bool), "updated_at", "updated_by"}} for the
+    target (or one evidence). The comment is the tester's record where there is nothing to
+    attach; `collected` is the tester's decision that it stands in for the manual evidence."""
+    sql = "SELECT evidence_id, comment, collected, updated_at, updated_by FROM evidence_comments WHERE target_id = ?"
     args: tuple = (target.id,)
-    if test_id:
-        sql += " AND test_id = ?"
-        args += (test_id,)
-    out: dict[str, dict[int, dict]] = {}
+    if evidence_id:
+        sql += " AND evidence_id = ?"
+        args += (evidence_id,)
+    out: dict[str, dict] = {}
     for r in db.query(sql, args):
-        out.setdefault(r["test_id"], {})[r["step"]] = {k: r[k] for k in ("comment", "updated_at", "updated_by")}
+        out[r["evidence_id"]] = {"comment": r["comment"], "collected": bool(r["collected"]),
+                                 "updated_at": r["updated_at"], "updated_by": r["updated_by"]}
     return out
 
 
-def set_step_comment(db: dbmod.Database, target: Target, test_id: str, step: int, comment: str,
-                     actor: str) -> None:
-    """Set a step's tester comment (stands in for evidence there is nothing to attach
-    for); an empty comment removes it."""
+def evidence_comments_visible(db: dbmod.Database, target: Target) -> dict:
+    """Tester comments visible from a target: its own, plus its parent domain's."""
+    out: dict[str, dict] = {}
+    if target.parent_name and (parent := get(db, target.parent_name)):
+        out.update(evidence_comments(db, parent))
+    out.update(evidence_comments(db, target))
+    return out
+
+
+def set_evidence_comment(db: dbmod.Database, target: Target, evidence_id: str, comment: str,
+                         collected: bool, actor: str) -> None:
+    """Set an evidence's tester comment and its `collected` flag; a row with an empty
+    comment and collected False is removed."""
     comment = (comment or "").replace("\r\n", "\n").strip()
-    if len(comment) > MAX_STEP_COMMENT:
-        raise TargetError(f"the comment is longer than {MAX_STEP_COMMENT} characters")
+    if len(comment) > MAX_EVIDENCE_COMMENT:
+        raise TargetError(f"the comment is longer than {MAX_EVIDENCE_COMMENT} characters")
     with db.tx() as conn:
-        if not comment:
-            conn.execute("DELETE FROM step_comments WHERE target_id=? AND test_id=? AND step=?",
-                         (target.id, test_id, step))
-            db.audit(conn, actor, "step_comment.clear", target=target.name, test=test_id, step=step)
+        if not comment and not collected:
+            conn.execute("DELETE FROM evidence_comments WHERE target_id=? AND evidence_id=?",
+                         (target.id, evidence_id))
+            db.audit(conn, actor, "evidence_comment.clear", target=target.name, evidence=evidence_id)
             return
         conn.execute(
-            "INSERT INTO step_comments (target_id, test_id, step, comment, updated_at, updated_by)"
-            " VALUES (?,?,?,?,?,?) ON CONFLICT (target_id, test_id, step) DO UPDATE SET"
-            " comment=excluded.comment, updated_at=excluded.updated_at, updated_by=excluded.updated_by",
-            (target.id, test_id, step, comment, dbmod.utcnow(), actor))
-        db.audit(conn, actor, "step_comment.set", target=target.name, test=test_id, step=step)
+            "INSERT INTO evidence_comments (target_id, evidence_id, comment, collected, updated_at, updated_by)"
+            " VALUES (?,?,?,?,?,?) ON CONFLICT (target_id, evidence_id) DO UPDATE SET"
+            " comment=excluded.comment, collected=excluded.collected,"
+            " updated_at=excluded.updated_at, updated_by=excluded.updated_by",
+            (target.id, evidence_id, comment, int(collected), dbmod.utcnow(), actor))
+        db.audit(conn, actor, "evidence_comment.set", target=target.name, evidence=evidence_id,
+                 collected=int(collected))
 
 
 def status(step_count: int, step_verdicts: dict[int, str], has_evidence: bool = False) -> str:

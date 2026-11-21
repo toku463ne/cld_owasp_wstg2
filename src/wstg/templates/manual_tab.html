@@ -10,7 +10,7 @@
       {% if r.owner != target.name %}<span class="chip">from {{ r.owner }}</span>{% endif %}
       <div class="muted small">{{ r.ev.description }}</div></td>
     <td>{{ test_links(r.used_by, target) }}</td>
-    <td class="nowrap">{% if r.row %}{{ r.row.created_at }}<br><span class="muted">v{{ r.row.version }} · {{ r.row.item_count }} item(s)</span>{% else %}<span class="muted">not collected</span>{% endif %}</td>
+    <td class="nowrap">{% if r.row and r.row.by_comment %}<span title="marked collected by a tester comment">by tester comment</span><br><span class="muted">{{ r.row.created_at }}</span>{% elif r.row %}{{ r.row.created_at }}<br><span class="muted">v{{ r.row.version }} · {{ r.row.item_count }} item(s)</span>{% else %}<span class="muted">not collected</span>{% endif %}</td>
   </tr>
   {% endfor %}
 </table>
