@@ -18,6 +18,10 @@
   are masked in the recorded command line.
 - WSTG_DIRECT_SSH: evidence marked `direct` (tools that cannot use a proxy)
   runs on that jump host over SSH instead (see `Remote`).
+- Evidence with `inputs` reads other evidence ({ev:ID} in argv = that evidence's
+  newest complete version folder, or a path that does not exist when it was never
+  collected). A job orders it after its inputs, and collects it again when one of
+  its inputs got a new version in the same job (its old version is then stale).
 - One worker process (`wstg worker`) runs jobs one at a time. On start it marks
   jobs left running by a dead worker as interrupted.
 """
@@ -32,6 +36,7 @@ import shutil
 import signal
 import socket
 import subprocess
+import sys
 import tarfile
 import time
 from dataclasses import dataclass
@@ -77,14 +82,14 @@ def proxy_values(proxy: str) -> tuple[dict[str, str], dict[str, str]]:
 
 
 def build_argv(ev: catmod.Evidence, values: dict[str, str], proxy: str,
-               pause: int = 0) -> tuple[list[str], list[str], list[str]]:
+               pause: int = 0, ev_paths: dict[str, str] | None = None) -> tuple[list[str], list[str], list[str]]:
     """(argv to check against the scope, argv to run, argv to record).
 
     Optional argument groups ("{proxy_args}", "{pause_args}") are expanded when
     their setting is on and dropped otherwise. The scope check sees neither:
     the proxy host is not a target, and a pause adds no host.
     """
-    base = [catmod.render(a, values) for a in ev.argv]
+    base = [catmod.render(a, values, ev_paths) for a in ev.argv]
     checked = [a for a in base if a not in catmod.OPTIONAL_ARGS]
     real: dict[str, list[str]] = {}
     masked: dict[str, list[str]] = {}
@@ -113,8 +118,26 @@ def plan(cat: catmod.Catalog, target: tmod.Target, mode: str) -> list[catmod.Evi
     evs = [e for e in cat.evidence.values() if e.kind == "auto" and e.target_type == target.type]
     if mode == "light":
         evs = [e for e in evs if e.level == "light"]
-    # Light (quick) evidence first, heavy last, catalog order otherwise.
-    return sorted(evs, key=lambda e: (e.level == "full", e.heavy))
+    # Light (quick) evidence first, heavy last, catalog order otherwise; evidence
+    # that reads other evidence (inputs) after those inputs.
+    evs = sorted(evs, key=lambda e: (e.level == "full", e.heavy))
+    return catmod.order_by_inputs(evs, cat.evidence)
+
+
+def input_paths(cfg: Config, target: tmod.Target, ev: catmod.Evidence,
+                cat: catmod.Catalog) -> dict[str, str]:
+    """{input id: folder of its newest complete version} for {ev:ID} in argv. An input
+    never collected maps to its (missing) `latest` path, so the command can tell."""
+    out = {}
+    for i in ev.inputs:
+        src = cat.evidence.get(i)
+        owner = tmod.evidence_owner(target, src.target_type) if src else None
+        if not owner:
+            out[i] = f"/nonexistent/{i}"
+            continue
+        link = tmod.evidence_dir(cfg, owner) / i / "latest"
+        out[i] = os.path.realpath(link) if link.is_dir() else str(link)
+    return out
 
 
 def active_job(db: dbmod.Database, target: tmod.Target) -> dict | None:
@@ -210,6 +233,8 @@ class Runner:
         env = {k: v for k, v in os.environ.items()
                if k in ("PATH", "HOME", "LANG", "LC_ALL", "TERM", "USER", "TMPDIR", "SSH_AUTH_SOCK")}
         env.setdefault("PATH", "/usr/local/bin:/usr/bin:/bin")
+        # This project's console scripts (wstg-dns) live next to the interpreter.
+        env["PATH"] = os.pathsep.join([str(Path(sys.executable).parent), env["PATH"]])
         env.setdefault("LANG", "C.UTF-8")
         for k in ("http_proxy", "https_proxy", "HTTP_PROXY", "HTTPS_PROXY", "no_proxy", "NO_PROXY"):
             env.pop(k, None)
@@ -243,12 +268,13 @@ class Runner:
         values["out"] = str(tmp)
         via = self.cfg.direct_ssh if ev.direct else ""
         proxy = "" if via else self.cfg.http_proxy   # the jump host connects directly
+        ev_paths = input_paths(self.cfg, target, ev, self.cat)
         try:
-            argv, run_argv, rec_argv = build_argv(ev, values, proxy, self.cfg.pause)
+            argv, run_argv, rec_argv = build_argv(ev, values, proxy, self.cfg.pause, ev_paths)
         except RunError as e:
             shutil.rmtree(tmp, ignore_errors=True)
             return Outcome("failed", str(e))
-        leftover = [a for a in argv if catmod.PLACEHOLDER_RE.search(a)]
+        leftover = [a for a in argv if catmod.PLACEHOLDER_RE.search(a) or catmod.EV_REF_RE.search(a)]
         try:
             if leftover:
                 raise tmod.ScopeError(f"unfilled placeholder in {leftover[0]!r}")
@@ -266,7 +292,7 @@ class Runner:
                 shutil.rmtree(tmp, ignore_errors=True)
                 return Outcome("failed", str(e))
             values["out"] = rdir
-            _, run_argv, rec_argv = build_argv(ev, values, "", self.cfg.pause)
+            _, run_argv, rec_argv = build_argv(ev, values, "", self.cfg.pause, ev_paths)
             popen_argv = remote.command(rdir, run_argv, ev.timeout)
             tool = f"{via}:{argv[0]}"
         else:
@@ -371,6 +397,7 @@ class Runner:
         job = self.db.one("SELECT * FROM jobs WHERE id = ?", (job_id,))
         target = tmod.get(self.db, self.db.one("SELECT name FROM targets WHERE id = ?", (job["target_id"],))["name"])
         final = "done"
+        fresh: set[str] = set()        # evidence that got a new complete version in this job
         for item in job_items(self.db, job_id):
             if item["status"] != "pending":
                 continue
@@ -382,7 +409,8 @@ class Runner:
                 out = Outcome("failed", "no longer in the catalog")
             else:
                 latest = self.store.load(target.name, ev.id)
-                if latest and not job["force"]:
+                stale = sorted(set(ev.inputs) & fresh)
+                if latest and not job["force"] and not stale:
                     out = Outcome("skipped", f"already collected (v{latest.version})", latest.version)
                 else:
                     self._set_item(job_id, item["seq"], "running", started=True)
@@ -390,6 +418,11 @@ class Runner:
                         out = self.collect(target, ev, job_id=job_id, seq=item["seq"])
                     except Exception as e:  # never leave an item running
                         out = Outcome("failed", f"error: {e}")
+                    if latest and stale and not job["force"]:
+                        out.message = (out.message + "; " if out.message else "") + \
+                            f"collected again: input {', '.join(stale)} was updated in this job"
+            if out.status == "complete":
+                fresh.add(item["evidence_id"])
             self._set_item(job_id, item["seq"], "cancelled" if out.status == "stopped" else out.status,
                            message=out.message, version=out.version,
                            exit_code=out.exit_code, finished=True)

@@ -16,41 +16,47 @@ notes:
   - Steps 1 to 4 are for the domain target; steps 5 and 6 for an FQDN target.
 finding_kinds: [subdomain-takeover]
 steps:
-  - summary: "Domain: look up the CNAME of every known subdomain"
-    evidence: [ct-crtsh, subdomains-subfinder, subdomain-cnames]
+  - summary: "Domain: look up the CNAME of every known subdomain (collected automatically)"
+    auto_run: true
+    evidence: [subdomain-cnames, ct-crtsh, subdomains-subfinder]
     command: >-
-      grep -q '^\[' {ev:ct-crtsh}/crtsh.json || echo "ct-crtsh UNAVAILABLE: crt.sh returned no JSON (HTTP 502/503 is common); using subfinder only - recollect crt.sh";
-      { grep -q '^\[' {ev:ct-crtsh}/crtsh.json && jq -r '.[].name_value' {ev:ct-crtsh}/crtsh.json; cat {ev:subdomains-subfinder}/subfinder.txt; }
-      | tr 'A-Z' 'a-z' | sed 's/^\*\.//' | sort -u
-      | while read -r h; do c=$(dig +short CNAME "$h" | head -1); n="";
-      [ -n "$c" ] && [ -z "$(dig +short A "$c")$(dig +short AAAA "$c")" ] && n=" [no address]";
-      echo "$h -> $c$n"; done | tee cname-check.txt
+      cat {ev:subdomain-cnames}/cname-check.txt {ev:subdomain-cnames}/items/* 2>/dev/null
+      | awk '/^#/ {print; next} / -> [^ ]/ {c++} / -> *$/ {n++} END {print c+0 " names with a CNAME, " n+0 " without"}'
     operation: >-
-      Run the command on the tester's host (DNS lookups only, no request to the hosts) and
-      upload cname-check.txt as subdomain-cnames.
+      Collected by the automatic evidence subdomain-cnames (light and full mode) from the
+      crt.sh and subfinder lists: DNS lookups only, no request to the hosts. The lines
+      starting with # show which source lists were read. When subfinder was not collected
+      (light mode), run a full collection to add its names.
   - summary: "Domain: pick CNAMEs that point to services that can be claimed, and CNAMEs without an address"
     auto_run: true
     evidence: [subdomain-cnames]
     command: >-
-      grep -hiE ' -> .*(\.s3[.-][a-z0-9.-]*amazonaws\.com|\.s3\.amazonaws\.com|\.s3-website|\.github\.io|herokuapp\.com|herokudns\.com|\.azurewebsites\.net|\.cloudapp\.net|\.cloudapp\.azure\.com|\.trafficmanager\.net|\.blob\.core\.windows\.net|\.azureedge\.net|\.cloudfront\.net|\.fastly\.net|\.pantheonsite\.io|\.ghost\.io|myshopify\.com|\.netlify\.app|\.vercel\.app|\.surge\.sh|\.bitbucket\.io|\.wordpress\.com|\.zendesk\.com|\.readme\.io|\.statuspage\.io|\.helpscoutdocs\.com|\.elasticbeanstalk\.com|\.storage\.googleapis\.com)|\[no address\]' {ev:subdomain-cnames}/items/* || echo "no candidate"
-  - summary: "Domain: fetch each candidate and look for the provider's unclaimed-resource message"
-    evidence: [subdomain-cnames]
-    command: >-
-      grep -hiE ' -> [^ ]+' {ev:subdomain-cnames}/items/* | awk '{print $1}' | sort -u
-      | while read -r h; do echo "===== $h"; curl -sk -m 10 "https://$h/" | head -c 600; echo; done | tee takeover-responses.txt
+      cat {ev:subdomain-cnames}/cname-check.txt {ev:subdomain-cnames}/items/* 2>/dev/null
+      | grep -hiE ' -> .*(\.s3[.-][a-z0-9.-]*amazonaws\.com|\.s3\.amazonaws\.com|\.s3-website|\.github\.io|herokuapp\.com|herokudns\.com|\.azurewebsites\.net|\.cloudapp\.net|\.cloudapp\.azure\.com|\.trafficmanager\.net|\.blob\.core\.windows\.net|\.azureedge\.net|\.cloudfront\.net|\.fastly\.net|\.pantheonsite\.io|\.ghost\.io|myshopify\.com|\.netlify\.app|\.vercel\.app|\.surge\.sh|\.bitbucket\.io|\.wordpress\.com|\.zendesk\.com|\.readme\.io|\.statuspage\.io|\.helpscoutdocs\.com|\.elasticbeanstalk\.com|\.storage\.googleapis\.com)|\[no address\]' || echo "no candidate"
+  - summary: "Domain: fetch each in-scope subdomain with a CNAME and look for the provider's unclaimed-resource message"
+    evidence: [subdomain-cnames, takeover-responses]
+    command: uv run wstg takeover-probe {domain} --dry-run; uv run wstg takeover-probe {domain}
     operation: >-
-      Limit the input to the candidates of step 2 when the list is long. Save
-      takeover-responses.txt with subdomain-cnames.
-    load_note: One request per subdomain with a CNAME; the hosts may be outside the authorized scope. Check the scope before running it.
+      Run on the Kali host, in the project directory. The first command only lists which
+      subdomains would be fetched and which are skipped; the second sends one GET / per
+      fetched host (https, http when https does not answer; no redirects followed) and
+      saves the answers as takeover-responses. Only hosts allowed by a valid scope record
+      (authorization and period in force) of this domain or of one of its FQDN targets
+      are contacted: to include a subdomain, add it (or *.{domain}) to the domain's scope
+      record first, once its owner has authorized it. Subdomains whose CNAME target has
+      no address are not fetched (DNS already shows them dangling).
+    load_note: One or two requests per in-scope subdomain with a CNAME; out-of-scope hosts are never contacted. WSTG_PAUSE applies between hosts.
   - summary: "Domain: judge each candidate"
-    evidence: [subdomain-cnames]
+    evidence: [subdomain-cnames, takeover-responses]
     ai_task: >-
       From steps 2 and 3, list each subdomain whose CNAME points to a service that can be
       claimed or has no address (subdomain, CNAME target, service, the error message seen).
       Use your knowledge of which services can be taken over and the message each shows
       for an unclaimed resource. Verdict: fail when a subdomain shows an unclaimed-resource
       message or its CNAME target does not resolve at such a service; pass when no
-      candidate remains; "-" when subdomain-cnames is missing.
+      candidate remains; "-" when subdomain-cnames is missing. Candidates skipped as out
+      of scope in takeover-responses are not judged from their answer; list them as
+      "not probed (out of scope)" and judge them from DNS only.
   - summary: "FQDN: read the CNAME chain of the target itself"
     auto_run: true
     evidence: [dns-fqdn]

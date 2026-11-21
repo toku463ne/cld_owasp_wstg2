@@ -27,6 +27,11 @@
 #                early (for example nikto -maxtime), so the collection is failed
 #   direct       auto only: the tool cannot use a proxy and needs direct connections
 #                (raw TCP, UDP, or ICMP); behind a proxy-only network it fails
+#   inputs       auto only: other automatic evidence this command reads, written as
+#                {ev:ID} in argv (the folder of its newest complete version; a path that
+#                does not exist when it was never collected, so the tool must cope).
+#                A job collects the inputs first, and collects this again when an input
+#                got a new version in the same job. Not allowed with direct.
 #
 # Placeholders: {domain} {fqdn} {base_url} {port} {out} (see src/wstg/catalog.py).
 evidence:

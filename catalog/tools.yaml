@@ -26,6 +26,9 @@ tools:
   - {name: ffuf}
   - {name: katana}
   - {name: wafw00f}
+  - name: wstg-dns
+    install: none
+    note: this project's console script (uv sync installs it); runs dig in batch mode
   - name: seclists
     path: /usr/share/seclists/Discovery/DNS/subdomains-top1million-5000.txt
     note: word lists for vhost-ffuf

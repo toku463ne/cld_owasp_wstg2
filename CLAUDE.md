@@ -118,6 +118,7 @@ uv run wstg worker [--once]               # run queued automatic evidence jobs
 uv run wstg collect TARGET [--mode light|full] [--evidence ID [--force]] [--run]
 uv run wstg capture TARGET [--role NAME] [--url URL] [--headless]
                                           # record a browsing session as a HAR (headful Chromium, Playwright)
+uv run wstg takeover-probe DOMAIN [--dry-run]  # WSTG-CONF-10 step 3: GET / of in-scope subdomains with a CNAME
 uv run wstg ai-prompts TARGET [--test WSTG-..] [--evidence complete|any|all] [--existing skip|overwrite]
                                           # save AI prompts to <evidence>/TARGET/_ai/prompts
 uv run wstg ai-import TARGET [--overwrite] [--findings]  # import _ai/answers/WSTG-*.json
@@ -129,7 +130,7 @@ uv run pytest -q                          # tests (temporary directories only)
 Code layout: `src/wstg/` (`config.py`, `db.py` + `migrations/NNNN_*.sql`, `users.py`,
 `web.py`, `web_targets.py`, `web_evidence.py` + `templates/` + `static/`, `cli.py`, `catalog.py`,
 `targets.py` (targets, scope check, status), `evidence.py` (versioned store), `runner.py`
-(jobs, worker), `analysis.py` (auto-run step commands), `prompt.py` + `ai_review.py` + `ai_files.py`
+(jobs, worker, evidence `inputs` ordering), `har.py` (`wstg-har`), `dnscheck.py` (`wstg-dns`), `takeover.py`, `analysis.py` (auto-run step commands), `prompt.py` + `ai_review.py` + `ai_files.py`
 (AI prompt, answer import, prompt/answer files)), catalog data in `catalog/`
 (`wstg_index.yaml`, `evidence/*.yaml`, `wstg/WSTG-*.yaml`, `tools.yaml`; schema in `catalog/evidence/core.yaml`
 and `src/wstg/catalog.py`), tests in `tests/`, setup in

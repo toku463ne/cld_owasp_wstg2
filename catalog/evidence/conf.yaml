@@ -265,8 +265,32 @@ evidence:
   - id: subdomain-cnames
     title: CNAME of every known subdomain
     target_type: domain
+    kind: auto
+    level: light
+    passive: true
+    inputs: [ct-crtsh, subdomains-subfinder]
+    description: >-
+      cname-check.txt: one line per subdomain found in crt.sh and subfinder ("name ->
+      CNAME target", with "[no address]" when the CNAME target does not resolve, nothing
+      after "->" when the name has no CNAME). DNS lookups through the system resolver
+      only, in batch (dig -f). Lines starting with # say which sources were read: light
+      mode has no subfinder list, so only crt.sh names are used; a full run that collects
+      subfinder collects this again with its names. Fails when no source could be read
+      or a lookup failed twice.
+    argv: [wstg-dns, cnames, --domain, "{domain}", --crtsh, "{ev:ct-crtsh}/crtsh.json",
+           --subfinder, "{ev:subdomains-subfinder}/subfinder.txt", -o, "{out}/cname-check.txt"]
+    files: [cname-check.txt]
+    timeout: 1800
+    load_note: Two DNS queries per subdomain (CNAME, then A and AAAA of each CNAME target) to the system resolver; nothing is sent to the hosts.
+
+  - id: takeover-responses
+    title: Answers of subdomains with a CNAME (takeover probe)
+    target_type: domain
     kind: manual
     description: >-
-      cname-check.txt from the command in WSTG-CONF-10 step 1 (one line per subdomain:
-      "name -> CNAME target", empty when the name has no CNAME), run on the tester's
-      host; DNS lookups only.
+      Text file saved by `uv run wstg takeover-probe {domain}` (WSTG-CONF-10 step 3): per
+      subdomain with a CNAME, the status, Server header, redirect location, and the first
+      600 bytes of GET / (no redirects followed), with "UNCLAIMED-RESOURCE MESSAGE" when
+      a provider's unclaimed-resource text is found. Only hosts allowed by a valid scope
+      record of the domain or of one of its FQDN targets are fetched; the others are
+      listed as skipped.

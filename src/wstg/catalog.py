@@ -124,6 +124,7 @@ class Evidence:
     pause_args: tuple[str, ...] = ()  # replace "{pause_args}" in argv when WSTG_PAUSE is set
     incomplete_if: tuple[str, ...] = ()  # regexes on stdout/stderr meaning "stopped early"
     load_note: str = ""
+    inputs: tuple[str, ...] = ()      # auto only: evidence read through {ev:ID} in argv (collected first)
     source: str = ""                  # file it was defined in
 
 
@@ -258,7 +259,7 @@ def _load_index(path: Path, problems: list[str]) -> tuple[str, dict[str, Test]]:
 
 EVIDENCE_KEYS = {"id", "title", "target_type", "kind", "description", "level", "passive", "heavy",
                  "argv", "files", "timeout", "ok_exit_codes", "load_note",
-                 "proxy_args", "direct", "pause_args", "incomplete_if"}
+                 "proxy_args", "direct", "pause_args", "incomplete_if", "inputs"}
 
 
 def _load_evidence(dir_: Path, problems: list[str]) -> dict[str, Evidence]:
@@ -283,7 +284,8 @@ def _load_evidence(dir_: Path, problems: list[str]) -> dict[str, Evidence]:
                 timeout=int(e.get("timeout", 120)),
                 ok_exit_codes=tuple(int(x) for x in e.get("ok_exit_codes", [0])), load_note=_str(e.get("load_note")),
                 proxy_args=_strs(e.get("proxy_args")), direct=bool(e.get("direct", False)),
-                pause_args=_strs(e.get("pause_args")), incomplete_if=_strs(e.get("incomplete_if")), source=path.name,
+                pause_args=_strs(e.get("pause_args")), incomplete_if=_strs(e.get("incomplete_if")),
+                inputs=_strs(e.get("inputs")), source=path.name,
             )
             _check_evidence(ev, problems)
             out[eid] = ev
@@ -332,7 +334,7 @@ def _check_evidence(ev: Evidence, problems: list[str]) -> None:
     else:
         for k, v in (("argv", ev.argv), ("level", ev.level), ("files", ev.files),
                      ("proxy_args", ev.proxy_args), ("direct", ev.direct),
-                     ("pause_args", ev.pause_args), ("incomplete_if", ev.incomplete_if),
+                     ("pause_args", ev.pause_args), ("incomplete_if", ev.incomplete_if), ("inputs", ev.inputs),
                      ("ok_exit_codes", ev.ok_exit_codes != (0,))):
             if v:
                 problems.append(f"{w}: manual evidence must not set {k}")
@@ -348,6 +350,57 @@ def _check_evidence(ev: Evidence, problems: list[str]) -> None:
     for f in ev.files:
         if f.startswith("/") or ".." in Path(f).parts:
             problems.append(f"{w}: file '{f}' must be a relative path inside {{out}}")
+
+
+def _check_inputs(evidence: dict[str, Evidence], problems: list[str]) -> None:
+    """`inputs`: other automatic evidence an automatic evidence reads (as {ev:ID} in
+    argv). They must exist, be automatic, be reachable from the target (same type,
+    or the parent domain's for an FQDN), not form a cycle, and the reader must run
+    locally (a jump host cannot see the local evidence folder)."""
+    for ev in evidence.values():
+        w = f"evidence {ev.id}"
+        refs = {r for a in ev.argv for r in EV_REF_RE.findall(a)}
+        for r in sorted(refs - set(ev.inputs)):
+            problems.append(f"{w}: argv reads {{ev:{r}}} but '{r}' is not listed in inputs")
+        if ev.inputs and ev.direct:
+            problems.append(f"{w}: evidence with inputs cannot be direct (the jump host has no evidence folder)")
+        for i in ev.inputs:
+            src = evidence.get(i)
+            if i == ev.id:
+                problems.append(f"{w}: lists itself in inputs")
+            elif not src:
+                problems.append(f"{w}: unknown input '{i}'")
+            elif src.kind != "auto":
+                problems.append(f"{w}: input '{i}' is not automatic evidence")
+            elif not (src.target_type == ev.target_type or (src.target_type, ev.target_type) == ("domain", "fqdn")):
+                problems.append(f"{w}: input '{i}' is {src.target_type} evidence, not readable from {ev.target_type} targets")
+    try:
+        order_by_inputs(list(evidence.values()), evidence)
+    except CatalogError as e:
+        problems.extend(e.problems)
+
+
+def order_by_inputs(evs: list[Evidence], evidence: dict[str, Evidence]) -> list[Evidence]:
+    """`evs` in their given order, except that each one comes after its inputs that are
+    also in `evs` (stable topological order). Raises CatalogError on a cycle."""
+    wanted = {e.id for e in evs}
+    out: list[Evidence] = []
+    state: dict[str, int] = {}          # 1 = visiting, 2 = done
+
+    def visit(e: Evidence, path: list[str]) -> None:
+        if state.get(e.id) == 2:
+            return
+        if state.get(e.id) == 1:
+            raise CatalogError([f"evidence inputs form a cycle: {' -> '.join(path + [e.id])}"])
+        state[e.id] = 1
+        for i in e.inputs:
+            if i in wanted and i in evidence:
+                visit(evidence[i], path + [e.id])
+        state[e.id] = 2
+        out.append(e)
+    for e in evs:
+        visit(e, [])
+    return out
 
 
 SCENARIO_KEYS = {"id", "overview", "pass", "fail", "notes", "steps", "finding_kinds"}
@@ -426,6 +479,7 @@ def load(root: Path | None = None) -> Catalog:
     problems: list[str] = []
     version, tests = _load_index(root / "wstg_index.yaml", problems)
     evidence = _load_evidence(root / "evidence", problems)
+    _check_inputs(evidence, problems)
     kinds = _load_finding_kinds(root / "finding_kinds.yaml", problems)
     scenarios = _load_scenarios(root / "wstg", tests, evidence, problems, kinds)
     tools = _load_tools(root / "tools.yaml", problems)
