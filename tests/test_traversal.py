@@ -1,6 +1,7 @@
 """Directory-traversal probe (WSTG-ATHZ-01 step 2) against a loopback test server."""
 
 import json
+import re
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import unquote, urlsplit, parse_qs
@@ -33,6 +34,27 @@ class Handler(BaseHTTPRequestHandler):
             if name in ("home", "", "index"):
                 return self._send(200, b"<html>Welcome home page</html>")
             return self._send(404, b"not found")
+        if u.path == "/inc":
+            v = unquote((q.get("page") or [""])[0])
+            if v.startswith("data://text/plain;base64,"):
+                import base64 as _b64
+                try:
+                    code = _b64.b64decode(v.split(",", 1)[1]).decode()
+                except Exception:
+                    code = ""
+                m = re.search(r"echo (\d+)\*(\d+)", code)
+                if m:        # simulate PHP running the wrapper
+                    return self._send(200, str(int(m.group(1)) * int(m.group(2))).encode())
+            return self._send(200, b"<html>page</html>")
+        if u.path == "/show":
+            v = unquote((q.get("tpl") or [""])[0])
+            if v.startswith("data://text/plain;base64,"):
+                import base64 as _b64
+                try:
+                    return self._send(200, _b64.b64decode(v.split(",", 1)[1]))   # shows source, no eval
+                except Exception:
+                    pass
+            return self._send(200, b"<html>tpl</html>")
         if u.path == "/safe":
             # Validated parameter: only an allow-listed name, traversal refused.
             name = (q.get("doc") or [""])[0]
@@ -78,6 +100,19 @@ def test_probe_flags_a_real_traversal_and_not_a_validated_param(tmp_path, server
     assert "other.example.org" in out and "skipped" in out
     assert all("127.0.0.1" not in h or True for h in Handler.seen)
     assert not any("etc/passwd" in h and "other" in h for h in Handler.seen)
+
+
+def test_probe_detects_code_execution_and_source_display(tmp_path, server, capsys):
+    from wstg import traversal
+    lst = tmp_path / "list" / "items"
+    lst.mkdir(parents=True)
+    (lst / "001.txt").write_text(f"{server}/inc?page=home\n{server}/show?tpl=a\n")
+    traversal.main(["--base", server + "/", "--list", str(lst.parent)])
+    out = capsys.readouterr().out
+    blocks = {b.split("   [")[0]: b for b in out.split("\n== ")[1:]}
+    assert "CODE EXECUTION: the included wrapper ran" in blocks["/inc?page="]
+    assert "982007569" in blocks["/inc?page="]
+    assert "included but shown as source, not executed" in blocks["/show?tpl="]
 
 
 def test_probe_candidates_from_crawl_and_limit(tmp_path, server, capsys):
