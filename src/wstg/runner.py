@@ -118,10 +118,19 @@ def plan(cat: catmod.Catalog, target: tmod.Target, mode: str) -> list[catmod.Evi
     evs = [e for e in cat.evidence.values() if e.kind == "auto" and e.target_type == target.type]
     if mode == "light":
         evs = [e for e in evs if e.level == "light"]
-    # Light (quick) evidence first, heavy last, catalog order otherwise; evidence
-    # that reads other evidence (inputs) after those inputs.
-    evs = sorted(evs, key=lambda e: (e.level == "full", e.heavy))
+    # Shortest expected run first so quick evidence finishes early and the long,
+    # heavy collections (ffuf, port scans) run last in the background. Evidence
+    # with no `est` falls back to a rough default (heavy = slow, otherwise quick);
+    # evidence that reads other evidence (inputs) still comes after those inputs.
+    evs = sorted(evs, key=est_seconds)
     return catmod.order_by_inputs(evs, cat.evidence)
+
+
+def est_seconds(ev: catmod.Evidence) -> int:
+    """Rough expected run time used only to order a collection shortest-first."""
+    if ev.est:
+        return ev.est
+    return 1800 if ev.heavy else 60
 
 
 def fqdn_target_urls(db: dbmod.Database, target: tmod.Target) -> tuple[list[str], list[str]]:

@@ -15,6 +15,7 @@ evidence:
            "{proxy_args}", "{fqdn}:{port}"]
     proxy_args: [--proxy, "{proxy_hostport}"]
     files: [testssl.json]
+    est: 600
     timeout: 1800
     load_note: >-
       Opens several hundred TLS handshakes and takes 2 to 15 minutes (longer when the name

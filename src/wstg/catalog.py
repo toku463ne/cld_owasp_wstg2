@@ -82,7 +82,7 @@ PAUSE_PLACEHOLDERS = {"pause"}
 # registered FQDN target of the domain whose own scope record allows it.
 FQDN_TARGET_URLS = "{fqdn_target_urls}"
 OPTIONAL_ARGS = {PROXY_ARGS: ("proxy_args", PROXY_PLACEHOLDERS), PAUSE_ARGS: ("pause_args", PAUSE_PLACEHOLDERS)}
-MAX_TIMEOUT = 4 * 3600
+MAX_TIMEOUT = 12 * 3600
 TOOL_INSTALLS = ("apt", "npm", "none")
 
 
@@ -121,6 +121,7 @@ class Evidence:
     argv: tuple[str, ...] = ()        # auto only; no shell
     files: tuple[str, ...] = ()       # extra files the command writes under {out}
     timeout: int = 120
+    est: int = 0                      # auto only: rough expected seconds (0 = unknown); orders a run shortest-first. The timeout is the hard ceiling and must be >= est.
     ok_exit_codes: tuple[int, ...] = (0,)  # exit codes that mean "finished"
     proxy_args: tuple[str, ...] = ()  # replace "{proxy_args}" in argv when a proxy is set
     direct: bool = False              # the tool cannot use a proxy (needs direct connections)
@@ -264,7 +265,7 @@ def _load_index(path: Path, problems: list[str]) -> tuple[str, dict[str, Test]]:
 
 
 EVIDENCE_KEYS = {"id", "title", "target_type", "kind", "description", "level", "passive", "heavy",
-                 "argv", "files", "timeout", "ok_exit_codes", "load_note",
+                 "argv", "files", "timeout", "est", "ok_exit_codes", "load_note",
                  "proxy_args", "direct", "pause_args", "incomplete_if", "inputs", "fqdn_targets"}
 
 
@@ -287,7 +288,7 @@ def _load_evidence(dir_: Path, problems: list[str]) -> dict[str, Evidence]:
                 description=_str(e.get("description")), level=_str(e.get("level")) or None,
                 passive=bool(e.get("passive", False)), heavy=bool(e.get("heavy", False)),
                 argv=_strs(e.get("argv")), files=_strs(e.get("files")),
-                timeout=int(e.get("timeout", 120)),
+                timeout=int(e.get("timeout", 120)), est=int(e.get("est", 0)),
                 ok_exit_codes=tuple(int(x) for x in e.get("ok_exit_codes", [0])), load_note=_str(e.get("load_note")),
                 proxy_args=_strs(e.get("proxy_args")), direct=bool(e.get("direct", False)),
                 pause_args=_strs(e.get("pause_args")), incomplete_if=_strs(e.get("incomplete_if")),
@@ -329,6 +330,10 @@ def _check_evidence(ev: Evidence, problems: list[str]) -> None:
             problems.append(f"{w}: heavy evidence needs a load_note")
         if not 1 <= ev.timeout <= MAX_TIMEOUT:
             problems.append(f"{w}: timeout must be 1..{MAX_TIMEOUT} seconds")
+        if ev.est < 0:
+            problems.append(f"{w}: est must be >= 0 seconds")
+        if ev.est > ev.timeout:
+            problems.append(f"{w}: est ({ev.est} s) is longer than timeout ({ev.timeout} s); raise the timeout to match the expected time")
         for token, (key, names) in OPTIONAL_ARGS.items():
             args, n = getattr(ev, key), ev.argv.count(token)
             if args and n != 1:

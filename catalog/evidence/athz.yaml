@@ -36,6 +36,7 @@ evidence:
     argv: [wstg-trav, --base, "{base_url}/", --list, "{ev:traversal-param-list}",
            --katana, "{ev:katana-crawl}", --har, "{ev:har-browse}", "{pause_args}"]
     pause_args: [--pause, "{pause}"]
+    est: 600
     timeout: 3600
     load_note: Sends about ten traversal payloads per file-naming parameter; can trip a WAF and fill error logs. Collect it with the owner's agreement; WSTG_PAUSE slows it down.
 

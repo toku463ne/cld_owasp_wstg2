@@ -41,6 +41,24 @@ def run(r, t, mode="light"):
     return {i["evidence_id"]: i for i in rmod.job_items(r.db, job)}
 
 
+def test_plan_orders_shortest_expected_first(cfg, db):
+    # est when set; otherwise heavy = slow, light = quick. Inputs still win over est.
+    evs = [
+        ev("slow", ["true"], level="full", heavy=True, est=36000, load_note="n"),
+        ev("quick", ["true"], est=10),
+        ev("mid", ["true"], est=600),
+        ev("heavy-no-est", ["true"], level="full", heavy=True, load_note="n"),  # default 1800
+        ev("needs-mid", ["true"], est=5, inputs=("mid",)),                      # est small but depends on mid
+    ]
+    cat = catmod.Catalog(wstg_version="4.2", tests={}, evidence={e.id: e for e in evs})
+    target = tm.Target(id=1, name="www.example.com", type="fqdn", parent_id=None,
+                       parent_name=None, description="", created_at="")
+    order = [e.id for e in rmod.plan(cat, target, "full")]
+    # needs-mid has the smallest est but is pulled after mid (its input); mid comes
+    # with it, ahead of quick. Otherwise shortest-first, heavy/slow last.
+    assert order == ["mid", "needs-mid", "quick", "heavy-no-est", "slow"]
+
+
 def test_light_mode_collects_and_resumes(cfg, db, site):
     r, store = make(cfg, db,
                     ev("hello", [PY, "-c", "import sys; print('host {fqdn}'); open(sys.argv[1], 'w').write('x')",

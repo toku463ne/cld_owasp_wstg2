@@ -106,6 +106,7 @@ evidence:
            -oN, "{out}/nmap-web.txt", "{fqdn}"]
     direct: true
     files: [nmap-web.txt]
+    est: 300
     timeout: 900
     load_note: Port scan of 24 ports with service detection; IDS/IPS may react and block the tester's address. Tell the target's administrator the source IP first.
 
@@ -125,6 +126,7 @@ evidence:
     proxy_args: [-x, "{proxy_url}"]
     pause_args: [-p, "{pause}", -t, "1"]
     files: [ffuf-vhost.json]
+    est: 5400
     timeout: 14400
     load_note: >-
       About 5000 requests, at up to 50 per second (ffuf's 40 threads otherwise). With
@@ -148,6 +150,7 @@ evidence:
     proxy_args: [-proxy, "{proxy_url}"]
     pause_args: [-delay, "{pause}", -c, "1", -p, "1"]
     files: [katana.txt]
+    est: 1200
     timeout: 1800
     load_note: >-
       Crawler; hundreds to thousands of GET requests at up to 10 per second, for at most
@@ -219,6 +222,7 @@ evidence:
            --admin, "{ev:admin-paths}", --metafiles, "{ev:metafiles}", --wayback, "{ev:wayback-urls}",
            "{pause_args}"]
     pause_args: [--pause, "{pause}"]
+    est: 300
     timeout: 1800
     load_note: Up to two GETs (without and with login) per listed path plus up to 100 found paths; WSTG_PAUSE applies.
 

@@ -146,6 +146,23 @@ def test_heavy_evidence_must_be_full_with_note(tmp_path):
     assert "must be level full" in p and "load_note" in p
 
 
+def test_est_longer_than_timeout_is_refused(tmp_path):
+    p = problems_for(tmp_path, """\
+        evidence:
+          - id: slow-scan
+            title: s
+            target_type: fqdn
+            kind: auto
+            level: full
+            heavy: true
+            est: 36000
+            timeout: 14400
+            argv: [nikto, -h, "{base_url}"]
+            load_note: n
+        """)
+    assert "est (36000 s) is longer than timeout" in p
+
+
 def test_placeholders_are_checked(tmp_path):
     p = problems_for(tmp_path, """\
         evidence:

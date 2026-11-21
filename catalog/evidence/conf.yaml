@@ -210,6 +210,7 @@ evidence:
     proxy_args: [-x, "{proxy_url}"]
     pause_args: [-p, "{pause}", -t, "1"]
     files: [ffuf-content.json]
+    est: 4800
     timeout: 14400
     load_note: >-
       About 4,700 requests at up to 50 per second (about 2 minutes; with WSTG_PAUSE, one
@@ -233,12 +234,13 @@ evidence:
     proxy_args: [-x, "{proxy_url}"]
     pause_args: [-p, "{pause}", -t, "1"]
     files: [ffuf-backup.json]
-    timeout: 14400
+    est: 33000
+    timeout: 36000
     load_note: >-
-      About 33,000 requests at up to 50 per second (about 11 minutes). With WSTG_PAUSE the
-      run takes many hours and stops at the 4-hour timeout, which is recorded as a failed
-      collection; collect it without WSTG_PAUSE on targets that can take the load, or skip
-      it. Needs the seclists package.
+      About 33,000 requests at up to 50 per second (about 11 minutes). With WSTG_PAUSE at 1
+      second it is one request at a time and takes about nine hours; the timeout allows ten.
+      Being the slowest collection it runs last, so it keeps going in the background while
+      the rest of the run and your other work continue. Needs the seclists package.
 
   # ---- FQDN targets: manual --------------------------------------------------
 
@@ -280,6 +282,7 @@ evidence:
     argv: [wstg-dns, cnames, --domain, "{domain}", --crtsh, "{ev:ct-crtsh}/crtsh.json",
            --subfinder, "{ev:subdomains-subfinder}/subfinder.txt", -o, "{out}/cname-check.txt"]
     files: [cname-check.txt]
+    est: 300
     timeout: 1800
     load_note: Two DNS queries per subdomain (CNAME, then A and AAAA of each CNAME target) to the system resolver; nothing is sent to the hosts.
 
