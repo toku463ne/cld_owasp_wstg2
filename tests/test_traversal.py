@@ -55,6 +55,19 @@ class Handler(BaseHTTPRequestHandler):
                 except Exception:
                     pass
             return self._send(200, b"<html>tpl</html>")
+        if u.path == "/rfi":
+            # Includes a remote URL: fetches it server-side and "runs" it (simulating RFI).
+            v = unquote((q.get("file") or [""])[0])
+            if v.startswith("http://"):
+                import urllib.request
+                try:
+                    content = urllib.request.urlopen(v, timeout=2).read().decode()   # fetches the callback
+                except Exception:
+                    content = ""
+                m = re.search(r"echo (\d+)\*(\d+)", content)
+                if m:
+                    return self._send(200, str(int(m.group(1)) * int(m.group(2))).encode())
+            return self._send(200, b"<html>rfi</html>")
         if u.path == "/safe":
             # Validated parameter: only an allow-listed name, traversal refused.
             name = (q.get("doc") or [""])[0]
@@ -113,6 +126,27 @@ def test_probe_detects_code_execution_and_source_display(tmp_path, server, capsy
     assert "CODE EXECUTION: the included wrapper ran" in blocks["/inc?page="]
     assert "982007569" in blocks["/inc?page="]
     assert "included but shown as source, not executed" in blocks["/show?tpl="]
+
+
+def test_probe_detects_remote_file_inclusion(tmp_path, server, capsys):
+    lst = tmp_path / "list" / "items"
+    lst.mkdir(parents=True)
+    (lst / "001.txt").write_text(f"{server}/rfi?file=home\n")
+    traversal.main(["--base", server + "/", "--list", str(lst.parent)])
+    out = capsys.readouterr().out
+    block = out.split("\n== ")[1]
+    assert "REMOTE CODE EXECUTION" in block and "982007569" in block
+    assert "callback at http://127.0.0.1:" in out
+
+
+def test_no_callback_skips_remote_inclusion(tmp_path, server, capsys):
+    lst = tmp_path / "list" / "items"
+    lst.mkdir(parents=True)
+    (lst / "001.txt").write_text(f"{server}/rfi?file=home\n")
+    traversal.main(["--base", server + "/", "--list", str(lst.parent), "--no-callback"])
+    out = capsys.readouterr().out
+    assert "remote file inclusion test off" in out
+    assert "REMOTE CODE EXECUTION" not in out
 
 
 def test_probe_candidates_from_crawl_and_limit(tmp_path, server, capsys):

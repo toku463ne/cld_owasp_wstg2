@@ -28,27 +28,35 @@ evidence:
       HAR): the baseline response, then a fixed set of traversal and inclusion payloads
       (../ and ..\ sequences, %2e%2e%2f and double-encoded variants, ....//, an absolute
       path, a null byte, a trailing dot, a php://filter wrapper, and a data:// wrapper that
-      evaluates a benign expression to tell a file that RUNS from one merely displayed). For each: status,
-      size, and - when a well-known file signature appears (/etc/passwd, win.ini, a
-      base64-encoded source) or the answer changed a lot from the baseline - a short body
-      excerpt, flagged TRAVERSAL. When the HAR holds a logged-in session its cookies are
-      used. GET only, no redirects, only the target host contacted; WSTG_PAUSE applies.
+      evaluates a benign expression to tell a file that RUNS from one merely displayed), and
+      a remote file inclusion test: the tool runs a local callback HTTP server and sends the
+      parameter a URL pointing at it, so a parameter that fetches the URL is flagged
+      SSRF/RFI and one that also runs the fetched file REMOTE CODE EXECUTION. For each:
+      status, size, and - when a well-known file signature appears (/etc/passwd, win.ini, a
+      base64-encoded source), the callback was fetched, or the answer changed a lot from the
+      baseline - a short body excerpt. When the HAR holds a logged-in session its cookies are
+      used. GET only, no redirects, only the target host contacted directly; WSTG_PAUSE applies.
     argv: [wstg-trav, --base, "{base_url}/", --list, "{ev:traversal-param-list}",
            --katana, "{ev:katana-crawl}", --har, "{ev:har-browse}", "{pause_args}"]
     pause_args: [--pause, "{pause}"]
     est: 600
     timeout: 3600
-    load_note: Sends about ten traversal payloads per file-naming parameter; can trip a WAF and fill error logs. Collect it with the owner's agreement; WSTG_PAUSE slows it down.
+    load_note: >-
+      About ten traversal payloads plus one remote-inclusion request per file-naming
+      parameter; can trip a WAF and fill error logs, and makes the target fetch a local
+      callback. Collect it with the owner's agreement; WSTG_PAUSE slows it down.
 
   - id: traversal-tests
-    title: Remote/log file-inclusion tests (manual)
+    title: Log/session poisoning file-inclusion tests (manual)
     target_type: fqdn
     kind: manual
     description: >-
-      WSTG-ATHZ-01 step 3, only the parts the probe cannot do: remote file inclusion from a
-      host you control, and log/session poisoning. One text item per parameter: the payload,
-      the host or file used, and whether code ran. Local read-traversal and data:// code
-      execution are in traversal-probe.
+      WSTG-ATHZ-01 step 3, only the part the probe cannot do: log or session poisoning (put
+      PHP in a header or session value, then include the log or session file through a
+      parameter). One text item per parameter: the payload, the file included, and whether
+      code ran. Local read-traversal, data:// execution, and remote file inclusion are in
+      traversal-probe. When nothing here applies, mark this evidence collected with a short
+      tester comment saying so.
 
   - id: authz-bypass-tests
     title: Authorization-schema bypass tests
