@@ -283,6 +283,23 @@ evidence:
     timeout: 1800
     load_note: Two DNS queries per subdomain (CNAME, then A and AAAA of each CNAME target) to the system resolver; nothing is sent to the hosts.
 
+  - id: cname-takeover
+    title: Answer of this host through its CNAME (takeover probe)
+    target_type: fqdn
+    kind: auto
+    level: light
+    inputs: [subdomain-cnames]
+    description: >-
+      The CNAME of the target host, from the parent domain's subdomain-cnames (looked up
+      with dig when that list is missing or does not name the host), and, when the CNAME
+      target resolves, the answer to one GET of the target's base URL (status, Server,
+      redirect location, first 600 bytes; no redirects followed), with
+      "UNCLAIMED-RESOURCE MESSAGE" when a provider's unclaimed-resource text is found.
+      Only the target host is contacted, and only when it has a CNAME; "DANGLING CNAME"
+      when the CNAME target does not resolve (no request then).
+    argv: [wstg-dns, takeover, --host, "{fqdn}", --cnames, "{ev:subdomain-cnames}", --url, "{base_url}/"]
+    timeout: 120
+
   - id: takeover-responses
     title: Answers of subdomains with a CNAME (takeover probe)
     target_type: domain
@@ -293,4 +310,5 @@ evidence:
       600 bytes of GET / (no redirects followed), with "UNCLAIMED-RESOURCE MESSAGE" when
       a provider's unclaimed-resource text is found. Only hosts allowed by a valid scope
       record of the domain or of one of its FQDN targets are fetched; the others are
-      listed as skipped.
+      listed as skipped. Registered FQDN targets are also probed automatically, each in
+      its own cname-takeover evidence.

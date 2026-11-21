@@ -13,7 +13,7 @@ fail: >-
 notes:
   - Never claim the resource (create the bucket, app, or page) to prove it. The DNS record and the provider's error message are the evidence.
   - "Typical unclaimed messages: S3 NoSuchBucket, GitHub Pages \"There isn't a GitHub Pages site here\", Heroku \"No such app\", Azure \"404 Web Site not found\", Fastly \"unknown domain\", Shopify \"Sorry, this shop is currently unavailable\". See https://github.com/EdOverflow/can-i-take-over-xyz for the current list of services that can be claimed."
-  - Steps 1 to 4 are for the domain target; steps 5 and 6 for an FQDN target.
+  - Steps 1 to 4 are for the domain target; steps 5 to 7 for an FQDN target.
 finding_kinds: [subdomain-takeover]
 steps:
   - summary: "Domain: look up the CNAME of every known subdomain (collected automatically)"
@@ -45,6 +45,8 @@ steps:
       are contacted: to include a subdomain, add it (or *.{domain}) to the domain's scope
       record first, once its owner has authorized it. Subdomains whose CNAME target has
       no address are not fetched (DNS already shows them dangling).
+      Subdomains registered as FQDN targets need no manual run: their automatic
+      collection probes them (cname-takeover, step 7 on the FQDN target).
     load_note: One or two requests per in-scope subdomain with a CNAME; out-of-scope hosts are never contacted. WSTG_PAUSE applies between hosts.
   - summary: "Domain: judge each candidate"
     evidence: [subdomain-cnames, takeover-responses]
@@ -66,3 +68,14 @@ steps:
     evidence: [http-root-https]
     command: >-
       grep -oiE "NoSuchBucket|The specified bucket does not exist|There isn.t a GitHub Pages site here|No such app|herokucdn\.com/error-pages/no-such-app|404 Web Site not found|Fastly error: unknown domain|Sorry, this shop is currently unavailable|Domain (is )?not configured|project not found|The thing you were looking for is no longer here|Repository not found|NoSuchContainer|The specified container does not exist" {ev:http-root-https}/body.html || echo "no unclaimed-resource message"
+  - summary: "FQDN: fetch the target through its CNAME and look for an unclaimed-resource message"
+    auto_run: true
+    evidence: [cname-takeover]
+    command: cat {ev:cname-takeover}/stdout.txt
+    operation: >-
+      Collected automatically with the FQDN target (light and full mode), from the CNAME
+      found in the parent domain's subdomain-cnames: one GET of the target's base URL,
+      only when the host has a CNAME whose target resolves. "UNCLAIMED-RESOURCE MESSAGE"
+      or "DANGLING CNAME" means a takeover candidate (fail); "has no CNAME" means not a
+      candidate. Collect the domain's subdomain-cnames first so the list is reused;
+      otherwise the CNAME is looked up directly.

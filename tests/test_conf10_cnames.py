@@ -257,3 +257,66 @@ def test_takeover_probe_needs_a_domain_and_the_cnames(cfg, db, domain):
     fq = tm.create(db, cfg, "www.example.com", "fqdn", parent="example.com")
     with pytest.raises(takeover.ProbeError, match="not a domain target"):
         takeover.probe(cfg, db, store, fq, actor="test")
+
+
+# ---- automatic takeover probe of an FQDN target (cname-takeover) ----------------------
+
+def _cname_dir(tmp_path, text):
+    d = tmp_path / "subdomain-cnames" / "v0001"
+    d.mkdir(parents=True)
+    (d / "cname-check.txt").write_text(text)
+    return d
+
+
+def test_takeover_fetches_only_the_target_url_when_it_has_a_live_cname(tmp_path, fake_dig, monkeypatch, capsys):
+    dig, set_table = fake_dig
+    set_table({})
+    calls = []
+    monkeypatch.setattr(takeover, "fetch", lambda url, proxy: calls.append(url) or
+                        "status 404; server -\nUNCLAIMED-RESOURCE MESSAGE: NoSuchBucket\nbody: ...")
+    d = _cname_dir(tmp_path, "www.example.com -> www-bucket.s3.amazonaws.com\nshop.example.com -> \n"
+                             "old.example.com -> gone.s3.amazonaws.com [no address]\n")
+    args = ["takeover", "--cnames", str(d), "--dig", dig]
+    assert dnscheck.main(args + ["--host", "www.example.com", "--url", "https://www.example.com/"]) == 0
+    out = capsys.readouterr().out
+    assert calls == ["https://www.example.com/"] and "UNCLAIMED-RESOURCE MESSAGE: NoSuchBucket" in out
+    assert "from subdomain-cnames: www-bucket.s3.amazonaws.com" in out
+    assert dnscheck.main(args + ["--host", "shop.example.com", "--url", "https://shop.example.com/"]) == 0
+    assert "has no CNAME" in capsys.readouterr().out
+    assert dnscheck.main(args + ["--host", "old.example.com", "--url", "https://old.example.com/"]) == 0
+    assert "DANGLING CNAME" in capsys.readouterr().out
+    assert calls == ["https://www.example.com/"]                      # no request for the other two
+
+
+def test_takeover_looks_up_the_cname_when_not_listed_and_fails_on_no_answer(tmp_path, fake_dig, monkeypatch, capsys):
+    dig, set_table = fake_dig
+    set_table({"app.example.com CNAME": _ok(("app.example.com", "CNAME", "app.herokuapp.com")),
+               "app.herokuapp.com A": _ok(("app.herokuapp.com", "A", "192.0.2.20")),
+               "app.herokuapp.com AAAA": _ok()})
+
+    def refused(url, proxy):
+        raise OSError("connection refused")
+    monkeypatch.setattr(takeover, "fetch", refused)
+    rc = dnscheck.main(["takeover", "--host", "app.example.com", "--cnames", str(tmp_path / "missing"),
+                        "--url", "https://app.example.com/", "--dig", dig])
+    out = capsys.readouterr().out
+    assert "subdomain-cnames not collected; looked up: app.example.com -> app.herokuapp.com" in out
+    assert rc == 4 and "no answer: connection refused" in out          # failed collection, retried
+
+
+def test_cname_takeover_evidence_contacts_only_the_target(cfg, db):
+    cat = catmod.load()
+    ev = cat.evidence["cname-takeover"]
+    dom = tm.create(db, cfg, "example.com", "domain")
+    site = tm.create(db, cfg, "www.example.com", "fqdn", parent="example.com")
+    tm.update_scope(db, site, allowed_hosts="www.example.com", allowed_ports="443", base_url="https://www.example.com",
+                    authorization_ref="Contract 2026-001", valid_from="2000-01-01", valid_until="2099-12-31",
+                    actor="test")
+    scope = tm.get_scope(db, site)
+    values = tm.placeholder_values(cfg, site, scope) | {"out": "/tmp/x"}
+    paths = rmod.input_paths(cfg, site, ev, cat)
+    assert paths["subdomain-cnames"].endswith("/example.com/subdomain-cnames/latest")   # the parent's folder
+    argv, _, _ = rmod.build_argv(ev, values, "", 0, paths)
+    assert tm.contacted(argv, site) == [("www.example.com", None), ("www.example.com", 443)]
+    tm.check_command(site, scope, argv, passive=ev.passive)             # in scope: no error
+    assert ev.target_type == "fqdn" and not ev.passive and dom.type == "domain"

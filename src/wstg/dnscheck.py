@@ -1,4 +1,13 @@
-"""CNAME of every known subdomain (WSTG-CONF-10), from collected subdomain lists.
+"""CNAME checks for WSTG-CONF-10 (subdomain takeover).
+
+`wstg-dns takeover --host H --cnames DIR --url URL` (automatic evidence
+`cname-takeover` of an FQDN target): the CNAME of H from the parent domain's
+subdomain-cnames folder (looked up with dig when the list is missing or does not
+name H); when H has a CNAME whose target resolves, one GET of URL (the target's
+base URL, the only host contacted; no redirects followed). No CNAME or a dangling
+CNAME: no request. Exit 3/4 when DNS or the request failed (collect again).
+
+CNAME of every known subdomain, from collected subdomain lists:
 
 `wstg-dns cnames --domain D [--crtsh FILE] [--subfinder FILE] [-o FILE]` reads the
 subdomains of D from the crt.sh JSON and the subfinder list (either may be missing:
@@ -18,6 +27,7 @@ when a lookup still fails after one retry (partial output is never complete).
 from __future__ import annotations
 
 import argparse
+import http.client
 import json
 import os
 import re
@@ -159,6 +169,58 @@ def cmd_cnames(args) -> int:
     return 0
 
 
+def _listed_cname(folder: Path, host: str) -> tuple[str, str] | None:
+    """The `-> target [flags]` part for `host` in a subdomain-cnames version folder
+    (cname-check.txt, or files uploaded by hand under items/), or None."""
+    files = [folder / "cname-check.txt"] + (sorted((folder / "items").glob("*")) if (folder / "items").is_dir() else [])
+    for f in files:
+        if not f.is_file():
+            continue
+        for line in f.read_text(errors="replace").splitlines():
+            m = re.match(r"^(\S+) -> ?(\S*)(.*)$", line.strip())
+            if m and m.group(1).lower() == host:
+                return m.group(2).lower(), m.group(3).strip()
+    return None
+
+
+def cmd_takeover(args) -> int:
+    """Takeover probe of one target host: its CNAME from the domain's list (or looked up),
+    then one GET of the target URL when the CNAME target resolves. Only `--url` is
+    contacted. Exit 4 when the request gets no answer (the collection is retried)."""
+    from . import takeover        # fetch() and the unclaimed-message patterns
+    host = args.host.lower().rstrip(".")
+    listed = _listed_cname(Path(args.cnames), host) if args.cnames else None
+    if listed is not None:
+        cname, flags = listed
+        print(f"# CNAME of {host} from subdomain-cnames: {cname or '(none)'} {flags}".rstrip())
+    else:
+        why = "not collected" if not (args.cnames and Path(args.cnames).is_dir()) else "does not list it"
+        line = lookup([host], args.dig)[0]
+        m = re.match(r"^\S+ -> ?(\S*)(.*)$", line)
+        cname, flags = m.group(1), m.group(2).strip()
+        print(f"# subdomain-cnames {why}; looked up: {host} -> {cname or '(none)'} {flags}".rstrip())
+        if "lookup failed" in flags:
+            print(f"DNS lookup failed ({flags}); collect again", file=sys.stderr)
+            return 3
+    if not cname:
+        print(f"{host} has no CNAME: not a takeover candidate; no request sent")
+        return 0
+    if "no address" in flags:
+        print(f"DANGLING CNAME: {host} -> {cname} does not resolve; no request sent "
+              "(a third party may be able to claim the resource)")
+        return 0
+    scheme = args.url.split(":", 1)[0].lower()
+    proxy = os.environ.get(f"{scheme}_proxy") or os.environ.get(f"{scheme.upper()}_PROXY") or ""
+    try:
+        print(f"GET {args.url} (through CNAME {cname}; no redirects followed)")
+        print(takeover.fetch(args.url, proxy))
+    except (OSError, ValueError, http.client.HTTPException) as e:
+        print(f"no answer: {getattr(e, 'reason', e)}")
+        print(f"{args.url} did not answer; collect again", file=sys.stderr)
+        return 4
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="wstg-dns", description=__doc__.split("\n\n")[0])
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -168,8 +230,13 @@ def main(argv: list[str] | None = None) -> int:
     s.add_argument("--subfinder", help="subfinder.txt (subdomains-subfinder evidence)")
     s.add_argument("-o", "--output", help="also write the list to this file")
     s.add_argument("--dig", default="dig", help=argparse.SUPPRESS)
+    s = sub.add_parser("takeover", help="takeover probe of one target host through its CNAME (WSTG-CONF-10)")
+    s.add_argument("--host", required=True, help="the target host (FQDN)")
+    s.add_argument("--cnames", help="subdomain-cnames version folder of the parent domain")
+    s.add_argument("--url", required=True, help="the one URL to fetch (the target's base URL)")
+    s.add_argument("--dig", default="dig", help=argparse.SUPPRESS)
     args = ap.parse_args(argv)
-    return cmd_cnames(args)
+    return cmd_cnames(args) if args.cmd == "cnames" else cmd_takeover(args)
 
 
 if __name__ == "__main__":
