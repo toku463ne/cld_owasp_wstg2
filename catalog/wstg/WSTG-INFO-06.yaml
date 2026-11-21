@@ -32,7 +32,9 @@ steps:
                admin-paths, metafiles, wayback-urls]
     input_list: entry-point-list
     collects: entry-points
-    command: cat {ev:entry-points}/stdout.txt
+    command: >-
+      cat {ev:entry-points}/stdout.txt 2>/dev/null
+      || echo "No probe result in this version of entry-points (it was saved by hand before the probe existed). Press Save and collect below."
     operation: >-
       Optional: type paths you know in the box (one per line, for example /login and
       /myaccount) and press "Save and collect". Paths found by the HAR, crawl, ffuf,

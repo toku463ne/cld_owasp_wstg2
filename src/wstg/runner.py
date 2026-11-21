@@ -176,6 +176,15 @@ def last_attempt(db: dbmod.Database, target: tmod.Target, evidence_id: str) -> d
         " ORDER BY i.job_id DESC LIMIT 1", (target.id, evidence_id))
 
 
+def latest_item(db: dbmod.Database, target: tmod.Target, evidence_id: str) -> dict | None:
+    """The newest job item for one evidence of a target, whatever its status
+    (pending and running included), with its job's status."""
+    return db.one(
+        "SELECT i.*, j.status AS job_status FROM job_items i JOIN jobs j ON j.id = i.job_id"
+        " WHERE j.target_id = ? AND i.evidence_id = ? ORDER BY i.job_id DESC LIMIT 1",
+        (target.id, evidence_id))
+
+
 def job_items(db: dbmod.Database, job_id: int) -> list[dict]:
     return db.query("SELECT * FROM job_items WHERE job_id = ? ORDER BY seq", (job_id,))
 

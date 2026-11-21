@@ -294,6 +294,8 @@ def register(app: Flask, cfg: Config, db: dbmod.Database, cat: catmod.Catalog, s
         setters = ai_review.setters(db, t, test_id)
         for s in steps:
             s["by_ai"] = setters.get(s["n"], "").startswith(ai_review.AI_PREFIX)
+            if s["step"].collects:
+                s["collect_item"] = rmod.latest_item(db, t, s["step"].collects)
         return render_template("wstg_page.html", tab="index", test=test, scenario=sc, steps=steps,
                                status=st_value, computed=computed, status_options=tmod.STATUS_OVERRIDES,
                                step_verdict_options=("-", *tmod.VERDICTS),

@@ -112,3 +112,4 @@ td code { overflow-wrap: anywhere; }
 .step-comment { margin: 8px 0 2px; } .step-comment summary { cursor: pointer; font-weight: 600; font-size: .95em; }
 .step-comment textarea { width: 100%; }
 .step-input textarea { width: 100%; max-width: 40em; font-family: ui-monospace, monospace; }
+.step-input .bad { color: var(--bad); }

@@ -140,7 +140,15 @@
   <form method="post" class="stack step-input" action="{{ url_for('wstg_step_collect', name=target.name, test_id=test.id, n=s.n) }}">
     <input type="hidden" name="csrf" value="{{ csrf }}">
     <textarea name="text" rows="5" aria-label="Paths for step {{ s.n }}" placeholder="/login&#10;/myaccount">{{ s.input_text }}</textarea>
-    <div><button>Save and collect</button></div>
+    <div><button>Save and collect</button>
+    {% set ci = s.collect_item %}
+    {% if ci %}<span class="small {{ 'bad' if ci.status in ('failed', 'refused') else 'muted' }}">
+      Last collection (job {{ ci.job_id }}):
+      {% if ci.status == 'pending' %}queued, waiting for the worker (reload this page in a moment)
+      {% elif ci.status == 'running' %}running since {{ ci.started_at }} (reload this page in a moment)
+      {% elif ci.status == 'complete' %}complete {{ ci.finished_at }} (v{{ ci.version }})
+      {% else %}{{ ci.status }} {{ ci.finished_at or '' }}{% if ci.message %}: {{ ci.message }}{% endif %}{% endif %}
+      · <a href="{{ url_for('evidence_page', name=target.name, eid=s.step.collects) }}">details</a></span>{% endif %}</div>
   </form>
   {% elif s.input_text %}<pre class="text-item">{{ s.input_text }}</pre>{% endif %}
   {% endif %}

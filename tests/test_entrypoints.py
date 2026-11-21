@@ -7,6 +7,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import pytest
 from conftest import csrf_of
 
+from wstg import catalog as catmod
 from wstg import entrypoints
 from wstg import evidence as evmod
 from wstg import runner as rmod
@@ -164,8 +165,26 @@ def test_save_and_collect_button(admin_client, guest_client, cfg, db):
     job = rmod.last_job(db, site)
     assert job["evidence_id"] == "entry-points" and job["force"] == 1
     assert [i["evidence_id"] for i in rmod.job_items(db, job["id"])] == ["entry-points"]
-    assert "/login\n/myaccount</textarea>" in admin_client.get(url).get_data(as_text=True)
+    page = admin_client.get(url).get_data(as_text=True)
+    assert "/login\n/myaccount</textarea>" in page
+    assert f"Last collection (job {job['id']})" in page and "queued, waiting for the worker" in page
     # the same text again: no new version (the job is still queued, so it is refused)
     r = post(admin_client, url + "/steps/3/collect", text="/login\n/myaccount")
     assert store.load(site.name, "entry-point-list").version == v.version
     assert "still active" in admin_client.get(url).get_data(as_text=True)
+
+
+def test_collect_status_shows_a_failure_and_the_step_explains_a_missing_result(admin_client, cfg, db):
+    site = tm.create(db, cfg, "www.example.com", "fqdn")
+    tm.update_scope(db, site, allowed_hosts="www.example.com", allowed_ports="443", base_url="https://www.example.com",
+                    authorization_ref="Contract 2026-001", valid_from="2000-01-01", valid_until="2099-12-31",
+                    actor="test")
+    store = evmod.Store(cfg, db)
+    store.add_text(site, "entry-points", "old hand-made table", "", "admin")     # a manual version from before
+    job = rmod.enqueue(db, catmod.load(), site, "", "admin", evidence_id="entry-points", force=True)
+    with db.tx() as conn:
+        conn.execute("UPDATE job_items SET status='failed', finished_at='2026-11-21T13:09:31Z',"
+                     " message='tool not installed: wstg-entry' WHERE job_id=?", (job,))
+    page = admin_client.get("/t/www.example.com/wstg/WSTG-INFO-06").get_data(as_text=True)
+    assert "failed 2026-11-21T13:09:31Z: tool not installed: wstg-entry" in page
+    assert "No probe result in this version of entry-points" in page
