@@ -216,7 +216,7 @@ class Answer:
         return s + (f" -> {self.location}" if self.location else "")
 
 
-def fetch(url: str, cookie: str = "") -> Answer:
+def fetch(url: str, cookie: str = "", extra_headers: dict | None = None) -> Answer:
     ctx = ssl.create_default_context()
     ctx.check_hostname = False
     ctx.verify_mode = ssl.CERT_NONE
@@ -226,6 +226,8 @@ def fetch(url: str, cookie: str = "") -> Answer:
     headers = {"User-Agent": "wstg-entry-points"}
     if cookie:
         headers["Cookie"] = cookie
+    if extra_headers:
+        headers.update(extra_headers)
     try:
         try:
             resp = opener.open(urllib.request.Request(url, headers=headers), timeout=TIMEOUT)

@@ -18,14 +18,28 @@ PASSWD = "root:x:0:0:root:/root:/bin/bash\ndaemon:x:1:1:daemon:/usr/sbin:/usr/sb
 
 class Handler(BaseHTTPRequestHandler):
     seen: list = []
+    log: list = []        # access log: the User-Agent of every request (poisonable)
 
     def log_message(self, *a):
         pass
 
     def do_GET(self):
         Handler.seen.append(self.path)
+        Handler.log.append(self.headers.get("User-Agent", ""))
         u = urlsplit(self.path)
         q = parse_qs(u.query, keep_blank_values=True)
+        if u.path == "/lfi":
+            # Includes (executes) a local file: the "access log" is the recorded User-Agents.
+            name = unquote((q.get("file") or [""])[0]).replace("\\", "/").split("\x00")[0]
+            if "etc/passwd" in name:
+                return self._send(200, PASSWD.encode())
+            if name.endswith("access.log"):
+                out = []
+                for ua in Handler.log:
+                    m = re.search(r"echo (\d+)\*(\d+)", ua)
+                    out.append(str(int(m.group(1)) * int(m.group(2))) if m else ua)   # PHP in the log runs
+                return self._send(200, ("\n".join(out)).encode())
+            return self._send(404, b"not found")
         if u.path == "/page":
             # Naively reads whatever "file" points to (after collapsing ../), simulating traversal.
             name = unquote((q.get("file") or [""])[0]).split("\x00")[0]
@@ -87,6 +101,7 @@ class Handler(BaseHTTPRequestHandler):
 @pytest.fixture
 def server():
     Handler.seen = []
+    Handler.log = []
     srv = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     yield f"http://127.0.0.1:{srv.server_port}"
@@ -147,6 +162,26 @@ def test_no_callback_skips_remote_inclusion(tmp_path, server, capsys):
     out = capsys.readouterr().out
     assert "remote file inclusion test off" in out
     assert "REMOTE CODE EXECUTION" not in out
+
+
+def test_probe_detects_log_poisoning(tmp_path, server, capsys):
+    lst = tmp_path / "list" / "items"
+    lst.mkdir(parents=True)
+    (lst / "001.txt").write_text(f"{server}/lfi?file=home\n")
+    traversal.main(["--base", server + "/", "--list", str(lst.parent), "--no-callback"])
+    out = capsys.readouterr().out
+    block = out.split("\n== ")[1]
+    assert "LOG/SESSION POISONING: the included log ran your marker" in block
+    assert "982007569" in block
+
+
+def test_no_log_poison_skips_it(tmp_path, server, capsys):
+    lst = tmp_path / "list" / "items"
+    lst.mkdir(parents=True)
+    (lst / "001.txt").write_text(f"{server}/lfi?file=home\n")
+    traversal.main(["--base", server + "/", "--list", str(lst.parent), "--no-callback", "--no-log-poison"])
+    out = capsys.readouterr().out
+    assert "LOG/SESSION POISONING" not in out and "log/session poisoning:" not in out
 
 
 def test_probe_candidates_from_crawl_and_limit(tmp_path, server, capsys):

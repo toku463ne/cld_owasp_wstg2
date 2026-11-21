@@ -46,18 +46,6 @@ evidence:
       parameter; can trip a WAF and fill error logs, and makes the target fetch a local
       callback. Collect it with the owner's agreement; WSTG_PAUSE slows it down.
 
-  - id: traversal-tests
-    title: Log/session poisoning file-inclusion tests (manual)
-    target_type: fqdn
-    kind: manual
-    description: >-
-      WSTG-ATHZ-01 step 3, only the part the probe cannot do: log or session poisoning (put
-      PHP in a header or session value, then include the log or session file through a
-      parameter). One text item per parameter: the payload, the file included, and whether
-      code ran. Local read-traversal, data:// execution, and remote file inclusion are in
-      traversal-probe. When nothing here applies, mark this evidence collected with a short
-      tester comment saying so.
-
   - id: authz-bypass-tests
     title: Authorization-schema bypass tests
     target_type: fqdn

