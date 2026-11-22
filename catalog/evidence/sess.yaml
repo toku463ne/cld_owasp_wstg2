@@ -159,8 +159,9 @@ evidence:
     target_type: fqdn
     kind: manual
     description: >-
-      Evidence of whether a valid session token, copied between the tester's own accounts
-      or environments, can be reused from another browser, IP, or user agent at the same
-      time (no binding), whether reuse triggers re-authentication or is short-lived, and
-      whether concurrent logins are detected or invalidated. Use the tester's own accounts
-      only, never another person's session.
+      Optional (WSTG-SESS-09 step 4): with the tester's own test account only, whether the
+      session works in a second browser (and another network or user agent) at the same
+      time as the first, whether that triggers re-authentication, and whether a second
+      login is detected or ends the first. The automatic steps already cover transport,
+      cookie protection, and lifetime; leave this empty when the engagement does not need
+      it. Keep token values inside evidence only.

@@ -22,25 +22,41 @@ steps:
       head -5 {ev:http-redirect-chain}/stdout.txt 2>/dev/null;
       grep -iE 'TLS1\.[0-3] [0-9]{3}' {ev:tls-versions-curl}/stdout.txt 2>/dev/null
       || echo "no transport evidence; see WSTG-CRYP-01"
-  - summary: Reuse a valid token from another browser and network (manual)
+  - summary: Check the session cookie attributes and lifetime from the capture
+    auto_run: true
+    evidence: [har-browse]
+    command: wstg-har cookies {ev:har-browse}/items/*.har
+    operation: >-
+      Automated from the main capture (`uv run wstg capture {fqdn} --role user`); no
+      request is sent. Secure keeps the token off plain HTTP, HttpOnly keeps it from
+      scripts, SameSite limits cross-site use, and Max-Age/Expires marks a persistent
+      (long-lived) cookie. Names and attributes only, never values.
+  - summary: How long a stolen token stays usable (server-side timeouts from WSTG-SESS-07)
+    auto_run: true
+    evidence: [session-timeout]
+    command: grep -E '^# ' {ev:session-timeout}/stdout.txt
+    operation: >-
+      Reuses the session-timeout measurement of WSTG-SESS-07 (idle and absolute timeout,
+      and whether the server accepts the cookie after its own expiry). Collect it there.
+  - summary: Reuse the token from another browser and check concurrent logins (manual, optional)
     evidence: [hijacking-tests]
     operation: >-
-      With the tester's own test account, copy a valid session token to another browser
-      and (if possible) another IP or user agent, and use it at the same time as the
-      original. Note whether both work, whether reuse triggers re-authentication, and
-      whether the token is bound to an attribute (IP, User-Agent). Record it in
-      hijacking-tests.
-  - summary: Check short-lived tokens and concurrent-login handling (manual)
-    evidence: [hijacking-tests]
-    operation: >-
-      Check how long the copied token stays valid and whether a second simultaneous login
-      is detected or invalidates the first. Note how much a stolen token would allow. Add
-      the results to hijacking-tests.
+      Optional; steps 1 to 3 already give the transport, cookie protection, and lifetime.
+      If the engagement needs it, with the tester's own test account only: use the session
+      in a second browser (and, if possible, another network or user agent) at the same
+      time as the first, note whether it works there and whether a second login is
+      detected or ends the first, and record it in hijacking-tests. Otherwise leave this
+      step empty.
   - summary: Judge session hijacking
-    evidence: [hijacking-tests]
+    evidence: [har-browse, session-timeout, hijacking-tests]
     ai_task: >-
-      From steps 1 to 3 decide how reusable a stolen token is. Verdict: fail when the token
-      works unchanged from another IP, browser, or user agent with full access (no binding,
-      long-lived), or can be captured over an unencrypted channel; pass when reuse is
-      limited by binding, re-authentication, or short lifetime; "-" when hijacking-tests is
-      missing.
+      From steps 1 to 4 decide how much a stolen token would allow. Verdict: fail when the
+      token can be captured over an unencrypted channel (step 1, or no Secure in step 2),
+      it is readable by scripts (no HttpOnly), it stays usable for long (step 3 marks an
+      idle or absolute timeout LONG, or the server accepts the cookie after its own
+      expiry), or step 4 shows it works unchanged from another browser or network with no
+      re-authentication; pass when the transport is encrypted, the cookie is Secure and
+      HttpOnly, and the server-side timeouts are reasonable; "-" when the HAR or
+      session-timeout is missing. When hijacking-tests is missing, judge from steps 1 to 3
+      and state that binding to the device or network and concurrent-login handling were
+      not checked.

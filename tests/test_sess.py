@@ -152,3 +152,14 @@ def test_auto_tab_lists_capture_dependent_evidence_apart(admin_client, store, si
     assert 'href="/t/www.example.com/evidence/har-timeout"' in after
     page = admin_client.get("/t/www.example.com/evidence/session-timeout").get_data(as_text=True)
     assert "Needs a manual capture first" in page
+
+
+def test_sess09_reuses_cookie_attributes_and_measured_timeouts(admin_client, store, site):
+    put(store, site, "session-timeout", {"stdout.txt": "- check after 5 min idle: still accepted\n"
+                                                       "# idle timeout: between 10 min and 15 min (server-side) [OK]\n"
+                                                       "# absolute timeout: not measured\n"})
+    p = page(admin_client, "WSTG-SESS-09")
+    s3 = p.split("Step 3")[1].split("Step 4")[0]
+    assert "idle timeout: between 10 min and 15 min" in s3 and "check after 5 min" not in s3
+    prompt = p[p.index('id="ai-prompt"'):]
+    assert "binding to the device or network" in prompt
