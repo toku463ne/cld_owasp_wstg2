@@ -145,7 +145,9 @@ evidence:
       `uv run wstg capture {fqdn} --role user`, `uv run wstg capture {fqdn} --role admin`,
       and so on (from elsewhere add `--directory /path/to/cld_owasp_wstg2`). In the browser window that opens, walk every main screen and function once
       (log in, profile, search, forms that send personal data, and once each account flow
-      the application has - password change, password reset request, registration; do not
+      the application has - password change, password reset request, registration; type a
+      marker such as wstg01<"'> into fields that are saved and shown later, then open the
+      pages that show them (WSTG-INPV-02); do not
       log out, so the
       saved session stays usable for the automatic checks) and press Enter in the terminal
       to save. The logout and timeout checks use their own captures (har-logout,

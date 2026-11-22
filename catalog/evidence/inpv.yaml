@@ -62,9 +62,9 @@ evidence:
     target_type: fqdn
     kind: manual
     description: >-
-      Per stored input (comment, profile, post), the payload stored and where it fired on
-      display (which page, which user, admin screens, generated PDF/email), whether
-      escaping happens at storage or display, and a screenshot of execution. Record the
+      Optional (WSTG-INPV-02 step 4): display paths outside the browser capture - a
+      generated PDF, CSV export, or email - and whether the stored marker is shown there as
+      text. The browser display paths are checked automatically from har-browse. Record the
       test data entered so it can be removed after testing.
 
   - id: hpp-tests

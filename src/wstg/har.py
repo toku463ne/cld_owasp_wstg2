@@ -13,8 +13,8 @@ holds here, and auto-run steps that call this tool are still excluded from the p
 (their command names a `.har` file).
 
 Run as `wstg-har <view> [--host HOST] FILE...` where view is cookies | urls | cleartext |
-forms | xssi | entry-points | expose | cache | frame | storage | csrf | flows | xss-headers
-(`--host` is used by entry-points, expose, csrf, flows, and xss-headers).
+forms | xssi | entry-points | expose | cache | frame | storage | csrf | flows | xss-headers | stored
+(`--host` is used by entry-points, expose, csrf, flows, xss-headers, and stored).
 Exit code is always 0 (a WSTG step reads the text output); unreadable files are noted.
 """
 import json
@@ -1167,11 +1167,83 @@ def view_xss_headers(files: list[Path], host: str = "") -> None:
     print("note: these headers limit the damage of an XSS; output encoding (step 2) is the fix itself.")
 
 
+# ---- stored input display (WSTG-INPV-02) ----------------------------------------
+
+# The marker the tester types into stored-input fields during the capture: "wstg", then
+# letters or digits, then the characters < " ' > (for example wstg01<"'>).
+_STORE_MARKER_RE = re.compile(r"wstg[a-z0-9]{1,16}", re.I)
+
+
+def _sent_text(req: dict) -> str:
+    """Everything the browser sent in a request that may be stored: query, form, JSON."""
+    from urllib.parse import unquote_plus
+    post = req.get("postData") or {}
+    parts = [unquote_plus(str(req.get("url", "")).partition("?")[2]), str(post.get("text") or "")]
+    parts += [str(p.get("value") or "") for p in post.get("params") or []]
+    return unquote_plus("\n".join(parts))
+
+
+def view_stored(files: list[Path], host: str = "") -> None:
+    """Where the markers the tester saved during the capture were displayed, and whether
+    the characters < " ' > came back encoded for their output context (WSTG-INPV-02). Read
+    from the captures only; markers saved under one role and shown in another role's
+    capture are shown too (a value displayed to another user or an admin)."""
+    from . import reflect
+    hars = [(p, _role(p.name)) for p in files if _storage_state(p) is None]
+    loaded = [(role, name, ents) for (p, role), (name, ents) in
+              zip(hars, _iter([p for p, _ in hars]))]
+    markers: dict[str, tuple[str, str, str]] = {}      # word -> (role, method, path)
+    for role, _, ents in loaded:
+        for e in ents:
+            req = e.get("request") or {}
+            for w in _STORE_MARKER_RE.findall(_sent_text(req)):
+                _, _, path, _ = _url_parts(str(req.get("url", "")))
+                markers.setdefault(w.lower(), (role, str(req.get("method", "")).upper(), _template(path)))
+    print("markers saved during the capture (wstg + letters/digits, typed with < \" ' >): "
+          + (", ".join(sorted(markers)) if markers else "none"))
+    if not markers:
+        print("(none found: during the capture type a marker such as wstg01<\"'> into each field that is "
+              "saved and shown later - profile, comment, post, message - then open the pages that show it)")
+        return
+    unencoded = 0
+    for w, (role, method, path) in sorted(markers.items()):
+        print(f"\n[{w}] saved by {role}: {method} {path}")
+        shown = 0
+        for r, _, ents in loaded:
+            for e in ents:
+                req, resp = e.get("request") or {}, e.get("response") or {}
+                body = _body_text(resp)
+                if w not in body.lower():
+                    continue
+                _, h, p, _ = _url_parts(str(req.get("url", "")))
+                ct = _header(resp.get("headers"), "content-type").lower()
+                real = re.search(re.escape(w), body, re.I).group(0)
+                occ = reflect.classify(body, real)
+                bad = [(c, reflect.risky(c, ch)) for c, ch in occ if reflect.risky(c, ch)]
+                ctxs = ", ".join(sorted({c for c, _ in occ}))
+                who = "" if r == role else f" (shown to {r})"
+                if bad and "html" in ct:
+                    unencoded += 1
+                    detail = "; ".join(f"{c}: raw {' '.join(k)}" for c, k in bad)
+                    print(f"  - {str(req.get('method', '')).upper()} {_template(p)} -> {resp.get('status')}"
+                          f"{who}: STORED-UNENCODED ({detail})")
+                elif bad:
+                    print(f"  - {str(req.get('method', '')).upper()} {_template(p)} -> {resp.get('status')}{who}: "
+                          f"raw in a non-HTML response ({ct.split(';')[0] or '-'}; {ctxs})")
+                else:
+                    print(f"  - {str(req.get('method', '')).upper()} {_template(p)} -> {resp.get('status')}{who}: "
+                          f"encoded ({ctxs})")
+                shown += 1
+        if not shown:
+            print("  - not displayed in any captured response (open the page that shows it during the capture)")
+    print(f"\n# verdict: {unencoded} display(s) STORED-UNENCODED; read from the capture only, no request sent")
+
+
 _VIEWS = {"cookies": view_cookies, "urls": view_urls, "cleartext": view_cleartext,
           "forms": view_forms, "xssi": view_xssi, "entry-points": view_entry_points,
           "expose": view_expose, "cache": view_cache, "frame": view_frame,
           "storage": view_storage, "csrf": view_csrf, "flows": view_flows,
-          "xss-headers": view_xss_headers}
+          "xss-headers": view_xss_headers, "stored": view_stored}
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -1186,7 +1258,7 @@ def main(argv: list[str] | None = None) -> int:
             return 2
         host, rest = rest[1], rest[2:]
     files = [Path(a) for a in rest]
-    if view in ("entry-points", "expose", "csrf", "flows", "xss-headers"):
+    if view in ("entry-points", "expose", "csrf", "flows", "xss-headers", "stored"):
         _VIEWS[view](files, host)
     else:
         _VIEWS[view](files)

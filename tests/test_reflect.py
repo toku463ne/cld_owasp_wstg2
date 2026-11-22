@@ -108,3 +108,46 @@ def test_xss_headers_view(tmp_path, capsys):
     assert "missing on 1, weak on 1, blocks inline script on 1" in out
     assert "WEAK: 'unsafe-inline'" in out
     assert "nosniff: missing on 1" in out and "charset in Content-Type: missing on 3" in out
+
+
+# -- stored view (WSTG-INPV-02): markers saved during the capture, read from the HAR only --
+
+def _e(method, path, *, body="", ctype="text/html", sent=None):
+    req = {"method": method, "url": f"https://app.example.com{path}", "headers": [], "cookies": []}
+    if sent:
+        req["postData"] = {"mimeType": "application/x-www-form-urlencoded",
+                           "params": [{"name": k, "value": v} for k, v in sent.items()]}
+    return {"request": req, "response": {"status": 200, "headers": [{"name": "Content-Type", "value": ctype}],
+                                          "content": {"text": body}}}
+
+
+def test_stored_view_finds_where_markers_are_shown(tmp_path, capsys):
+    user = tmp_path / "001-user.har"
+    user.write_text(json.dumps({"log": {"entries": [
+        _e("POST", "/profile", sent={"name": "wstg01<\"'>", "csrf": "tok"}),
+        _e("GET", "/profile", body='<input value="wstg01&lt;&quot;&#39;&gt;">'),
+        _e("POST", "/comments", sent={"text": "wstg02<\"'>"}),
+        _e("GET", "/posts/12", body="<p>wstg02<\"'></p>"),
+        _e("POST", "/notes", sent={"text": "wstg03<\"'>"}),
+    ]}}))
+    admin = tmp_path / "002-admin.har"
+    admin.write_text(json.dumps({"log": {"entries": [
+        _e("GET", "/admin/users", body="<td>wstg01<\"'></td>"),
+    ]}}))
+    har.main(["stored", str(user), str(admin)])
+    out = capsys.readouterr().out
+    assert "wstg01, wstg02, wstg03" in out
+    assert "[wstg01] saved by user: POST /profile" in out
+    assert "GET /profile -> 200: encoded (attribute)" in out
+    assert "GET /admin/users -> 200 (shown to admin): STORED-UNENCODED (html: raw <)" in out
+    assert "GET /posts/<id> -> 200: STORED-UNENCODED" in out
+    assert "[wstg03]" in out and "not displayed in any captured response" in out
+    assert "verdict: 2 display(s) STORED-UNENCODED" in out
+    assert "tok" not in out
+
+
+def test_stored_view_without_marker(tmp_path, capsys):
+    f = tmp_path / "001-user.har"
+    f.write_text(json.dumps({"log": {"entries": [_e("GET", "/", body="<p>hi</p>")]}}))
+    har.main(["stored", str(f)])
+    assert "type a marker such as wstg01" in capsys.readouterr().out

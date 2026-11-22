@@ -9,6 +9,7 @@ fail: >-
   A stored value executes as script when displayed to another user or on an admin screen
   (execution on an admin screen raises severity).
 notes:
+  - This scenario checks the basic defence (output encoding of stored values) from the capture; the tool itself stores nothing on the target.
   - Record the test data entered and remove it after testing where possible.
   - Check every display path of a stored value: other users, admin screens, notifications, generated PDF or email.
 finding_kinds: [stored-xss]
@@ -20,17 +21,36 @@ steps:
       grep -rhoiE '<form[^>]*(method=["'"'"']?post)[^>]*>' {ev:katana-crawl}/responses 2>/dev/null | head -20;
       grep -oiE '/(comment|post|profile|message|review|feedback|note|upload)[^ "'"'"'<>]*' {ev:katana-crawl}/katana.txt 2>/dev/null | sort -u | head -40
       || echo "no obvious stored-input feature in the crawl"
-  - summary: Store a payload and find where it fires (manual)
+  - summary: Check whether stored markers are displayed encoded (from the capture)
+    auto_run: true
+    evidence: [har-browse]
+    command: wstg-har stored {ev:har-browse}/items/*
+    operation: >-
+      Read from the capture only; the tool sends nothing. During the capture
+      (`uv run wstg capture {fqdn} --role user`), with a test account, type a marker such
+      as `wstg01<"'>` (wstg, a few letters or digits, then < " ' >; a different one per
+      field) into each field that is saved and shown later (profile name, comment, post,
+      message, address), save it, then open the pages that show it. If an admin or a
+      second user can see it, capture that role too (`--role admin`) and open the same
+      pages there. The output lists, per marker, every captured response that shows it
+      and whether < " ' > came back raw for its context (STORED-UNENCODED) or encoded.
+  - summary: Check the browser-side XSS defences (CSP, nosniff, charset) from the capture
+    auto_run: true
+    evidence: [har-browse]
+    command: wstg-har xss-headers {ev:har-browse}/items/*
+  - summary: Display paths outside the browser (manual, optional)
     evidence: [xss-stored-tests]
     operation: >-
-      In each stored-input feature (comment, profile, post) save an XSS payload with a test
-      account, then view it on the display path and other users' and admin screens, and in
-      any generated PDF or email. Note whether escaping is at storage or display and whether
-      a path misses it. Screenshot any execution into xss-stored-tests.
-  - summary: Judge stored XSS
-    evidence: [xss-stored-tests]
+      Optional: if a stored value also appears in a generated PDF, CSV export, or email,
+      check there whether the marker is shown as text and note it in xss-stored-tests.
+      Remove the test data afterwards where possible. Otherwise leave this empty.
+  - summary: Judge stored XSS (basic defence)
+    evidence: [har-browse, xss-stored-tests]
     ai_task: >-
-      From step 2 decide whether a stored value executes on display. Verdict: fail when a
-      stored payload runs as script for another user or on an admin screen; pass when stored
-      values are encoded on every display path; "-" when xss-stored-tests is missing. State
-      whose screen fires (admin raises severity).
+      From steps 2 to 4 decide whether stored values are encoded when displayed. Verdict:
+      fail when any display is STORED-UNENCODED on an HTML page (name the marker, the page,
+      and the context; a display to another role such as admin raises severity, and a
+      missing or weak CSP in step 3 makes it worse); pass when every displayed marker is
+      encoded for its context; "-" when no marker was saved or none was displayed in the
+      capture. State that it was a marker-based check from the capture without filter
+      bypass attempts, and list display paths that were not captured.
