@@ -79,7 +79,7 @@ def test_logout_rejected_is_good(tmp_path, app, capsys):
     d = _dir(tmp_path, _logout_har(app))
     assert sessionscan.main(["--logout", "--base", app + "/", "--har", str(d)]) == 0
     out = capsys.readouterr().out
-    assert "logout found in the 'logout' HAR: GET /logout" in out
+    assert "logout found in the 'logout' HAR by logout URL: GET /logout" in out
     assert "clears the cookie in the browser: yes" in out
     assert "rejected [GOOD]" in out
     assert "verdict: logout invalidates the session on the server" in out
@@ -97,9 +97,50 @@ def test_logout_still_accepted_is_fail(tmp_path, app, capsys):
     assert "FAIL (the server still accepts the session after logout)" in out
 
 
-def test_no_logout_capture_is_exit_3(tmp_path, app):
+def test_no_logout_capture_is_exit_3_with_a_diagnosis(tmp_path, app, capsys):
     d = _dir(tmp_path, _logout_har(app)[:3], role="user")
     assert sessionscan.main(["--logout", "--base", app + "/", "--har", str(d)]) == 3
+    out = capsys.readouterr().out
+    assert "no logout found" in out and "cookies sent: PHPSESSID" in out
+    assert "GET /account -> 200" in out
+    assert OLD not in out
+
+
+@pytest.mark.parametrize("path", ["/index.php?action=logout", "/conta/sair", "/Account/LogOff",
+                                  "/cerrar-sesion", "/api/auth/signout"])
+def test_logout_url_variants(path):
+    base = "https://www.example.com"
+    e = _logout_har(base)
+    e[3]["request"]["url"] = base + path
+    e[3]["response"]["headers"] = []
+    assert se.logout_index(e) == 3
+
+
+def test_ensaio_is_not_a_logout():
+    e = _logout_har("https://www.example.com")[:3]
+    e.append(_e("GET", "https://www.example.com/ensaio", cookie=OLD))
+    assert se.logout_index(e) is None
+
+
+def test_custom_auth_cookie_and_cookie_change_fallback():
+    base = "https://www.example.com"
+    tok = "authVALUE987654321"
+
+    def c(url, cookies, set_cookie=None):
+        req = {"method": "GET", "url": url, "headers": [],
+               "cookies": [{"name": n, "value": v} for n, v in cookies.items()]}
+        rh = [{"name": "Set-Cookie", "value": set_cookie}] if set_cookie else []
+        return {"request": req, "response": {"status": 200, "headers": rh}}
+    entries = [
+        c(f"{base}/", {"lang": "pt"}, set_cookie=f"MYAPP={tok}; Path=/; HttpOnly"),
+        c(f"{base}/painel", {"lang": "pt", "MYAPP": tok}),
+        c(f"{base}/x/7", {"lang": "pt", "MYAPP": tok}),           # an unrecognised logout URL
+        c(f"{base}/", {"lang": "pt"}),
+    ]
+    assert "MYAPP" in se.session_names(entries)                  # HttpOnly makes it a session cookie
+    assert se.logout_index(entries) is None                        # no URL, no clearing Set-Cookie
+    i, how = se.logout_find(entries, "www.example.com", by_cookie_change=True)
+    assert i == 2 and "stops being sent" in how
 
 
 def test_logout_index_by_path_or_cleared_cookie():
@@ -129,3 +170,11 @@ def test_replay_tools_warn_about_a_capture_that_logs_out(tmp_path, capsys):
     assert len(ep.read_har(inv, d)) == 1
     assert any("logs out" in n for n in inv.notes)
 
+
+
+def test_load_balancer_cookie_is_not_a_session_cookie():
+    e = [{"request": {"method": "GET", "url": "https://www.example.com/", "cookies": []},
+          "response": {"status": 200, "headers": [
+              {"name": "Set-Cookie", "value": "AWSALB=abc; Path=/; HttpOnly"},
+              {"name": "Set-Cookie", "value": "SESSIONID=xyz; Path=/; HttpOnly"}]}}]
+    assert se.session_names(e) == {"SESSIONID"}

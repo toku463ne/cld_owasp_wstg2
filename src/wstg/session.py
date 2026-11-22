@@ -91,8 +91,17 @@ PASSWORD_FIELD_RE = re.compile(
 
 
 def _req_cookies(entry: dict) -> dict[str, str]:
-    return {c.get("name", ""): c.get("value", "")
-            for c in (entry.get("request") or {}).get("cookies") or [] if c.get("name")}
+    """{name: value} of the cookies a request sent (the HAR cookie list, else the Cookie header)."""
+    req = entry.get("request") or {}
+    out = {c.get("name", ""): c.get("value", "") for c in req.get("cookies") or [] if c.get("name")}
+    if not out:
+        for h in req.get("headers") or []:
+            if str(h.get("name", "")).lower() == "cookie":
+                for part in str(h.get("value", "")).split(";"):
+                    n, sep, v = part.strip().partition("=")
+                    if sep and n:
+                        out[n] = v
+    return out
 
 
 def _set_cookie_values(entry: dict) -> dict[str, str]:
@@ -214,8 +223,40 @@ def _host(url: str) -> str:
 
 # ---- logout (WSTG-SESS-06) ------------------------------------------------
 
-LOGOUT_PATH_RE = re.compile(r"(logout|log-out|log_out|signout|sign-out|sign_out|logoff|log-off|"
-                            r"end[-_]?session)", re.I)
+# A logout in the URL (path or query), including common non-English words: sair/encerrar
+# (pt), salir/desconectar/cerrar sesion (es), deconnexion (fr), abmelden (de), uitloggen (nl).
+LOGOUT_PATH_RE = re.compile(
+    r"(log[-_]?out|sign[-_]?out|log[-_]?off|sign[-_]?off|end[-_]?session|(?<![a-z])sair(?![a-z])|"
+    r"(?<![a-z])salir(?![a-z])|desconectar|cerrar[-_]?sesi|encerrar[-_]?sess|d[eé]connexion|abmelden|"
+    r"uitloggen|ログアウト)", re.I)
+# Load-balancer, CDN, and analytics cookies: never the session, and their values change often.
+NOT_SESSION_RE = re.compile(r"^(awsalb|awsalbcors|awsalbtg|awselb|bigipserver|ts0|__cf|cf_|_cfuvid|arraffinity|"
+                            r"_ga|_gid|_gat|_fbp|_hj|nlbi_|incap_|visid_incap|ak_bmsc|bm_)", re.I)
+# Cookie names that look like an authentication cookie even without HttpOnly.
+AUTH_NAME_RE = re.compile(r"(sess|sid\b|auth|token|login|logged|remember|user|jwt|\.aspx)", re.I)
+
+
+def session_names(entries: list) -> set:
+    """Names of the cookies that look like the session or authentication cookie in this
+    HAR: a known session name, an auth-like name, or a cookie set with HttpOnly."""
+    out = set()
+    for e in entries:
+        for n in _req_cookies(e):
+            if SESSION_NAME_RE.search(n) or AUTH_NAME_RE.search(n):
+                out.add(n)
+        for h in (e.get("response") or {}).get("headers") or []:
+            if str(h.get("name", "")).lower() != "set-cookie":
+                continue
+            v = str(h.get("value", ""))
+            n = v.split("=", 1)[0].strip()
+            if n and (re.search(r";\s*httponly", v, re.I) or SESSION_NAME_RE.search(n) or AUTH_NAME_RE.search(n)):
+                out.add(n)
+    return {n for n in out if not NOT_SESSION_RE.match(n)}
+
+
+def _url_text(entry: dict) -> str:
+    sp = urlsplit(str((entry.get("request") or {}).get("url", "")))
+    return f"{sp.path}?{sp.query}" if sp.query else sp.path
 
 
 # The dedicated logout capture (`wstg capture <fqdn> --role logout`): its session has
@@ -223,9 +264,9 @@ LOGOUT_PATH_RE = re.compile(r"(logout|log-out|log_out|signout|sign-out|sign_out|
 LOGOUT_ROLE_RE = re.compile(r"^logout\b", re.I)
 
 
-def cleared_names(entry: dict) -> set:
+def cleared_names(entry: dict, names: set | None = None) -> set:
     """Session cookie names the response expires or empties (Max-Age=0, a past Expires,
-    or an empty value)."""
+    or an empty value). `names`: the HAR's session cookie names (session_names)."""
     out = set()
     for h in (entry.get("response") or {}).get("headers") or []:
         if str(h.get("name", "")).lower() != "set-cookie":
@@ -233,7 +274,7 @@ def cleared_names(entry: dict) -> set:
         v = str(h.get("value", ""))
         name, _, rest = v.partition("=")
         name = name.strip()
-        if not is_session_cookie({"name": name}):
+        if not (name in (names or ()) or is_session_cookie({"name": name})):
             continue
         val = rest.split(";", 1)[0].strip().strip('"')
         if (not val or val.lower() in ("deleted", "null", "none")
@@ -243,17 +284,37 @@ def cleared_names(entry: dict) -> set:
     return out
 
 
-def logout_index(entries: list) -> int | None:
-    """Index of the logout request in a HAR: the first request to a logout-like path, or
-    else the first response that clears a session cookie after a session was in use."""
+def logout_index(entries: list, host: str = "", by_cookie_change: bool = False) -> int | None:
+    """Index of the logout request in a HAR: the first request whose URL (path or query)
+    looks like a logout, else the first response that clears a session cookie after a
+    session was in use. With `by_cookie_change` (the dedicated logout capture) it falls back
+    to the last point where the session cookie value sent to `host` stops being sent."""
+    return logout_find(entries, host, by_cookie_change)[0]
+
+
+def logout_find(entries: list, host: str = "", by_cookie_change: bool = False) -> tuple[int | None, str]:
+    """(index, how) of the logout; see logout_index."""
     for i, e in enumerate(entries):
-        path = urlsplit(str((e.get("request") or {}).get("url", ""))).path
-        if LOGOUT_PATH_RE.search(path):
-            return i
+        if LOGOUT_PATH_RE.search(_url_text(e)):
+            return i, "logout URL"
+    names = session_names(entries)
     seen_session = False
     for i, e in enumerate(entries):
-        if _sess(_req_cookies(e)):
+        if names & set(_req_cookies(e)):
             seen_session = True
-        if seen_session and cleared_names(e):
-            return i
-    return None
+        if seen_session and cleared_names(e, names):
+            return i, "response that clears the session cookie"
+    if not by_cookie_change:
+        return None, ""
+    on_host = [(i, e) for i, e in enumerate(entries)
+               if not host or _host(str((e.get("request") or {}).get("url", ""))) == host]
+    last_change = None
+    for k in range(1, len(on_host)):
+        (pi, pe), (_, ce) = on_host[k - 1], on_host[k]
+        prev, cur = _req_cookies(pe), _req_cookies(ce)
+        for n in names & set(prev):
+            v = prev[n]
+            if cur.get(n) != v and not any(_req_cookies(x).get(n) == v for _, x in on_host[k:]):
+                last_change = pi        # the request whose response ended this value
+    return (last_change, "session cookie value stops being sent (no logout URL recognised)") \
+        if last_change is not None else (None, "")
