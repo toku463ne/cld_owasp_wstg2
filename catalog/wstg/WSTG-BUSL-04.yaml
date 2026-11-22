@@ -12,18 +12,38 @@ notes:
   - Concurrent requests are load; agree count and window with the owner.
 finding_kinds: [process-timing]
 steps:
-  - summary: Measure timing differences and look for a race window (manual)
+  - summary: Measure timing differences between two outcomes (tool-assisted)
+    evidence: [process-timing-tests]
+    command: >-
+      wstg-timing diff --base {base_url}/ --url {base_url}/PATH --param NAME
+      --value-a OUTCOME_A --value-b OUTCOME_B --samples 30
+    operation: >-
+      Timing side-channel: name the request, the parameter, and the two values that pick
+      the outcomes to compare (success vs. failure, exists vs. absent), and run the command.
+      It sends the two classes interleaved, discards warm-up requests, and reports per class
+      the median and IQR of the response time, the median size, and the status codes, with a
+      Mann-Whitney verdict (DISTINGUISHABLE / NOT-DISTINGUISHABLE / STATUS-DIFFERS). Add
+      --method POST --body for a form POST, --fixed NAME=VALUE for other constant parameters,
+      and --har pointing at the har-browse items folder for a logged-in request. Paste the output into
+      process-timing-tests. (The values are not printed; keep the exact inputs in the notes.)
+    load_note: >-
+      A bounded set of normal requests (default 30 per class); a login or reset endpoint may
+      count attempts, so agree repeated attempts with the owner.
+  - summary: Look for an exploitable timing window or race (manual)
     evidence: [process-timing-tests]
     operation: >-
-      Measure response times for different outcomes (success vs. failure, exists vs.
-      absent) and see whether they distinguish states. In a time-dependent function
-      (booking, stock, coupon) try to exploit a timing window. Record the statistics in
+      In a time-dependent function (booking, stock, coupon, withdrawal), fire several
+      concurrent identical state-changing requests and check whether the operation is
+      double-applied. This actually performs the action, so use test data that can be rolled
+      back and keep the proof minimal. Record whether an advantage was gained in
       process-timing-tests.
     load_note: Concurrent requests add load; agree the count and window with the owner (relates to WSTG-BUSL-05).
   - summary: Judge process timing
     evidence: [process-timing-tests]
     ai_task: >-
-      From step 1 decide whether timing is abusable or leaky. Verdict: fail when timing
-      reveals an outcome or a window/race grants an advantage (double application); pass
-      when operations are exclusive and timing is uniform; "-" when process-timing-tests is
-      missing.
+      From steps 1 and 2 decide whether timing is abusable or leaky. Verdict: fail when
+      timing reveals an outcome (DISTINGUISHABLE or STATUS-DIFFERS in step 1) or a
+      window/race grants an advantage (double application in step 2); pass when operations
+      are exclusive and timing is uniform (NOT-DISTINGUISHABLE); "-" when process-timing-tests
+      is missing. Note that the timing measurement is network-noisy; a borderline gap should
+      be re-measured with more samples before it is called a leak.

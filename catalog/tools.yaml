@@ -44,6 +44,9 @@ tools:
   - name: wstg-cryp
     install: none
     note: this project's console script (uv sync installs it); CBC padding-oracle probe (WSTG-CRYP-02)
+  - name: wstg-timing
+    install: none
+    note: this project's console script (uv sync installs it); response-timing side-channel measurement (WSTG-BUSL-04)
   - name: seclists
     path: /usr/share/seclists/Discovery/DNS/subdomains-top1million-5000.txt
     note: word lists for vhost-ffuf
