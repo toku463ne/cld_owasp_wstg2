@@ -14,11 +14,17 @@ evidence:
       One GET to {base_url}/ and to {base_url}/api with an untrusted Origin header
       (a marker domain), saving the response headers, so the auto-run step can see whether
       the Origin is reflected into Access-Control-Allow-Origin together with
-      Access-Control-Allow-Credentials: true. Headers only; nothing is changed.
+      Access-Control-Allow-Credentials: true. A null Origin (as sent by a sandboxed iframe
+      or a redirect) is probed too, because allowing null with credentials is a known
+      misconfiguration. Headers only; nothing is changed.
     argv: [curl, -sS, -k, --max-time, "10", -D, -, -o, /dev/null,
            -H, "Origin: https://wstg-cors-marker.example", "{base_url}/",
            --next, -sS, -k, --max-time, "10", -D, -, -o, /dev/null,
-           -H, "Origin: https://wstg-cors-marker.example", "{base_url}/api"]
+           -H, "Origin: https://wstg-cors-marker.example", "{base_url}/api",
+           --next, -sS, -k, --max-time, "10", -D, -, -o, /dev/null,
+           -H, "Origin: null", "{base_url}/",
+           --next, -sS, -k, --max-time, "10", -D, -, -o, /dev/null,
+           -H, "Origin: null", "{base_url}/api"]
     timeout: 60
 
   - id: dom-xss-tests

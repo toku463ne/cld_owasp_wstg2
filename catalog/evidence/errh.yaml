@@ -10,15 +10,17 @@ evidence:
     description: >-
       A few harmless requests that commonly trigger an error, saved one body per path
       under bodies/ with a "code content-type URL" line in stdout.txt: a random
-      non-existent path, an encoded-traversal path, a single quote in a query, and a
-      likely-but-absent API path. The auto-run step scans the bodies for stack-trace, SQL,
-      and internal-path markers. Nothing is changed on the server.
+      non-existent path, an encoded-traversal path, a single quote in a query, a
+      likely-but-absent API path, and an oversized query value. The auto-run step scans the
+      bodies for stack-trace, SQL, and internal-path markers. All GET; nothing is changed
+      on the server.
     argv: [curl, -sS, -k, --max-time, "10", --create-dirs,
            -w, "%{http_code} %{content_type} %{url_effective}\n",
            -o, "{out}/bodies/notfound.html", "{base_url}/wstg-no-such-path-404",
            -o, "{out}/bodies/traversal.html", "{base_url}/%c0%ae%c0%ae/",
            -o, "{out}/bodies/quote.html", "{base_url}/?id=%27",
-           -o, "{out}/bodies/api.html", "{base_url}/api/wstg-no-such-endpoint"]
+           -o, "{out}/bodies/api.html", "{base_url}/api/wstg-no-such-endpoint",
+           -o, "{out}/bodies/oversized.html", "{base_url}/?id=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"]
     files: [bodies]
     timeout: 120
 

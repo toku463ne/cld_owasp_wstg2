@@ -60,7 +60,19 @@ steps:
       jq -r '.[] | select(.id | test("heartbleed|CCS|ticketbleed|ROBOT|renego|CRIME|POODLE|fallback_SCSV|SWEET32|FREAK|DROWN|LOGJAM|BEAST"))
       | [.id, .severity, .finding, .cve // ""] | @tsv' {ev:tls-testssl}/testssl.json
   - summary: Cross-check accepted TLS versions with curl
+    auto_run: true
     evidence: [tls-versions-curl]
+    command: >-
+      cat {ev:tls-versions-curl}/stdout.txt;
+      awk '$1 ~ /TLS1\.(0|1)/ && $2 != "000" {bad=1}
+      END{exit !bad}' {ev:tls-versions-curl}/stdout.txt
+      && echo "curl completed a TLS 1.0/1.1 handshake (confirm with testssl/sslscan; a 000 means refused)"
+      || echo "curl: TLS 1.0/1.1 refused (000)"
+    operation: >-
+      One handshake per TLS version with curl, as a second opinion on the scanner. A line
+      like "TLS1.0 000" means the handshake was refused; any HTTP code means that version
+      was accepted. A local curl may refuse old versions by its own policy, so testssl and
+      sslscan (steps 1 to 2) are authoritative.
   - summary: Check that plain HTTP redirects to HTTPS on the same host, also for deep paths
     auto_run: true
     evidence: [http-root-http, http-redirect-chain]
