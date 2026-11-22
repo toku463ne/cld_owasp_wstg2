@@ -67,14 +67,37 @@ evidence:
       text. The browser display paths are checked automatically from har-browse. Record the
       test data entered so it can be removed after testing.
 
+  - id: hpp-check
+    title: HTTP parameter pollution precedence check
+    target_type: fqdn
+    kind: auto
+    level: full
+    inputs: [katana-crawl, har-browse]
+    description: >-
+      wstg-reflect --hpp sends each GET parameter twice with two harmless markers (no attack
+      payload) and reports which value the application uses: first wins, last wins, or both
+      (possible concatenation). This is the application's precedence rule; the front-end
+      (WAF/LB) vs back-end discrepancy that makes pollution exploitable still needs the
+      manual side-by-side check in hpp-tests. Uses the logged-in session of har-browse when
+      present.
+    argv: [wstg-reflect, --hpp, --base, "{base_url}/", --katana, "{ev:katana-crawl}", --har, "{ev:har-browse}",
+           "{pause_args}"]
+    pause_args: [--pause, "{pause}"]
+    est: 120
+    timeout: 900
+    load_note: One GET per parameter, at most 40; WSTG_PAUSE slows it down.
+
   - id: hpp-tests
     title: HTTP parameter pollution tests
     target_type: fqdn
     kind: manual
     description: >-
-      Per parameter, the requests sent with the parameter repeated (query and body, array
-      notation) and which value each component (front proxy/WAF and the application) used,
-      and whether a validation or authorization check could be bypassed by the difference.
+      Optional (WSTG-INPV-04): the front-end (WAF/LB) vs back-end discrepancy - the same
+      duplicated parameter read as a different value by a front proxy and by the
+      application, and whether that bypasses a validation or authorization check. The
+      application's own precedence rule is measured automatically by hpp-check; add here the
+      cases it cannot see (a value placed across the query and the body, array notation
+      `id[]`, and the proxy-vs-application comparison).
 
   - id: sqli-tests
     title: SQL injection tests

@@ -139,19 +139,23 @@ def candidates(base: str, katana: Path | None, har: Path | None) -> tuple[list[t
     return out, states
 
 
+def _cookie_for(states: list, scheme: str, host: str) -> tuple[str, str]:
+    """The first logged-in session cookie among the HAR storage states, if any."""
+    for r, st in states:
+        if not harmod._ANON_ROLE_RE.match(r):
+            ck = ep.cookie_header(st, scheme, host, "/")
+            if ck:
+                return ck, r
+    return "", ""
+
+
 def run(args) -> int:
     base = args.base.rstrip("/")
     sp = urlsplit(base)
     origin, host = f"{sp.scheme}://{sp.netloc}", (sp.hostname or "").lower()
     cands, states = candidates(base, Path(args.katana) if args.katana else None,
                                Path(args.har) if args.har else None)
-    cookie, role = "", ""
-    for r, st in states:
-        if not harmod._ANON_ROLE_RE.match(r):
-            ck = ep.cookie_header(st, sp.scheme, host, "/")
-            if ck:
-                cookie, role = ck, r
-                break
+    cookie, role = _cookie_for(states, sp.scheme, host)
     print(f"# output-encoding check of reflected GET parameters on {host}; a harmless marker "
           "(a random word followed by < \" ' >), no attack payload; GET only, only this host contacted")
     print(f"# cookies: {'logged-in session ' + role + ' (from har-browse)' if cookie else 'none (anonymous)'}")
@@ -216,14 +220,82 @@ def run(args) -> int:
     return 0
 
 
+def run_hpp(args) -> int:
+    """HTTP parameter pollution (WSTG-INPV-04): send each GET parameter twice, with two
+    distinct harmless markers, and report which value the application uses (first, last, or
+    both). No attack payload; this shows the application's precedence rule. The front-end
+    (WAF/LB) vs back-end discrepancy still needs a side-by-side manual check."""
+    base = args.base.rstrip("/")
+    sp = urlsplit(base)
+    origin, host = f"{sp.scheme}://{sp.netloc}", (sp.hostname or "").lower()
+    cands, states = candidates(base, Path(args.katana) if args.katana else None,
+                               Path(args.har) if args.har else None)
+    cookie, role = _cookie_for(states, sp.scheme, host)
+    print(f"# HTTP parameter pollution check on {host}; each GET parameter sent twice with two "
+          "harmless markers, no attack payload; GET only, only this host contacted")
+    print(f"# cookies: {'logged-in session ' + role + ' (from har-browse)' if cookie else 'none (anonymous)'}")
+    probes = [(path, pairs, i) for path, pairs in cands for i in range(len(pairs))]
+    over = max(0, len(probes) - args.max)
+    probes = probes[:args.max]
+    print(f"# {len(cands)} URL(s) with a query, {len(probes)} parameter(s) checked"
+          + (f", {over} over the limit of {args.max} (not sent)" if over else ""))
+    if not probes:
+        print("\n(no GET parameter found: collect katana-crawl, or capture har-browse first)")
+        return 0
+    sent = answered = 0
+    counts = {"first value wins": 0, "last value wins": 0, "both values used": 0, "neither reflected": 0}
+    for path, pairs, i in probes:
+        base_word = "wstg" + secrets.token_hex(3)
+        a_val, b_val = base_word + "aa", base_word + "bb"
+        # The target parameter appears twice (first=a_val, last=b_val); other params unchanged.
+        items = []
+        for j, (n, v) in enumerate(pairs):
+            if j == i:
+                items += [(n, a_val), (n, b_val)]
+            else:
+                items.append((n, v))
+        if sent and args.pause:
+            time.sleep(args.pause)
+        ans = ep.fetch(f"{origin}{path}?{urlencode(items, quote_via=quote)}", cookie)
+        sent += 1
+        label = f"{harmod._template(path)} ?{pairs[i][0]}"
+        if ans.status is None:
+            print(f"- {label}: no answer ({ans.error})")
+            continue
+        answered += 1
+        hay = (ans.body + "\n" + (ans.location or "")).lower()
+        a_in, b_in = a_val in hay, b_val in hay
+        if a_in and b_in:
+            rule = "both values used"
+            extra = " (both markers reflected - possible concatenation; check the exact value by hand)"
+        elif a_in:
+            rule, extra = "first value wins", ""
+        elif b_in:
+            rule, extra = "last value wins", ""
+        else:
+            rule, extra = "neither reflected", " (cannot tell the rule from the response)"
+        counts[rule] += 1
+        print(f"- {label}: {rule} (HTTP {ans.status} {ans.ctype or '-'}){extra}")
+    if sent and not answered:
+        print(f"no request to {host} got an answer; collect again", file=sys.stderr)
+        return 4
+    print("\n# verdict: " + ", ".join(f"{v} {k}" for k, v in counts.items() if v)
+          + ".\n# A parameter where a value is used is worth a manual front-end vs back-end "
+          "check (WSTG-INPV-04): a WAF/LB that reads a different copy than the application "
+          "can let a validation or authorization check be bypassed.")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="wstg-reflect", description=__doc__.split("\n\n")[0])
     ap.add_argument("--base", required=True, help="base URL of the target (the only host contacted)")
     ap.add_argument("--katana", help="katana-crawl evidence version folder (optional)")
     ap.add_argument("--har", help="har-browse evidence version folder (optional)")
+    ap.add_argument("--hpp", action="store_true", help="HTTP parameter pollution check (WSTG-INPV-04)")
     ap.add_argument("--max", type=int, default=DEFAULT_MAX, help="parameters to check")
     ap.add_argument("--pause", type=int, default=0)
-    return run(ap.parse_args(argv))
+    args = ap.parse_args(argv)
+    return run_hpp(args) if args.hpp else run(args)
 
 
 if __name__ == "__main__":

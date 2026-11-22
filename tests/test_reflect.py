@@ -180,3 +180,42 @@ def test_reports_location_header_reflection(tmp_path, app, capsys):
     out = capsys.readouterr().out
     assert "/redir ?url: HEADER-REFLECTED into Location" in out
     assert "1 reflected into the Location header" in out
+
+
+def test_hpp_reports_precedence_rule(tmp_path, capsys):
+    # /last echoes the last value (parse_qs[-1]); /first the first; /both joins them.
+    class H(App):
+        def do_GET(self2):
+            from urllib.parse import urlsplit, parse_qs
+            u = urlsplit(self2.path)
+            vals = parse_qs(u.query, keep_blank_values=True).get("id", [""])
+            if u.path == "/last":
+                body = f"<p>{vals[-1]}</p>"
+            elif u.path == "/first":
+                body = f"<p>{vals[0]}</p>"
+            elif u.path == "/both":
+                body = f"<p>{','.join(vals)}</p>"
+            else:
+                body = "<p>static</p>"
+            b = body.encode()
+            self2.send_response(200)
+            self2.send_header("Content-Type", "text/html")
+            self2.send_header("Content-Length", str(len(b)))
+            self2.end_headers()
+            self2.wfile.write(b)
+    srv = ThreadingHTTPServer(("127.0.0.1", 0), H)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    base = f"http://127.0.0.1:{srv.server_port}"
+    kat = tmp_path / "k"
+    kat.mkdir()
+    (kat / "katana.txt").write_text("\n".join(f"{base}{p}?id=1" for p in ["/last", "/first", "/both", "/none"]) + "\n")
+    try:
+        assert reflect.main(["--base", base + "/", "--hpp", "--katana", str(kat)]) == 0
+    finally:
+        srv.shutdown()
+    out = capsys.readouterr().out
+    assert "/last ?id: last value wins" in out
+    assert "/first ?id: first value wins" in out
+    assert "/both ?id: both values used" in out
+    assert "/none ?id: neither reflected" in out
+    assert "1 first value wins" in out and "1 last value wins" in out

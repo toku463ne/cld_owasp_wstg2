@@ -19,17 +19,30 @@ steps:
     command: >-
       grep -oE '[?&][A-Za-z0-9_.-]+=' {ev:katana-crawl}/katana.txt 2>/dev/null | tr -d '?&=' | sort | uniq -c | sort -rn | head -40
       || echo "no parameters seen in the crawl"
-  - summary: Send duplicated parameters and see which value wins (manual)
+  - summary: Measure the precedence rule for a duplicated parameter (collected automatically)
+    auto_run: true
+    evidence: [hpp-check, katana-crawl, har-browse]
+    command: cat {ev:hpp-check}/stdout.txt
+    operation: >-
+      Automated: hpp-check sends each GET parameter twice with two harmless markers (no
+      attack payload) and reports whether the application uses the first value, the last
+      value, or both. Collect it after katana-crawl (and har-browse for parameters behind
+      login).
+  - summary: Compare the front-end and the back-end (manual, optional)
     evidence: [hpp-tests]
     operation: >-
-      For each parameter send it twice and observe which value the server uses, for example
-      `curl -sk -i "{base_url}/x?id=1&id=2"`; also place the duplicate across the query and
-      the body, and mix array notation (`id[]`). Note the rule (first wins, last wins,
-      concatenated) and whether the front-end and application differ. Record in hpp-tests.
+      Optional, for a parameter where hpp-check shows a value is used: check whether a front
+      proxy or WAF reads a different copy than the application (place the duplicate across
+      the query and the body, try array notation `id[]`, and compare the proxy and
+      application responses side by side). Record in hpp-tests. This front-end vs back-end
+      discrepancy is what makes pollution exploitable and cannot be seen from one response.
   - summary: Judge HTTP parameter pollution
-    evidence: [hpp-tests]
+    evidence: [hpp-check, hpp-tests]
     ai_task: >-
-      From step 2 decide whether a pollution discrepancy is exploitable. Verdict: fail when
-      the front-end and application use different values from a duplicated parameter so a
-      check can be bypassed or a different value injected; pass when duplicates are rejected
-      or interpreted consistently; "-" when hpp-tests is missing.
+      From steps 1 and 2 decide whether a pollution discrepancy is exploitable. Verdict:
+      fail when the front-end and application use different values from a duplicated
+      parameter so a check can be bypassed or a different value injected; pass when
+      duplicates are rejected or every component uses the same value; "-" when only the
+      automatic precedence rule (hpp-check) is available and no front-end/back-end
+      comparison was done - report the measured rule and say the discrepancy was not
+      checked.
