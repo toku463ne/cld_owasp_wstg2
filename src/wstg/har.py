@@ -13,7 +13,8 @@ holds here, and auto-run steps that call this tool are still excluded from the p
 (their command names a `.har` file).
 
 Run as `wstg-har <view> [--host HOST] FILE...` where view is cookies | urls | cleartext |
-forms | xssi | entry-points | expose (`--host` is used by entry-points and expose).
+forms | xssi | entry-points | expose | cache | frame | storage
+(`--host` is used by entry-points and expose).
 Exit code is always 0 (a WSTG step reads the text output); unreadable files are noted.
 """
 import json
@@ -352,6 +353,136 @@ def view_expose(files: list[Path], host: str = "") -> None:
               "(Referer to a third party, local/session storage, error body)")
     print("  note: deliberately triggering malformed-input errors stays a manual step; "
           "this judges only what the capture recorded.")
+
+
+def _content_type(resp: dict) -> str:
+    return _header(resp.get("headers"), "content-type").lower()
+
+
+def _is_html(e: dict) -> bool:
+    """Whether the response is an HTML document (by Content-Type, else the request Accept)."""
+    ct = _content_type(e.get("response") or {})
+    if ct:
+        return "text/html" in ct
+    return "text/html" in _header((e.get("request") or {}).get("headers"), "accept").lower()
+
+
+def _authed(req: dict) -> bool:
+    """Whether the request carried a session/authentication cookie."""
+    return any(_is_session_cookie(str(c.get("name", "")), set()) for c in req.get("cookies") or [])
+
+
+def _html_pages(files: list[Path]):
+    """Yield (label, entry, host, path) for each distinct 200 HTML document, once per path.
+    A storage-state file in the glob is skipped silently (it is not a HAR)."""
+    seen = set()
+    for p in files:
+        entries = _load(p)
+        if entries is None:
+            if _storage_state(p) is None:
+                print(f"== {p.name}: not a readable HAR file")
+            continue
+        label = p.name
+        for e in entries:
+            resp = e.get("response") or {}
+            if (resp.get("status") or 0) != 200 or not _is_html(e):
+                continue
+            _, h, path, _ = _url_parts(str((e.get("request") or {}).get("url", "")))
+            if (h, path) in seen:
+                continue
+            seen.add((h, path))
+            yield label, e, h, path
+
+
+def _cache_verdict(cc: str, pragma: str) -> str:
+    """Judge a Cache-Control (plus Pragma) string for a sensitive page (WSTG-ATHN-06)."""
+    if "no-store" in cc:
+        return "no-store (not written to disk)"
+    m = re.search(r"max-age\s*=\s*(\d+)", cc)
+    if m and int(m.group(1)) > 0:
+        return f"CACHEABLE - positive max-age, no no-store (Cache-Control: {cc or 'none'})"
+    if any(d in cc for d in ("no-cache", "must-revalidate", "private")) or "no-cache" in pragma:
+        return f"WEAK - no no-store, only {cc or pragma} (a sensitive page should set no-store)"
+    return f"CACHEABLE - no no-store/no-cache (Cache-Control: {cc or 'none'})"
+
+
+def view_cache(files: list[Path]) -> None:
+    """Cache-control posture of authenticated HTML pages, from the login HAR
+    (WSTG-ATHN-06 step 2): a sensitive page should set Cache-Control no-store so it is
+    not written to the browser disk cache and re-shown after logout. One line per page."""
+    any_auth = False
+    label_printed = None
+    for label, e, _, path in _html_pages(files):
+        if not _authed(e.get("request") or {}):
+            continue
+        any_auth = True
+        if label_printed != label:
+            print(f"== {label}")
+            label_printed = label
+        resp = e.get("response") or {}
+        cc = _header(resp.get("headers"), "cache-control").lower()
+        pragma = _header(resp.get("headers"), "pragma").lower()
+        print(f"  {path}: {_cache_verdict(cc, pragma)}")
+    if not any_auth:
+        print("(no authenticated HTML page in the HAR; "
+              "capture a logged-in browse with `wstg capture <fqdn> --role user`)")
+    else:
+        print("  a CACHEABLE page can be written to disk and re-shown after logout; "
+              "no-store prevents that.")
+
+
+def view_frame(files: list[Path]) -> None:
+    """Anti-framing headers per HTML document, from the HAR (WSTG-CLNT-09 step 2): a
+    sensitive page should deny framing with X-Frame-Options or CSP frame-ancestors. This
+    covers the authenticated pages that the root-only header check cannot see."""
+    any_html = False
+    label_printed = None
+    for label, e, _, path in _html_pages(files):
+        any_html = True
+        if label_printed != label:
+            print(f"== {label}")
+            label_printed = label
+        resp = e.get("response") or {}
+        xfo = _header(resp.get("headers"), "x-frame-options").strip()
+        csp = _header(resp.get("headers"), "content-security-policy").lower()
+        has_fa = bool(re.search(r"frame-ancestors", csp))
+        auth = " (authenticated)" if _authed(e.get("request") or {}) else ""
+        if xfo or has_fa:
+            how = ([f"X-Frame-Options: {xfo}"] if xfo else []) + (["CSP frame-ancestors"] if has_fa else [])
+            print(f"  {path}{auth}: framing denied - {'; '.join(how)}")
+        else:
+            print(f"  {path}{auth}: FRAMEABLE - no X-Frame-Options or CSP frame-ancestors")
+    if not any_html:
+        print("(no HTML document in the HAR)")
+
+
+def view_storage(files: list[Path]) -> None:
+    """Inventory of what the site stores in the browser, from the captured storage state
+    (WSTG-CLNT-12 step 2): localStorage keys per origin, with a flag on any key that looks
+    like a token or credential. Values are masked; sessionStorage/IndexedDB stay manual."""
+    found = False
+    for p in files:
+        st = _storage_state(p)
+        if st is None:
+            if _load(p) is None:
+                print(f"== {p.name}: not a storage-state file")
+            continue
+        found = True
+        print(f"== {p.name}")
+        origins = st.get("origins") or []
+        if not origins:
+            print("  (no localStorage captured)")
+        for origin in origins:
+            items = origin.get("localStorage") or []
+            print(f"  {origin.get('origin', '')}: {len(items)} localStorage key(s)")
+            for item in items:
+                n, v = str(item.get("name", "")), str(item.get("value", ""))
+                sensitive = (_TOKEN_RE.search(n) or _SESSION_COOKIE_RE.search(n)
+                             or _CREDENTIAL_RE.match(n) or _looks_token(v))
+                tag = "  <= SENSITIVE (token/credential stored client-side)" if sensitive else ""
+                print(f"    {n} = {_mask(v)}{tag}")
+    if not found:
+        print("(no storage-state file; `wstg capture <fqdn> --role user` saves one next to the HAR)")
 
 
 def view_cleartext(files: list[Path]) -> None:
@@ -736,7 +867,8 @@ def view_entry_points(files: list[Path], host: str = "") -> None:
 
 _VIEWS = {"cookies": view_cookies, "urls": view_urls, "cleartext": view_cleartext,
           "forms": view_forms, "xssi": view_xssi, "entry-points": view_entry_points,
-          "expose": view_expose}
+          "expose": view_expose, "cache": view_cache, "frame": view_frame,
+          "storage": view_storage}
 
 
 def main(argv: list[str] | None = None) -> int:

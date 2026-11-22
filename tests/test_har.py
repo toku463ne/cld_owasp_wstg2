@@ -407,3 +407,70 @@ def test_expose_ignores_unreadable_file(tmp_path, capsys):
     rc, out = _run(capsys, "expose", junk)
     assert rc == 0
     assert "not a readable HAR or storage-state file" in out
+
+
+# -- cache / frame / storage views (ATHN-06, CLNT-09, CLNT-12) --
+
+def _page(url, *, authed=False, status=200, ctype="text/html", resp_headers=()):
+    sid = [("SESSIONID", "abc123secretXYZ")] if authed else []
+    headers = [{"name": "Content-Type", "value": ctype}] + [{"name": n, "value": v} for n, v in resp_headers]
+    return {
+        "request": {"method": "GET", "url": url, "headers": [],
+                    "cookies": [{"name": n, "value": v} for n, v in sid]},
+        "response": {"status": status, "headers": headers, "content": {"text": ""}},
+    }
+
+
+def test_cache_flags_cacheable_authenticated_pages(tmp_path, capsys):
+    f = _write(tmp_path, "001-user.har", _har([
+        _page("https://app.example.com/account", authed=True,
+              resp_headers=[("Cache-Control", "private, max-age=600")]),
+        _page("https://app.example.com/settings", authed=True,
+              resp_headers=[("Cache-Control", "no-store")]),
+        _page("https://app.example.com/login"),            # anonymous: not judged
+    ]))
+    rc, out = _run(capsys, "cache", f)
+    assert rc == 0
+    assert "/account: CACHEABLE" in out and "max-age" in out
+    assert "/settings: no-store" in out
+    assert "/login" not in out                              # only authenticated pages
+
+
+def test_cache_notes_when_no_authenticated_page(tmp_path, capsys):
+    f = _write(tmp_path, "a.har", _har([_page("https://app.example.com/")]))
+    rc, out = _run(capsys, "cache", f)
+    assert "no authenticated HTML page" in out
+
+
+def test_frame_flags_frameable_pages_including_authenticated(tmp_path, capsys):
+    f = _write(tmp_path, "001-user.har", _har([
+        _page("https://app.example.com/pay", authed=True),                     # no header
+        _page("https://app.example.com/safe", resp_headers=[("X-Frame-Options", "DENY")]),
+        _page("https://app.example.com/csp",
+              resp_headers=[("Content-Security-Policy", "frame-ancestors 'none'")]),
+    ]))
+    rc, out = _run(capsys, "frame", f)
+    assert rc == 0
+    assert "/pay (authenticated): FRAMEABLE" in out
+    assert "/safe: framing denied - X-Frame-Options: DENY" in out
+    assert "/csp: framing denied - CSP frame-ancestors" in out
+
+
+def test_storage_inventories_localstorage_and_flags_tokens(tmp_path, capsys):
+    sf = _write(tmp_path, "002-storage-state.json",
+                _storage("https://app.example.com",
+                         [("auth_token", "eyJhbGci.payloadpart.sigsig"), ("theme", "dark")]))
+    har_file = _write(tmp_path, "001-user.har", _har([_page("https://app.example.com/")]))
+    rc, out = _run(capsys, "storage", har_file, sf)   # HAR in the glob is skipped silently
+    assert rc == 0
+    assert "https://app.example.com: 2 localStorage key(s)" in out
+    assert "auth_token =" in out and "SENSITIVE" in out
+    assert "theme =" in out
+    assert "not a readable HAR" not in out
+    assert "001-user.har" not in out
+
+
+def test_storage_notes_when_no_storage_state(tmp_path, capsys):
+    f = _write(tmp_path, "a.har", _har([_page("https://app.example.com/")]))
+    rc, out = _run(capsys, "storage", f)
+    assert "no storage-state file" in out

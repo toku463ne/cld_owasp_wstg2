@@ -17,16 +17,24 @@ steps:
     command: >-
       grep -rhnoiE '(localStorage|sessionStorage|indexedDB)\.[A-Za-z]+\([^)]*' {ev:site-assets}/site 2>/dev/null | sort -u | head -40
       || echo "no browser-storage usage in the collected scripts"
-  - summary: Inspect stored data in the browser (manual)
+  - summary: Inventory localStorage from the captured storage state
+    auto_run: true
+    evidence: [har-browse]
+    command: wstg-har storage {ev:har-browse}/items/*
+  - summary: Inspect sessionStorage, IndexedDB, and logout clearing in the browser (manual)
     evidence: [browser-storage-tests]
     operation: >-
-      In DevTools Application, inspect localStorage, sessionStorage, IndexedDB, and cookies
-      for session tokens, personal data, or secrets kept in readable form, whether they
-      survive logout, and whether they are trusted on read. Record in browser-storage-tests.
+      Step 2 lists the localStorage keys the capture saved and flags any token/credential
+      kept client-side, so that part is automated. sessionStorage and IndexedDB are not in
+      the storage state, and clearing on logout is not observable from it. In DevTools
+      Application, inspect sessionStorage and IndexedDB for session tokens, personal data, or
+      secrets, check whether localStorage/sessionStorage survive logout, and whether a stored
+      value is trusted on read. Record in browser-storage-tests, or mark it collected with a
+      comment if step 2 already covered the stored data.
   - summary: Judge browser storage
     evidence: [browser-storage-tests]
     ai_task: >-
-      From step 2 decide whether sensitive data is in browser storage. Verdict: fail when a
-      token, secret, or personal data is stored readably (stealable via XSS) or not cleared
-      on logout; pass when no sensitive data is stored client-side; "-" when
-      browser-storage-tests is missing.
+      From steps 2 and 3 decide whether sensitive data is in browser storage. Verdict: fail
+      when a token, secret, or personal data is stored readably (stealable via XSS) or not
+      cleared on logout; pass when no sensitive data is stored client-side; "-" when neither
+      the storage state (step 2) nor browser-storage-tests shows any stored data.

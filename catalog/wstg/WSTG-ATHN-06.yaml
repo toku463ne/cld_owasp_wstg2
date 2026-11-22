@@ -23,15 +23,21 @@ steps:
       payment, settings). Write each URL on its own line, and from the developer tools
       Network tab copy the request Cookie header value for one of them. Save both into the
       cache-tests evidence (the cookie header stays here only).
-  - summary: Check the cache-control headers of those pages (manual)
+  - summary: Check the cache-control of authenticated pages from the HAR
+    auto_run: true
+    evidence: [har-browse]
+    command: wstg-har cache {ev:har-browse}/items/*.har
+  - summary: Check cache-control for a page the HAR did not capture (manual, only if needed)
     evidence: [cache-tests]
     operation: >-
-      With the URLs in auth-urls.txt and the session cookie header in cookie-header.txt
-      from step 1, run per URL `ck=$(sed -E 's/^cookie: *//I' cookie-header.txt | tr -d
-      '\r\n'); while read -r u; do echo "== $u =="; curl -sI -b "$ck" "$u" | grep -iE
-      '^(cache-control|pragma|expires):'; done < auth-urls.txt | tee cache-headers.txt`.
-      A response without no-store (ideally), no-cache, or private, or with a positive
-      max-age, can be written to disk. Add cache-headers.txt to cache-tests.
+      Step 2 reads the login HAR and prints, per authenticated HTML page, whether it sets
+      Cache-Control no-store or is CACHEABLE, so the common case is automated. This step is
+      only for a sensitive page the browse did not visit. For it, with the URL and the
+      session cookie header in cookie-header.txt, run `ck=$(sed -E 's/^cookie: *//I'
+      cookie-header.txt | tr -d '\r\n'); curl -sI -b "$ck" "{base_url}/<path>" | grep -iE
+      '^(cache-control|pragma|expires):'`. A response without no-store, or with a positive
+      max-age, can be written to disk; record it in cache-tests, or mark it collected with a
+      comment that step 2 covered every sensitive page.
   - summary: Check re-display after logout and from disk cache (manual)
     evidence: [cache-tests]
     operation: >-
@@ -42,8 +48,8 @@ steps:
   - summary: Judge browser cache weaknesses
     evidence: [cache-tests]
     ai_task: >-
-      From steps 2 and 3 decide whether sensitive pages are cacheable. Verdict: fail when a
+      From steps 2 to 4 decide whether sensitive pages are cacheable. Verdict: fail when a
       sensitive authenticated page lacks cache-control no-store (or no-cache/must-revalidate)
       or has a positive max-age and its content can be re-displayed after logout or from
       disk cache; pass when sensitive pages set no-store and cannot be re-displayed; "-"
-      when cache-tests is missing.
+      when neither the HAR (step 2) nor cache-tests shows any authenticated page.
