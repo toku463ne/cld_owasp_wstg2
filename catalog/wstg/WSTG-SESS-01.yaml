@@ -28,18 +28,19 @@ steps:
       grep -oiE '[?&](sid|sessionid|session_id|phpsessid|jsessionid|aspsessionid|cfid|cftoken)=[^&"'"'"'<> ]*'
       {ev:katana-crawl}/katana.txt 2>/dev/null | sed -E 's/=.*/=<value>/' | sort -u | head;
       grep -rhoiE '(document\.cookie|localStorage|sessionStorage)' {ev:site-assets}/site 2>/dev/null | sort | uniq -c | sort -rn | head
-  - summary: Check predictability and reissue of the session identifier (manual)
-    evidence: [session-token-samples, har-browse, session-reissue-tests]
+  - summary: Check predictability and reissue of the session identifier
+    evidence: [session-token-samples, session-reissue, session-reissue-tests]
     operation: >-
       Review the anonymous token predictability from WSTG-CRYP-04 (length, character set,
-      shared or counting parts). From the HAR, confirm the identifier is issued in a cookie
-      and note whether it changes at login (detailed in WSTG-SESS-03). Check whether several
-      simultaneous logins each keep a valid session. Record it in session-reissue-tests.
+      shared or counting parts). The reissue of the identifier at login is collected
+      automatically as session-reissue (from the login HAR; detailed in WSTG-SESS-03). Add to
+      session-reissue-tests only what that cannot cover: whether several simultaneous logins
+      each keep a valid session, and reissue on a privilege change.
   - summary: Judge the session management schema
-    evidence: [session-token-samples, session-reissue-tests]
+    evidence: [session-token-samples, session-reissue, session-reissue-tests]
     ai_task: >-
       From steps 1 to 3 (and the WSTG-CRYP-04 result) decide whether the schema is sound.
       Verdict: fail when the identifier is predictable, encodes user data, is carried in a
-      URL or readable by JavaScript, or is not reissued at login; pass when it is
-      unpredictable, cookie-only, and reissued; "-" when only the anonymous samples exist
-      and no logged-in evidence (session-reissue-tests) was captured.
+      URL or readable by JavaScript, or is not reissued at login (a session-reissue FAIL);
+      pass when it is unpredictable, cookie-only, and reissued; "-" when only the anonymous
+      samples exist and no logged-in evidence (session-reissue) was captured.
