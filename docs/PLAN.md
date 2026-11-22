@@ -161,6 +161,7 @@ Last updated: 2026-11-08
 - AI prompt: the comment is printed with its evidence (as "no file attached[, marked collected], Tester comment ..."), judged like manual evidence, never a replacement for a failed or missing automatic collection.
 - AI import: a "pass" is no longer refused for a missing *manual* evidence the tester marked collected by a comment (`ai_review.commented_evidence`); missing automatic evidence is still refused.
 - WSTG-IDNT-05 step 3 operation and step 4 AI task mention the comment for system-generated user names.
+- Readable evidence descriptions: a `desctext` Jinja filter (like `optext` for operations) renders a description with each sentence on its own line and `code` spans intact, so a long description is not one wall of text on the manual tab, the WSTG page evidence rows, and the evidence page. The catalog YAML is unchanged; sentence splitting skips text inside backticks.
 - Tests: `tests/test_step_comments.py` (role and CSRF, save/show/prompt/remove, reset keeps it, length limit, AI import covers manual evidence only).
 
 ### M9: WSTG-CONF-10 subdomain CNAMEs automated, evidence inputs

@@ -1,6 +1,15 @@
 from conftest import csrf_of
 
 from wstg import targets as tm
+from wstg.web_targets import desctext
+
+
+def test_desctext_breaks_sentences_but_not_inside_code():
+    out = str(desctext("First flows: one anonymous. Preferred: run `wstg capture {fqdn}. x` then stop."))
+    assert "anonymous.<br>Preferred:" in out              # sentence break outside code
+    assert "<code>wstg capture {fqdn}. x</code>" in out   # period inside code kept on one line
+    assert out.count("<br>") == 1
+    assert "<script" not in str(desctext("<script>alert(1)</script>. Next."))   # escaped
 
 
 def post(client, url, **data):

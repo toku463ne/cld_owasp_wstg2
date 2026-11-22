@@ -66,6 +66,22 @@ def optext(text: str) -> Markup:
     return Markup(out)
 
 
+_SENTENCE_RE = re.compile(r"(?<=[.])[ \t]+(?=[A-Z\"])")
+
+
+def desctext(text: str) -> Markup:
+    """Render an evidence description readably: `code` spans as <code>, and each
+    sentence on its own line (and any explicit newline kept), so a long description
+    is not one wall of text. The source data is unchanged."""
+    out = []
+    for i, part in enumerate(re.split(r"(`[^`]+`)", text or "")):
+        if i % 2:                               # a `code` span: keep it on one line
+            out.append(f"<code>{escape(part[1:-1])}</code>")
+        else:
+            out.append(_SENTENCE_RE.sub("\n", str(escape(part))))
+    return Markup("".join(out).replace("\n", "<br>"))
+
+
 _STATUS_CLASS = {"-": "none", "": "none", "no need": "noneed"}
 
 
@@ -77,6 +93,7 @@ def status_class(status: str) -> str:
 def register(app: Flask, cfg: Config, db: dbmod.Database, cat: catmod.Catalog, store: evmod.Store) -> None:
     app.jinja_env.filters["ticks"] = ticks
     app.jinja_env.filters["optext"] = optext
+    app.jinja_env.filters["desctext"] = desctext
     app.jinja_env.filters["cmdtext"] = cmdtext
     app.jinja_env.filters["statusclass"] = status_class
 
