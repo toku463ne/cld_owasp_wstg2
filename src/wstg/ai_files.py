@@ -131,6 +131,7 @@ def steps_for(cfg: Config, db: dbmod.Database, cat: catmod.Catalog, store: evmod
             "operation": catmod.render(st.operation, values, ev_paths),
             "evidence": [{"ev": cat.evidence[eid], "owner": tmod.evidence_owner(t, cat.evidence[eid].target_type),
                           "row": have.get(eid), "comment": comments.get(eid),
+                          "desc": catmod.render(cat.evidence[eid].description, values, ev_paths),
                           "used_by": [x for x in cat.tests_using(eid) if x != test_id]}
                          for eid in st.evidence],
         })

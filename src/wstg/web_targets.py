@@ -70,16 +70,19 @@ _SENTENCE_RE = re.compile(r"(?<=[.])[ \t]+(?=[A-Z\"])")
 
 
 def desctext(text: str) -> Markup:
-    """Render an evidence description readably: `code` spans as <code>, and each
-    sentence on its own line (and any explicit newline kept), so a long description
-    is not one wall of text. The source data is unchanged."""
+    """Render an evidence description readably: each sentence on its own line, and a
+    command (a `code` span with a space) on its own line too, so a long description is
+    not one wall of text. The source data is unchanged."""
     out = []
     for i, part in enumerate(re.split(r"(`[^`]+`)", text or "")):
-        if i % 2:                               # a `code` span: keep it on one line
-            out.append(f"<code>{escape(part[1:-1])}</code>")
+        if i % 2:                               # a `code` span
+            inner = part[1:-1]
+            out.append(f"\n<code>{escape(inner)}</code>\n" if " " in inner else f"<code>{escape(inner)}</code>")
         else:
             out.append(_SENTENCE_RE.sub("\n", str(escape(part))))
-    return Markup("".join(out).replace("\n", "<br>"))
+    s = re.sub(r"\n[ \t]*[,;:][ \t]*", "\n", "".join(out))   # drop a comma/colon left at a line start
+    s = re.sub(r"\n{2,}", "\n", s).strip("\n")
+    return Markup(s.replace("\n", "<br>"))
 
 
 _STATUS_CLASS = {"-": "none", "": "none", "no need": "noneed"}
@@ -107,6 +110,17 @@ def register(app: Flask, cfg: Config, db: dbmod.Database, cat: catmod.Catalog, s
 
     def tests_for(t: tmod.Target) -> list[catmod.Test]:
         return [x for x in cat.tests.values() if t.type in x.target_types]
+
+    def placeholder_values(t: tmod.Target) -> dict[str, str]:
+        """Placeholder values ({fqdn}, {domain}, {base_url}) for rendering a description;
+        falls back to the target name when there is no usable scope record."""
+        try:
+            return tmod.placeholder_values(cfg, t, tmod.get_scope(db, t))
+        except tmod.TargetError:
+            values = {"domain": t.domain or "{domain}"}
+            if t.type == "fqdn":
+                values.update(fqdn=t.name, base_url=f"https://{t.name}", port="443")
+            return values
 
     def collected(t: tmod.Target) -> dict[str, dict]:
         return ai_files.collected(db, cat, store, t)
@@ -211,11 +225,13 @@ def register(app: Flask, cfg: Config, db: dbmod.Database, cat: catmod.Catalog, s
     def manual_tab(name: str):
         t = load_target(name)
         have = collected(t)
+        values = placeholder_values(t)
         rows = []
         for e in cat.evidence.values():
             owner = tmod.evidence_owner(t, e.target_type)
             if e.kind == "manual" and owner:
-                rows.append({"ev": e, "owner": owner, "row": have.get(e.id), "used_by": cat.tests_using(e.id)})
+                rows.append({"ev": e, "owner": owner, "row": have.get(e.id), "used_by": cat.tests_using(e.id),
+                             "desc": catmod.render(e.description, values)})
         rows.sort(key=lambda r: (r["owner"] != t.name, r["used_by"][:1], r["ev"].id))
         return render_template("manual_tab.html", tab="manual", rows=rows)
 

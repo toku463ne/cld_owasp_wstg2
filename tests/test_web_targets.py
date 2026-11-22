@@ -4,11 +4,13 @@ from wstg import targets as tm
 from wstg.web_targets import desctext
 
 
-def test_desctext_breaks_sentences_but_not_inside_code():
-    out = str(desctext("First flows: one anonymous. Preferred: run `wstg capture {fqdn}. x` then stop."))
-    assert "anonymous.<br>Preferred:" in out              # sentence break outside code
-    assert "<code>wstg capture {fqdn}. x</code>" in out   # period inside code kept on one line
-    assert out.count("<br>") == 1
+def test_desctext_breaks_sentences_and_puts_commands_on_their_own_line():
+    out = str(desctext("First flows: one anonymous. Preferred: run `wstg capture host --role a` then stop."))
+    assert "anonymous.<br>Preferred:" in out                       # sentence break outside code
+    assert "<br><code>wstg capture host --role a</code><br>" in out  # the command is on its own line
+    # an inline code span without a space stays inline (no break around it)
+    inline = str(desctext("See `x` here. Next."))
+    assert "See <code>x</code> here.<br>Next." == inline
     assert "<script" not in str(desctext("<script>alert(1)</script>. Next."))   # escaped
 
 
