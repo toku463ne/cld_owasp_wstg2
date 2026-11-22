@@ -132,7 +132,8 @@ def register(app: Flask, store: evmod.Store, cat: catmod.Catalog) -> None:
                                inputs=input_rows(store, cat, t, ev) if ev.kind == "auto" else [],
                                shell=shell_commands(store, cat, t, ev) if ev.kind == "auto" else {},
                                capture=rmod.capture_status(store.cfg, t, ev) if ev.after_capture else None,
-                               capture_role=catmod.CAPTURE_KINDS.get(ev.after_capture, ""),
+                               capture_ev=catmod.CAPTURE_KINDS.get(ev.after_capture, ("", ""))[0],
+                               capture_role=catmod.CAPTURE_KINDS.get(ev.after_capture, ("", ""))[1],
                                latest_exists=latest is not None,
                                job_active=ev.kind == "auto" and rmod.active_job(store.db, t) is not None,
                                attempt=rmod.last_attempt(store.db, t, eid) if ev.kind == "auto" else None)

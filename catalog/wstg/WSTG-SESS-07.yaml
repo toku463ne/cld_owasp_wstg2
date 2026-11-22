@@ -23,7 +23,7 @@ steps:
       || echo "session cookie is a session cookie (no Max-Age/Expires) or no Set-Cookie in the samples"
   - summary: Measure the idle and absolute timeouts server-side (collected automatically)
     auto_run: true
-    evidence: [session-timeout, har-browse]
+    evidence: [session-timeout, har-timeout]
     command: cat {ev:session-timeout}/stdout.txt
     operation: >-
       Record `uv run wstg capture {fqdn} --role timeout` (log in, open one page only a

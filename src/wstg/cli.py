@@ -211,14 +211,14 @@ def cmd_capture(args) -> int:
                                     headless=args.headless, start_url=args.url)
     except (capmod.CaptureError, tmod.TargetError) as e:
         raise config.ConfigError(str(e)) from None
-    print(f"saved HAR {res['har_file']} as {capmod.EVIDENCE_ID} v{res['har_version']} for {t.name}")
+    print(f"saved HAR {res['har_file']} as {res['evidence']} v{res['har_version']} for {t.name}")
     if res["state_file"]:
         print(f"saved storage state {res['state_file']} (v{res['version']})")
     if res["out_of_scope_hosts"]:
         print(f"  WARNING: contacted {len(res['out_of_scope_hosts'])} host(s) outside the scope: "
               + ", ".join(res["out_of_scope_hosts"]))
     print(f"  analyse it with the WSTG pages, or: uv run wstg-har cookies "
-          f"{tmod.evidence_dir(r.cfg, t) / capmod.EVIDENCE_ID / 'latest' / 'items'}/*.har")
+          f"{tmod.evidence_dir(r.cfg, t) / res['evidence'] / 'latest' / 'items'}/*.har")
     from . import runner as rmod
     waiting = [e for e in r.cat.evidence.values()
                if e.after_capture and e.target_type == t.type and rmod.capture_status(r.cfg, t, e)[0]

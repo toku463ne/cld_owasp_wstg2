@@ -2,8 +2,8 @@
 
 `wstg-sess --logout --har DIR --base URL [--pause S]`
 
-Reads a `har-browse` capture that logs in, opens a page, and logs out (record it with
-`wstg capture <fqdn> --role logout`). From it the tool finds the logout request, the
+Reads the `har-logout` capture that logs in, opens a page, and logs out (record it with
+`wstg capture <fqdn> --role logout`; it also accepts a logout capture inside har-browse). From it the tool finds the logout request, the
 session cookie that was in use just before it, whether the logout response clears that
 cookie in the browser, and whether the browser still held it afterwards (the storage
 state is saved at the end of the capture). Then it replays the pre-logout cookie
@@ -42,7 +42,8 @@ def _find(folder: Path | None, host: str = "") -> tuple[str, list, int, str] | N
     session, the dedicated logout capture first."""
     for role, entries in _hars(folder):
         names = se.session_names(entries)
-        i, how = se.logout_find(entries, host, by_cookie_change=bool(se.LOGOUT_ROLE_RE.match(role)))
+        # every HAR in har-logout is a logout capture, so the cookie-change fallback is fair there
+        i, how = se.logout_find(entries, host, by_cookie_change=True)
         if i is not None and any(names & set(se._req_cookies(e)) for e in entries[:i + 1]):
             return role, entries, i, how
     return None
@@ -53,7 +54,7 @@ def diagnose(folder: Path | None, host: str) -> None:
     cleared one, and the last requests to the host (paths and parameter names)."""
     hars = _hars(folder)
     if not hars:
-        print("- har-browse holds no HAR file")
+        print("- har-logout holds no HAR file")
         return
     for role, entries in hars:
         names = se.session_names(entries)
@@ -160,7 +161,7 @@ def run(args) -> int:
     if not found:
         print("# no logout found; what the HAR files hold (names only):")
         diagnose(folder, host)
-        print("input missing: evidence har-browse has no HAR with a logout after a logged-in session; add one with "
+        print("input missing: evidence har-logout has no HAR with a logout after a logged-in session; add one with "
               f"`wstg capture {host} --role logout` (log in, open one page, log out, press Enter), then collect "
               "this again. If the capture did log out, see the request list in the output for the logout URL.",
               file=sys.stderr)

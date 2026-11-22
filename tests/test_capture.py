@@ -104,3 +104,12 @@ def test_capture_errors_when_no_har_recorded(cfg, db, store, site):
         pass   # writes nothing
     with pytest.raises(cap.CaptureError):
         cap.record_session(cfg, db, store, site, drive=drive)
+
+
+def test_dedicated_roles_go_to_their_own_evidence():
+    from wstg import capture as capmod
+    assert capmod.evidence_for_role("user") == "har-browse"
+    assert capmod.evidence_for_role("anon") == "har-browse"
+    assert capmod.evidence_for_role("logout") == "har-logout"
+    assert capmod.evidence_for_role("timeout") == "har-timeout"
+    assert capmod.evidence_for_role("timeout-active") == "har-timeout"

@@ -146,12 +146,8 @@ evidence:
       and so on (from elsewhere add `--directory /path/to/cld_owasp_wstg2`). In the browser window that opens, walk every main screen and function once
       (log in, profile, search, forms that send personal data; do not log out, so the
       saved session stays usable for the automatic checks) and press Enter in the terminal
-      to save. For the logout check (WSTG-SESS-06) record one more short capture with
-      `uv run wstg capture {fqdn} --role logout`: log in, open one page only a logged-in
-      user sees, log out, and press Enter. For the timeout check (WSTG-SESS-07) record
-      `uv run wstg capture {fqdn} --role timeout` (and optionally `--role timeout-active`):
-      log in, open one such page, press Enter without logging out, and collect
-      session-timeout right away. The HAR and the storage state are stored here automatically. Fallback without the capture tool: in the browser press F12, open
+      to save. The logout and timeout checks use their own captures (har-logout,
+      har-timeout), not this one. The HAR and the storage state are stored here automatically. Fallback without the capture tool: in the browser press F12, open
       Network, tick "Preserve log" (Firefox: "Persist Logs"), press Ctrl+Shift+R, walk the
       application, then right-click the request list, choose "Save all as HAR (with sensitive
       data)" (older browsers: "Save all as HAR"), and upload the file with the caption

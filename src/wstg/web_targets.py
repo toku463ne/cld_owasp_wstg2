@@ -244,7 +244,8 @@ def register(app: Flask, cfg: Config, db: dbmod.Database, cat: catmod.Catalog, s
             "SELECT * FROM evidence_versions WHERE target_id = ? AND status = 'failed' ORDER BY version", (t.id,))}
         evs = [e for e in cat.evidence.values()
                if e.kind == "auto" and e.target_type == t.type and not e.after_capture]
-        after = [{"ev": e, "role": catmod.CAPTURE_KINDS[e.after_capture], "status": rmod.capture_status(cfg, t, e)}
+        after = [{"ev": e, "capture": catmod.CAPTURE_KINDS[e.after_capture][0],
+                  "role": catmod.CAPTURE_KINDS[e.after_capture][1], "status": rmod.capture_status(cfg, t, e)}
                  for e in cat.evidence.values()
                  if e.kind == "auto" and e.target_type == t.type and e.after_capture]
         job = rmod.last_job(db, t)

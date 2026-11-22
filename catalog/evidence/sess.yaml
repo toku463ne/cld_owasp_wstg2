@@ -75,15 +75,40 @@ evidence:
       20 templates per role); a WAF may flag them. Needs a logged-in har-browse capture
       whose session is still valid.
 
+  - id: har-logout
+    title: Browser HAR of a login and logout
+    target_type: fqdn
+    kind: manual
+    description: >-
+      One short capture for the logout check (WSTG-SESS-06), kept apart from the main walk
+      in har-browse so that session stays usable. On the tool's host, from the project
+      directory, run `uv run wstg capture {fqdn} --role logout`; in the browser that opens,
+      log in, open one page only a logged-in user sees, log out, and press Enter in the
+      terminal. The HAR and storage state are stored here automatically; then collect
+      logout-replay. Fallback without the capture tool: save the same walk as a HAR from the
+      browser developer tools and upload it here. It holds cookies; keep it only here.
+
+  - id: har-timeout
+    title: Browser HARs for the session timeout
+    target_type: fqdn
+    kind: manual
+    description: >-
+      Captures for the timeout check (WSTG-SESS-07), kept apart from the main walk in
+      har-browse so no other check resets their idle timer. On the tool's host, from the
+      project directory, run `uv run wstg capture {fqdn} --role timeout`: log in, open one
+      page only a logged-in user sees, and press Enter without logging out. Optionally, for
+      the absolute timeout, do the same with `--role timeout-active`. Then collect
+      session-timeout right away. They hold cookies; keep them only here.
+
   - id: logout-replay
     title: Logout invalidation check
     target_type: fqdn
     kind: auto
     level: light
     after_capture: logout
-    inputs: [har-browse]
+    inputs: [har-logout]
     description: >-
-      Before collecting (by hand, stored in the manual evidence har-browse): run
+      Before collecting (by hand, stored in the manual evidence har-logout): run
       `uv run wstg capture {fqdn} --role logout` on the tool's host, log in, open one page
       only a logged-in user sees, log out, and press Enter. What this automatic collection
       does: it finds the logout in that capture, the session cookie in use just before it,
@@ -92,11 +117,11 @@ evidence:
       against up to three authenticated pages seen before the logout, each compared with
       the same page fetched without a cookie, and reports "still accepted" [FAIL] or
       "rejected" [GOOD]. Cookie values are masked.
-    argv: [wstg-sess, --logout, --base, "{base_url}/", --har, "{ev:har-browse}", "{pause_args}"]
+    argv: [wstg-sess, --logout, --base, "{base_url}/", --har, "{ev:har-logout}", "{pause_args}"]
     pause_args: [--pause, "{pause}"]
     est: 20
     timeout: 300
-    load_note: At most six GET requests (each page with the old cookie and without one). Needs the logout capture in har-browse.
+    load_note: At most six GET requests (each page with the old cookie and without one). Needs the logout capture in har-logout.
 
   - id: session-timeout
     title: Session idle and absolute timeout measurement
@@ -105,9 +130,9 @@ evidence:
     level: full
     heavy: true
     after_capture: timeout
-    inputs: [har-browse]
+    inputs: [har-timeout]
     description: >-
-      Before collecting (by hand, stored in the manual evidence har-browse): run
+      Before collecting (by hand, stored in the manual evidence har-timeout): run
       `uv run wstg capture {fqdn} --role timeout` on the tool's host, log in, open one page
       only a logged-in user sees, and press Enter without logging out. Optionally do the
       same with `--role timeout-active` for the absolute timeout. Then collect this right
@@ -119,14 +144,14 @@ evidence:
       authenticated page from the capture, compared with the same page without a cookie.
       It also flags a server that still accepts the cookie after the cookie's own expiry.
       Cookie values are masked.
-    argv: [wstg-sess, --timeout, --base, "{base_url}/", --har, "{ev:har-browse}", "{pause_args}"]
+    argv: [wstg-sess, --timeout, --base, "{base_url}/", --har, "{ev:har-timeout}", "{pause_args}"]
     pause_args: [--pause, "{pause}"]
     est: 14400
     timeout: 18000
     load_note: >-
       Runs up to about 4 hours, mostly waiting: about 16 GET requests for the idle
       measurement and two every 5 minutes for the absolute one. Needs the `timeout` capture
-      (and optionally `timeout-active`) in har-browse, collected right after capturing.
+      (and optionally `timeout-active`) in har-timeout, collected right after capturing.
       Other automatic checks never use these two sessions.
 
   - id: session-puzzling-tests

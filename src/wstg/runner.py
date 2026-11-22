@@ -130,28 +130,28 @@ def plan(cat: catmod.Catalog, target: tmod.Target, mode: str) -> list[catmod.Evi
 
 
 def capture_status(cfg: Config, target: tmod.Target, ev: catmod.Evidence) -> tuple[bool, str]:
-    """(ready, note) for evidence with `after_capture`: whether the newest har-browse
-    version holds the capture it needs (a HAR of the right role)."""
+    """(ready, note) for evidence with `after_capture`: whether the manual capture evidence
+    it reads (har-browse, har-logout, har-timeout) holds the capture it needs."""
     from . import har as harmod
     from . import session as se
     kind = ev.after_capture
     if not kind:
         return True, ""
-    role = catmod.CAPTURE_KINDS[kind]
+    eid, role = catmod.CAPTURE_KINDS[kind]
     how = f"uv run wstg capture {target.name} --role {role}"
-    items = tmod.evidence_dir(cfg, target.name) / "har-browse" / "latest" / "items"
+    items = tmod.evidence_dir(cfg, target.name) / eid / "latest" / "items"
     roles = [harmod._role(p.name) for p in sorted(items.glob("*.har"))] if items.is_dir() else []
     if kind == "login":
         ok = [r for r in roles if not harmod._ANON_ROLE_RE.match(r) and not se.DEDICATED_ROLE_RE.match(r)]
-        need = "a logged-in capture (log in during the walk, do not log out)"
+        need = "a logged-in capture in har-browse (log in during the walk, do not log out)"
     elif kind == "logout":
-        ok = [r for r in roles if se.LOGOUT_ROLE_RE.match(r)]
-        need = "a logout capture (log in, open one page, log out)"
+        ok = roles
+        need = "a logout capture in har-logout (log in, open one page, log out)"
     else:
-        ok = [r for r in roles if r.lower() == "timeout"]
-        need = "a timeout capture (log in, open one page, do not log out; collect right after)"
+        ok = [r for r in roles if not r.lower().startswith("timeout-active")]
+        need = "a timeout capture in har-timeout (log in, open one page, do not log out; collect right after)"
     if ok:
-        return True, f"ready: har-browse has the {', '.join(sorted(set(ok)))} capture"
+        return True, f"ready: {eid} has the {', '.join(sorted(set(ok)))} capture"
     return False, f"waiting for {need}: run `{how}`"
 
 

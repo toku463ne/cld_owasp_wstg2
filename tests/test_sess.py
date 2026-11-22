@@ -107,27 +107,27 @@ def test_sess05_csrf_posture_runs_from_the_har_and_goes_into_the_prompt(admin_cl
 def test_evidence_page_names_the_input_to_fix(admin_client, store, site):
     url = "/t/www.example.com/evidence/logout-replay"
     html = admin_client.get(url).get_data(as_text=True)
-    assert "Depends on" in html and 'href="/t/www.example.com/evidence/har-browse"' in html
+    assert "Depends on" in html and 'href="/t/www.example.com/evidence/har-logout"' in html
     assert "not collected" in html
-    store.add_file(site, "har-browse", b'{"log": {"entries": []}}', "user-20260101-1200.har", "", "admin")
+    store.add_file(site, "har-logout", b'{"log": {"entries": []}}', "logout-20260101-1200.har", "", "admin")
     tmp = store.begin(site, "logout-replay")
     (tmp / "stdout.txt").write_text("# logout invalidation check\n")
-    (tmp / "stderr.txt").write_text("input missing: evidence har-browse has no HAR with a logout\n")
+    (tmp / "stderr.txt").write_text("input missing: evidence har-logout has no HAR with a logout\n")
     store.commit(site, "logout-replay", tmp, source="auto", actor="worker", status="failed",
                  summary="failed: exit code 3",
                  items=[evmod.Item("text", "stdout.txt", "", 0, caption="stdout"),
                         evmod.Item("text", "stderr.txt", "", 0, caption="stderr")])
     html = admin_client.get(url).get_data(as_text=True)
-    assert "user-20260101-1200.har" in html                # what har-browse holds now
+    assert "logout-20260101-1200.har" in html              # what har-logout holds now
     assert "This collection reads:" in html
-    assert "input missing: evidence har-browse" in html
+    assert "input missing: evidence har-logout" in html
 
 
 def test_evidence_page_shows_copyable_uv_run_commands(admin_client, store, site):
-    store.add_file(site, "har-browse", b'{"log": {"entries": []}}', "timeout-20260101-1200.har", "", "admin")
+    store.add_file(site, "har-timeout", b'{"log": {"entries": []}}', "timeout-20260101-1200.har", "", "admin")
     html = admin_client.get("/t/www.example.com/evidence/session-timeout").get_data(as_text=True)
     assert "uv run wstg-sess --timeout --base https://www.example.com/ --har " in html
-    assert "/har-browse/v" in html                              # the input folder is filled in
+    assert "/har-timeout/v" in html                              # the input folder is filled in
     assert "{ev:" not in html.split("Run it by hand")[1].split("</pre>")[0]
     assert "uv run wstg collect www.example.com --evidence session-timeout --force --run" in html
     # evidence that writes files under {out} gets only the collect command
@@ -145,8 +145,10 @@ def test_auto_tab_lists_capture_dependent_evidence_apart(admin_client, store, si
         assert f"<code class=\"muted\">{eid}</code>" not in bulk
     assert "uv run wstg capture www.example.com --role timeout" in after
     assert "waiting" in after
-    store.add_file(site, "har-browse", b'{"log": {"entries": []}}', "logout-20260101-1200.har", "", "admin")
+    assert html.count('id="after-capture"') == 1           # the table is in the page body only
+    store.add_file(site, "har-logout", b'{"log": {"entries": []}}', "logout-20260101-1200.har", "", "admin")
     after = admin_client.get("/t/www.example.com/auto").get_data(as_text=True).split('id="after-capture"')[1]
-    assert "ready: har-browse has the logout capture" in after
+    assert "ready: har-logout has the logout capture" in after
+    assert 'href="/t/www.example.com/evidence/har-timeout"' in after
     page = admin_client.get("/t/www.example.com/evidence/session-timeout").get_data(as_text=True)
     assert "Needs a manual capture first" in page

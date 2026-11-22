@@ -5,7 +5,9 @@ Playwright. The tester logs in and walks the application by hand (no login
 automation); the browser records every request to a HAR, and the context's
 storage state (cookies, localStorage, sessionStorage) is saved too. On finish
 both are stored as a new version of the target's `har-browse` evidence, which
-the existing `wstg-har` analysis and the WSTG steps already read.
+the existing `wstg-har` analysis and the WSTG steps already read. The dedicated
+captures go to their own evidence: `--role logout` to `har-logout` (WSTG-SESS-06)
+and `--role timeout` / `timeout-active` to `har-timeout` (WSTG-SESS-07).
 
 This replaces the manual "enable Preserve log, Save all as HAR, upload" dance;
 the login and navigation stay manual. The browser window opens on the host that
@@ -29,6 +31,16 @@ from . import targets as tmod
 from .config import Config
 
 EVIDENCE_ID = "har-browse"
+
+
+def evidence_for_role(role: str) -> str:
+    """The manual evidence a capture of this role is stored in."""
+    r = (role or "").lower()
+    if r == "logout" or r.startswith("logout-"):
+        return "har-logout"
+    if r == "timeout" or r.startswith("timeout-"):
+        return "har-timeout"
+    return EVIDENCE_ID
 GOTO_TIMEOUT_MS = 60_000
 
 
@@ -140,16 +152,18 @@ def record_session(cfg: Config, db: dbmod.Database, store: evmod.Store, target: 
         caption = f"HAR capture ({role or 'session'}) from {url}"
         if out_scope:
             caption += f"; {len(out_scope)} out-of-scope host(s) contacted"
-        har_ver = store.add_file(target, EVIDENCE_ID, har_path.read_bytes(), har_path.name,
+        eid = evidence_for_role(role)
+        har_ver = store.add_file(target, eid, har_path.read_bytes(), har_path.name,
                                  caption, actor)
         state_ver = None
         if state_path.is_file() and state_path.stat().st_size:
-            state_ver = store.add_file(target, EVIDENCE_ID, state_path.read_bytes(), state_path.name,
+            state_ver = store.add_file(target, eid, state_path.read_bytes(), state_path.name,
                                        f"browser storage state ({role or 'session'})", actor)
     finally:
         import shutil
         shutil.rmtree(tmp, ignore_errors=True)
     return {
+        "evidence": eid,
         "har_file": har_path.name,
         "har_version": har_ver.version,
         "state_file": state_path.name if state_ver else None,

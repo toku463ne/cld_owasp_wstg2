@@ -16,7 +16,7 @@ finding_kinds: [weak-logout]
 steps:
   - summary: Replay the session cookie after logout (from the logout capture)
     auto_run: true
-    evidence: [logout-replay, har-browse]
+    evidence: [logout-replay, har-logout]
     command: cat {ev:logout-replay}/stdout.txt
     operation: >-
       Automated: record the logout capture with `uv run wstg capture {fqdn} --role logout`
@@ -30,7 +30,7 @@ steps:
     evidence: [har-browse]
     command: wstg-har cache {ev:har-browse}/items/*.har
   - summary: Judge logout functionality
-    evidence: [logout-replay, har-browse]
+    evidence: [logout-replay, har-logout]
     ai_task: >-
       From steps 1 and 2 decide whether logout invalidates the session server-side.
       Verdict: fail when step 1 shows "still accepted" for the pre-logout cookie, or no

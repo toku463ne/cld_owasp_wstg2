@@ -3,7 +3,7 @@
 `wstg-sess --timeout --har DIR --base URL [--idle-steps M,M,...] [--max-minutes N]
 [--keepalive M] [--pause S]`
 
-Idle timeout: reads the `timeout` capture in har-browse (`wstg capture <fqdn> --role
+Idle timeout: reads the `timeout` capture in har-timeout (`wstg capture <fqdn> --role
 timeout`: log in, open one page only a logged-in user sees, press Enter without logging
 out). Every authenticated request resets the server's idle timer, so the tool checks
 the session once right away (idle = time since the capture's last request) and then
@@ -145,9 +145,9 @@ def run(args) -> int:
     steps = [float(x) for x in str(args.idle_steps).split(",") if x.strip()]
     print(f"# session timeout measurement of {host} (cookie values masked; one GET per check plus one "
           "without a cookie; only this host contacted)")
-    idle_h = _hars(folder, r"^timeout$")
+    idle_h = _hars(folder, r"^(?!timeout-active)")
     if not idle_h:
-        print("input missing: evidence har-browse has no 'timeout' capture; add one with "
+        print("input missing: evidence har-timeout has no 'timeout' capture; add one with "
               f"`wstg capture {host} --role timeout` (log in, open one page only a logged-in user sees, "
               "press Enter without logging out), then collect this right away", file=sys.stderr)
         return 3
