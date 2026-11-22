@@ -10,8 +10,8 @@ fail: >-
   Reflected input runs as script in any context (HTML, attribute, JavaScript, or URL),
   including through case, encoding, or event-handler filter bypasses.
 notes:
-  - Vary the payload by output context; a partial WAF block is mitigation, not a fix.
-  - Confirm in the browser that JavaScript actually executes before reporting.
+  - This scenario checks the basic defence (output encoding plus browser-side headers) with a harmless marker; it does not try filter bypasses.
+  - A partial WAF block is mitigation, not a fix.
 finding_kinds: [reflected-xss]
 steps:
   - summary: List parameters and form fields that may be reflected
@@ -20,24 +20,34 @@ steps:
     command: >-
       grep -oE '[?&][A-Za-z0-9_.-]+=' {ev:katana-crawl}/katana.txt 2>/dev/null | tr -d '?&=' | sort | uniq -c | sort -rn | head -40;
       grep -rhoiE '<(input|textarea|select)[^>]*name=["'"'"']?[A-Za-z0-9_.-]+' {ev:katana-crawl}/responses 2>/dev/null | sort -u | head -40
-  - summary: Inject XSS payloads per context and check reflection (manual)
+  - summary: Check whether reflected parameters are encoded (collected automatically)
+    auto_run: true
+    evidence: [reflection-check, katana-crawl, har-browse]
+    command: cat {ev:reflection-check}/stdout.txt
+    operation: >-
+      Automated: reflection-check sends every GET parameter from the crawl and the main
+      capture once with a harmless marker (a random word followed by < " ' >) and reports,
+      per parameter, whether it is reflected and, in its output context (HTML text, a tag
+      attribute, a script block), whether those characters come back raw
+      (REFLECTED-UNENCODED) or encoded. Collect it after katana-crawl (and har-browse, so
+      pages behind login are covered).
+  - summary: Check the browser-side XSS defences (CSP, nosniff, charset) from the capture
+    auto_run: true
+    evidence: [har-browse]
+    command: wstg-har xss-headers {ev:har-browse}/items/*
+  - summary: Confirm a REFLECTED-UNENCODED parameter in the browser (manual, optional)
     evidence: [xss-reflected-tests]
     operation: >-
-      For each parameter, send a context payload and look for it unencoded in the response,
-      for example `curl -sk -G "{base_url}/search" --data-urlencode 'q=<script>alert(1)</script>'`
-      and, for an attribute or JS context, `"><img src=x onerror=alert(1)>` or
-      `';alert(1);//`. Try case, encoding, and event-handler variants against any filter.
-      Record each in xss-reflected-tests.
-  - summary: Confirm execution in the browser (manual)
-    evidence: [xss-reflected-tests]
-    operation: >-
-      Open the reflecting URL in the inspection browser and confirm the script actually
-      runs (the alert fires); screenshot it into xss-reflected-tests. Reflection that is
-      encoded and only shown as text is not a finding.
-  - summary: Judge reflected XSS
-    evidence: [xss-reflected-tests]
+      Optional, only for a parameter step 2 marks REFLECTED-UNENCODED and only if the
+      engagement asks for a demonstration: open that URL in the inspection browser and
+      record what is shown in xss-reflected-tests. Otherwise leave this empty.
+  - summary: Judge reflected XSS (basic defence)
+    evidence: [reflection-check, har-browse, xss-reflected-tests]
     ai_task: >-
-      From steps 2 and 3 decide whether reflected input executes. Verdict: fail when a
-      payload runs as script in any context (confirmed in the browser); pass when every
-      reflection is encoded for its context; "-" when xss-reflected-tests is missing. Note
-      the parameter and context for each.
+      From steps 2 and 3 decide whether the basic defence against reflected XSS holds.
+      Verdict: fail when any parameter is REFLECTED-UNENCODED on an HTML page (name the
+      parameter and its context; note when step 3 shows no CSP that blocks inline script,
+      which makes it worse); pass when every reflected parameter is encoded for its
+      context; "-" when reflection-check is missing or failed, or no GET parameter was
+      found. State that it was a marker-based check without filter-bypass attempts, and
+      mention a missing or weak CSP from step 3 as a hardening note.

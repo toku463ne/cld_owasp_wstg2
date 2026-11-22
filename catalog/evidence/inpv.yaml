@@ -4,8 +4,9 @@
 # payload depend on the context, and some payloads are destructive or heavy. The tool
 # does not inject blindly: the candidate inputs are surfaced from the crawl, and the
 # payloads are sent by the tester with the concrete commands shown, against a test
-# target in scope, using test data. Only one harmless, deterministic probe (the Host
-# header) is automated.
+# target in scope, using test data. Only harmless, deterministic probes are automated:
+# the Host header marker, and a marker word with < " ' > in each GET parameter to see
+# whether reflected input is encoded (reflection-check).
 evidence:
 
   - id: host-header-probe
@@ -25,15 +26,36 @@ evidence:
     files: [body.html]
     timeout: 60
 
+  - id: reflection-check
+    title: Output-encoding check of reflected parameters
+    target_type: fqdn
+    kind: auto
+    level: full
+    inputs: [katana-crawl, har-browse]
+    description: >-
+      wstg-reflect sends each GET query parameter found in the crawl and the main capture
+      once with a harmless marker (a random word followed by < " ' >; no script, no attack
+      payload), keeping the other parameters. Where the marker comes back it notes the
+      output context (HTML text, a tag attribute, a script block, a comment) and whether
+      the characters that matter there came back raw: REFLECTED-UNENCODED on an HTML page
+      means the basic output encoding is missing and reflected XSS is likely; "encoded"
+      means it holds. Uses the logged-in session of har-browse when there is one; works
+      without it (crawl only).
+    argv: [wstg-reflect, --base, "{base_url}/", --katana, "{ev:katana-crawl}", --har, "{ev:har-browse}",
+           "{pause_args}"]
+    pause_args: [--pause, "{pause}"]
+    est: 120
+    timeout: 900
+    load_note: One GET per parameter, at most 40; WSTG_PAUSE slows it down.
+
   - id: xss-reflected-tests
     title: Reflected XSS tests
     target_type: fqdn
     kind: manual
     description: >-
-      Per parameter tested, the payload sent for the reflection context (HTML body,
-      attribute, JavaScript, URL) and whether it was reflected unencoded and executed in
-      the browser (an alert actually firing), with a screenshot. Note filter-bypass
-      variants tried (case, encoding, event handlers).
+      Optional: for a parameter that reflection-check marks REFLECTED-UNENCODED, a
+      screenshot or note from confirming it by hand in the browser. Leave it empty when
+      the basic check is enough for the engagement.
 
   - id: xss-stored-tests
     title: Stored XSS tests

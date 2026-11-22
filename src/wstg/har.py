@@ -13,8 +13,8 @@ holds here, and auto-run steps that call this tool are still excluded from the p
 (their command names a `.har` file).
 
 Run as `wstg-har <view> [--host HOST] FILE...` where view is cookies | urls | cleartext |
-forms | xssi | entry-points | expose | cache | frame | storage | csrf | flows
-(`--host` is used by entry-points, expose, csrf, and flows).
+forms | xssi | entry-points | expose | cache | frame | storage | csrf | flows | xss-headers
+(`--host` is used by entry-points, expose, csrf, flows, and xss-headers).
 Exit code is always 0 (a WSTG step reads the text output); unreadable files are noted.
 """
 import json
@@ -1101,10 +1101,77 @@ def view_flows(files: list[Path], host: str = "") -> None:
           "needs a completed flow.")
 
 
+# ---- XSS defence headers (WSTG-INPV-01) ---------------------------------------
+
+def _csp_weak(csp: str) -> list[str]:
+    """Why a Content-Security-Policy does not stop injected inline script."""
+    d = {}
+    for part in csp.split(";"):
+        bits = part.strip().split()
+        if bits:
+            d[bits[0].lower()] = [b.lower() for b in bits[1:]]
+    src = d.get("script-src", d.get("default-src"))
+    if src is None:
+        return ["no script-src or default-src"]
+    weak = []
+    nonce_or_hash = any(b.startswith(("'nonce-", "'sha256-", "'sha384-", "'sha512-")) for b in src)
+    if "'unsafe-inline'" in src and not nonce_or_hash:
+        weak.append("'unsafe-inline'")
+    if "'unsafe-eval'" in src:
+        weak.append("'unsafe-eval'")
+    if any(b in ("*", "http:", "https:", "data:") for b in src):
+        weak.append("a wildcard or scheme source (" + ", ".join(b for b in src if b in ("*", "http:", "https:", "data:")) + ")")
+    return weak
+
+
+def view_xss_headers(files: list[Path], host: str = "") -> None:
+    """Browser-side XSS defences on the HTML pages of the capture (WSTG-INPV-01): whether a
+    Content-Security-Policy is sent and stops injected inline script, X-Content-Type-Options
+    nosniff, and a charset in Content-Type. Read from the capture only."""
+    loaded = list(_iter([p for p in files if _storage_state(p) is None]))
+    entries = [e for _, ents in loaded for e in ents]
+    base = _base_host(entries, host)
+    pages = no_csp = weak_csp = no_nosniff = no_charset = 0
+    policies: dict[str, list[str]] = {}
+    for e in entries:
+        req, resp = e.get("request") or {}, e.get("response") or {}
+        _, h, path, _ = _url_parts(str(req.get("url", "")))
+        if base and not _same_site(h, base):
+            continue
+        ct = _header(resp.get("headers"), "content-type").lower()
+        if "html" not in ct or resp.get("status") != 200:
+            continue
+        pages += 1
+        csp = _header(resp.get("headers"), "content-security-policy")
+        if not csp:
+            no_csp += 1
+        else:
+            weak = _csp_weak(csp)
+            if weak:
+                weak_csp += 1
+            policies.setdefault(csp[:200], weak)
+        if "nosniff" not in _header(resp.get("headers"), "x-content-type-options").lower():
+            no_nosniff += 1
+        if "charset" not in ct:
+            no_charset += 1
+    print(f"base host: {base or '(unknown)'}; {pages} HTML page(s) in the capture")
+    if not pages:
+        print("(no HTML page in the capture)")
+        return
+    print(f"  Content-Security-Policy: missing on {no_csp}, weak on {weak_csp}, "
+          f"blocks inline script on {pages - no_csp - weak_csp}")
+    for pol, weak in policies.items():
+        print(f"    policy: {pol}" + (f"   <= WEAK: {', '.join(weak)}" if weak else "   (blocks inline script)"))
+    print(f"  X-Content-Type-Options nosniff: missing on {no_nosniff}")
+    print(f"  charset in Content-Type: missing on {no_charset}")
+    print("note: these headers limit the damage of an XSS; output encoding (step 2) is the fix itself.")
+
+
 _VIEWS = {"cookies": view_cookies, "urls": view_urls, "cleartext": view_cleartext,
           "forms": view_forms, "xssi": view_xssi, "entry-points": view_entry_points,
           "expose": view_expose, "cache": view_cache, "frame": view_frame,
-          "storage": view_storage, "csrf": view_csrf, "flows": view_flows}
+          "storage": view_storage, "csrf": view_csrf, "flows": view_flows,
+          "xss-headers": view_xss_headers}
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -1119,7 +1186,7 @@ def main(argv: list[str] | None = None) -> int:
             return 2
         host, rest = rest[1], rest[2:]
     files = [Path(a) for a in rest]
-    if view in ("entry-points", "expose", "csrf", "flows"):
+    if view in ("entry-points", "expose", "csrf", "flows", "xss-headers"):
         _VIEWS[view](files, host)
     else:
         _VIEWS[view](files)
