@@ -11,7 +11,9 @@ result can be judged without the raw identifiers leaving the evidence.
 """
 from __future__ import annotations
 
+import json
 import re
+from urllib.parse import parse_qsl, urlsplit
 
 SESSION_NAME_RE = re.compile(
     r"(phpsessid|jsessionid|asp\.?net_sessionid|cfid|cftoken|_session\b|^session$|session[_-]?id|"
@@ -80,7 +82,12 @@ def looks_logged_out(status, location: str, body: str) -> bool:
 
 # ---- reading a login from a captured HAR ----------------------------------
 
-PASSWORD_FIELD_RE = re.compile(r"(pass|passwd|password|passwort|pwd|mot_de_passe)", re.I)
+# Password field names, including common non-English ones (the login form may be localised):
+# senha (pt), contrasena/contrasenha (es), mot_de_passe/motdepasse (fr), passwort (de),
+# wachtwoord (nl), losenord (sv), salasana (fi), parola (it/tr), lozinka (hr), haslo (pl).
+PASSWORD_FIELD_RE = re.compile(
+    r"(pass|passwd|password|passwort|pwd|mot[_-]?de[_-]?passe|senha|contrase|wachtwoord|"
+    r"l(o|ö)senord|salasana|parol|lozinka|has(l|ł)o|密码|パスワード)", re.I)
 
 
 def _req_cookies(entry: dict) -> dict[str, str]:
@@ -103,7 +110,36 @@ def cookie_header(entry: dict) -> str:
     return "; ".join(f"{n}={v}" for n, v in _req_cookies(entry).items())
 
 
-def find_login(entries: list, field_names) -> int | None:
+def _json_keys(obj) -> list:
+    out = []
+    if isinstance(obj, dict):
+        for k, v in obj.items():
+            out.append(k)
+            out += _json_keys(v)
+    elif isinstance(obj, list):
+        for v in obj:
+            out += _json_keys(v)
+    return out
+
+
+def login_fields(req: dict) -> list:
+    """A request's body field names, read from form params, a JSON body (keys, nested),
+    or a urlencoded body text - so a login is found whatever the form submits as."""
+    post = req.get("postData") or {}
+    names = [p.get("name", "") for p in post.get("params") or []]
+    text = (post.get("text") or "").strip()
+    mime = (post.get("mimeType") or "").lower()
+    if "json" in mime or text.startswith(("{", "[")):
+        try:
+            names += _json_keys(json.loads(text))
+        except ValueError:
+            pass
+    if not post.get("params") and ("urlencoded" in mime or ("=" in text and "{" not in text)):
+        names += [k for k, _ in parse_qsl(text)]
+    return [n for n in names if n]
+
+
+def find_login(entries: list, field_names=login_fields) -> int | None:
     """Index of the first POST whose body carries a password field (the login request)."""
     for i, e in enumerate(entries):
         req = e.get("request") or {}
@@ -112,34 +148,65 @@ def find_login(entries: list, field_names) -> int | None:
     return None
 
 
-def analyze_har(entries: list, field_names, base_host: str) -> dict:
-    """From the entries of one HAR that spans a login, return the session identifier
-    before and after login, an authenticated URL on `base_host` to replay against, and the
-    request URLs. `field_names(req)` returns a request's body field names."""
-    i = find_login(entries, field_names)
-    if i is None:
-        return {"login_found": False, "urls": [(e.get("request") or {}).get("url", "") for e in entries]}
-    login = entries[i]
-    sess = lambda d: {n: v for n, v in d.items() if is_session_cookie({"name": n})}  # noqa: E731
-    before = sess(_req_cookies(login))
-    after = sess(_set_cookie_values(login))
-    for e in entries[i + 1:]:                      # fill from later requests when the login response set nothing
-        for n, v in sess(_req_cookies(e)).items():
-            after.setdefault(n, v)
-    authed_url = ""
-    for e in entries[i + 1:]:
+def _sess(d: dict) -> dict:
+    return {n: v for n, v in d.items() if is_session_cookie({"name": n})}
+
+
+def _authed_url(entries: list, base_host: str) -> str:
+    for e in entries:
         req = e.get("request") or {}
         u = req.get("url", "")
         if str(req.get("method", "")).upper() == "GET" and _host(u) == base_host \
                 and (e.get("response") or {}).get("status") == 200:
-            authed_url = u
-            break
-    post_entry = next((e for e in entries[i + 1:] if _host((e.get("request") or {}).get("url", "")) == base_host), None)
-    return {"login_found": True, "before": before, "after": after, "authed_url": authed_url,
-            "pre_cookie": cookie_header(login), "post_cookie": cookie_header(post_entry) if post_entry else "",
-            "urls": [(e.get("request") or {}).get("url", "") for e in entries]}
+            return u
+    return ""
+
+
+def _first_last_session_values(entries: list) -> tuple[dict, dict]:
+    """The first and last value seen for each session cookie across the capture (in request
+    Cookie headers and response Set-Cookie), in order - a login-language-independent view."""
+    first, last = {}, {}
+    for e in entries:
+        for n, v in _sess(_req_cookies(e)).items():
+            first.setdefault(n, v)
+            last[n] = v
+        for n, v in _sess(_set_cookie_values(e)).items():
+            first.setdefault(n, v)
+            last[n] = v
+    return first, last
+
+
+def analyze_har(entries: list, field_names=login_fields, base_host: str = "") -> dict:
+    """From the entries of one HAR that spans a login, return the session identifier before
+    and after login and an authenticated URL on `base_host` to replay against. When the login
+    request can be located (a password field in its body) the identifier is read across that
+    request; otherwise it falls back to the first/last value of each session cookie in the
+    capture (`how` says which). `field_names(req)` returns a request's body field names."""
+    urls = [(e.get("request") or {}).get("url", "") for e in entries]
+    i = find_login(entries, field_names)
+    if i is not None:
+        login = entries[i]
+        before = _sess(_req_cookies(login))
+        after = _sess(_set_cookie_values(login))
+        for e in entries[i + 1:]:                  # fill from later requests when the login response set nothing
+            for n, v in _sess(_req_cookies(e)).items():
+                after.setdefault(n, v)
+        for name in before:                        # a reissued name gets its post value from later requests
+            if name not in after:
+                for e in entries[i + 1:]:
+                    rc = _req_cookies(e)
+                    if name in rc:
+                        after[name] = rc[name]
+                        break
+        authed_url = _authed_url(entries[i + 1:], base_host)
+        how = "login request"
+    else:
+        before, after = _first_last_session_values(entries)
+        authed_url = _authed_url(entries, base_host)
+        how = "cookie timeline (login request not auto-detected)"
+    return {"login_found": i is not None, "has_session": bool(before or after), "how": how,
+            "before": before, "after": after, "authed_url": authed_url, "urls": urls}
 
 
 def _host(url: str) -> str:
-    from urllib.parse import urlsplit
     return (urlsplit(url).hostname or "").lower()

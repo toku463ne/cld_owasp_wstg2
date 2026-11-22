@@ -25,20 +25,29 @@ from . import har as harmod
 from . import session as se
 
 
-def _login_har(folder: Path, base_host: str) -> tuple[str, dict] | None:
-    """The first HAR file in the folder that spans a login, with its analysis."""
+def _best_har(folder: Path, base_host: str) -> tuple[str, dict] | None:
+    """The HAR in the folder to analyse: the first that spans a login if any, else the first
+    that holds a session cookie (so a non-English login still yields a timeline analysis)."""
+    fallback = None
     for f in ep._files(folder):
         if f.suffix.lower() != ".har":
             continue
         entries = harmod._load(f) or []
-        res = se.analyze_har(entries, harmod._body_field_names, base_host)
+        res = se.analyze_har(entries, se.login_fields, base_host)
         if res.get("login_found"):
             return harmod._role(f.name), res
-    return None
+        if fallback is None and res.get("has_session"):
+            fallback = (harmod._role(f.name), res)
+    return fallback
+
+
+def _cookie_str(values: dict) -> str:
+    return "; ".join(f"{n}={v}" for n, v in values.items())
 
 
 def _replay(base: str, res: dict) -> dict:
-    authed, pre, post = res.get("authed_url", ""), res.get("pre_cookie", ""), res.get("post_cookie", "")
+    authed = res.get("authed_url", "")
+    pre, post = _cookie_str(res.get("before") or {}), _cookie_str(res.get("after") or {})
     base_host = (urlsplit(base).hostname or "").lower()
     if not authed or (urlsplit(authed).hostname or "").lower() != base_host:
         return {"verdict": "not tested", "detail": "no in-scope authenticated URL in the HAR to replay against"}
@@ -57,27 +66,38 @@ def _replay(base: str, res: dict) -> dict:
 
 def run(args) -> int:
     base_host = (urlsplit(args.base).hostname or "").lower()
-    found = _login_har(Path(args.har) if args.har else None, base_host)
+    found = _best_har(Path(args.har) if args.har else None, base_host)
     print(f"# session fixation check of {base_host} from the login HAR (identifier values masked)")
     if not found:
-        print("no HAR with a login (a POST carrying a password field) was found; capture a logged-in session "
-              f"with `wstg capture {base_host} --role user` that includes the login step", file=sys.stderr)
+        print("no session cookie was found in any HAR; capture a logged-in session with "
+              f"`wstg capture {base_host} --role user` that starts logged out and logs in during the walk",
+              file=sys.stderr)
         return 3
     role, res = found
     before, after = res["before"], res["after"]
-    print(f"# login found in the '{role}' HAR")
+    login_found = res["login_found"]
+    if login_found:
+        print(f"# login found in the '{role}' HAR (identifier read across the login request)")
+    else:
+        print(f"# login request was NOT auto-detected in the '{role}' HAR; comparing the first and last "
+              "value of each session cookie instead (verify the login happened during the capture)")
     rows = se.reissue_rows(before, after)
     url_hits = se.id_in_urls(res["urls"], set(before.values()) | set(after.values()))
     if args.pause:
         time.sleep(args.pause)
     replay = _replay(args.base, res)
 
-    fail = False
+    fail = False                       # a definite failure (reported as such regardless of login detection)
     if not rows:
-        print("- no session cookie seen before or after login (check the login flow / cookie names)")
+        print("- no session cookie seen (check the login flow / cookie names)")
     for r in rows:
-        tag = "[GOOD]" if r["reissued"] else "[FAIL]"
-        fail = fail or not r["reissued"]
+        if r["reissued"]:
+            tag = "[GOOD]"
+        elif login_found:
+            tag = "[FAIL]"
+            fail = True
+        else:
+            tag = "[INCONCLUSIVE: could not confirm a reissue without the login request]"
         print(f"- {r['name']}: {r['state']} {tag} (before {se.mask(r['before'] or '')}, after {se.mask(r['after'] or '')})")
     print(f"- pre-login identifier still accepted after login: {replay['verdict']} "
           f"{'[FAIL]' if replay['verdict'] == 'still accepted' else '[GOOD]' if replay['verdict'] == 'rejected' else ''}"
@@ -86,7 +106,15 @@ def run(args) -> int:
     print(f"- session identifier in a URL or parameter: {'FOUND ' + str(len(url_hits)) + ' [FAIL]' if url_hits else 'none seen'}")
     for h in url_hits[:10]:
         print(f"    {h}")
-    print(f"\n# verdict: {'FAIL (session fixation)' if fail else 'no fixation detected from this capture'}")
+    if url_hits:
+        fail = True
+    if fail:
+        verdict = "FAIL (session fixation)"
+    elif not login_found and not any(r["reissued"] for r in rows):
+        verdict = "INCONCLUSIVE (login not auto-detected; confirm reissue by hand or check the login field name)"
+    else:
+        verdict = "no fixation detected from this capture"
+    print(f"\n# verdict: {verdict}")
     return 0
 
 

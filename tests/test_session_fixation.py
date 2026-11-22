@@ -51,16 +51,38 @@ def _entries(before="old", after="new", base="https://www.example.com"):
 
 
 def test_analyze_har_finds_before_after_and_authed_url():
-    res = se.analyze_har(_entries(), harmod._body_field_names, "www.example.com")
-    assert res["login_found"]
+    res = se.analyze_har(_entries(), base_host="www.example.com")
+    assert res["login_found"] and res["has_session"]
     assert res["before"] == {"PHPSESSID": "old"} and res["after"] == {"PHPSESSID": "new"}
     assert res["authed_url"].endswith("/dashboard")
-    assert "PHPSESSID=old" in res["pre_cookie"]
 
 
 def test_analyze_har_without_login():
     entries = [{"request": {"method": "GET", "url": "https://h/", "cookies": []}, "response": {"status": 200}}]
-    assert not se.analyze_har(entries, harmod._body_field_names, "h").get("login_found")
+    res = se.analyze_har(entries, base_host="h")
+    assert not res["login_found"] and not res["has_session"]
+
+
+def test_login_fields_reads_localized_and_json_and_urlencoded_bodies():
+    # Portuguese form field "senha" is detected as a password
+    req = {"postData": {"mimeType": "application/x-www-form-urlencoded", "text": "usuario=a&senha=b"}}
+    assert se.find_login([{"request": dict(req, method="POST")}]) == 0
+    # nested JSON password
+    jreq = {"method": "POST", "postData": {"mimeType": "application/json",
+            "text": '{"creds":{"login":"a","password":"b"}}'}}
+    assert se.find_login([{"request": jreq}]) == 0
+
+
+def test_analyze_har_timeline_fallback_when_login_not_detected():
+    # login field name is unknown, but the session cookie still changes value across the capture
+    e = _entries(before="anon0000", after="auth9999")
+    for ent in e:                      # hide the password field so the login is not auto-detected
+        pd = (ent["request"].get("postData") or {}).get("params")
+        if pd:
+            ent["request"]["postData"]["params"] = [{"name": "u"}, {"name": "x"}]
+    res = se.analyze_har(e, base_host="www.example.com")
+    assert not res["login_found"] and res["has_session"]
+    assert res["before"] == {"PHPSESSID": "anon0000"} and res["after"] == {"PHPSESSID": "auth9999"}
 
 
 # ---- wstg-sess against a loopback replay target ---------------------------
@@ -123,6 +145,21 @@ def test_wstg_sess_flags_fixation_when_not_reissued(tmp_path, dash, capsys):
     out = capsys.readouterr().out
     assert "NOT REISSUED" in out and "[FAIL]" in out
     assert "FAIL (session fixation)" in out
+
+
+def test_wstg_sess_inconclusive_when_login_not_detected_and_no_reissue(tmp_path, dash, capsys):
+    base = f"http://127.0.0.1:{dash}"
+    e = _entries(before="same0000", after="same0000", base=base)
+    for ent in e:                          # hide the password field
+        if (ent["request"].get("postData") or {}).get("params"):
+            ent["request"]["postData"]["params"] = [{"name": "u"}, {"name": "x"}]
+    d = _write_har(tmp_path, e)
+    Dash.reject_old = False
+    rc = sessionscan.main(["--base", base + "/", "--har", str(d)])
+    out = capsys.readouterr().out
+    assert rc == 0                         # collected, not a failed run
+    assert "not auto-detected" in out and "INCONCLUSIVE" in out
+    assert "FAIL (session fixation)" not in out
 
 
 def test_wstg_sess_no_login_har_is_exit_3(tmp_path, capsys):

@@ -28,7 +28,10 @@ evidence:
       after login and whether it is reissued, whether a session id is carried in a URL, and -
       best effort - a replay of the pre-login cookie against an authenticated URL to check
       whether the old identifier is still accepted. No extra capture is needed; it reuses the
-      logged-in capture. Identifier values are masked, so the raw values stay in the HAR only.
+      logged-in capture. It finds the login from a password field in the request body
+      (localised names too); when it cannot, it compares the first and last value of each
+      session cookie and marks the result inconclusive. Identifier values are masked, so the
+      raw values stay in the HAR only.
     argv: [wstg-sess, --base, "{base_url}/", --har, "{ev:har-browse}", "{pause_args}"]
     pause_args: [--pause, "{pause}"]
     est: 30
