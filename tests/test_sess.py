@@ -102,3 +102,22 @@ def test_sess05_csrf_posture_runs_from_the_har_and_goes_into_the_prompt(admin_cl
     assert "CSRF-LIKELY" in prompt
     assert secret not in prompt
     assert "csrf-tests" not in p
+
+
+def test_evidence_page_names_the_input_to_fix(admin_client, store, site):
+    url = "/t/www.example.com/evidence/logout-replay"
+    html = admin_client.get(url).get_data(as_text=True)
+    assert "Depends on" in html and 'href="/t/www.example.com/evidence/har-browse"' in html
+    assert "not collected" in html
+    store.add_file(site, "har-browse", b'{"log": {"entries": []}}', "user-20260101-1200.har", "", "admin")
+    tmp = store.begin(site, "logout-replay")
+    (tmp / "stdout.txt").write_text("# logout invalidation check\n")
+    (tmp / "stderr.txt").write_text("input missing: evidence har-browse has no HAR with a logout\n")
+    store.commit(site, "logout-replay", tmp, source="auto", actor="worker", status="failed",
+                 summary="failed: exit code 3",
+                 items=[evmod.Item("text", "stdout.txt", "", 0, caption="stdout"),
+                        evmod.Item("text", "stderr.txt", "", 0, caption="stderr")])
+    html = admin_client.get(url).get_data(as_text=True)
+    assert "user-20260101-1200.har" in html                # what har-browse holds now
+    assert "This collection reads:" in html
+    assert "input missing: evidence har-browse" in html

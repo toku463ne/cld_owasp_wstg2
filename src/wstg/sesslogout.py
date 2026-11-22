@@ -120,8 +120,8 @@ def run(args) -> int:
     print(f"# logout invalidation check of {host} from the logout capture (cookie values masked)")
     found = _find(folder)
     if not found:
-        print("no HAR with a logout after a logged-in session was found; record one with "
-              f"`wstg capture {host} --role logout` (log in, open one page, log out, press Enter)",
+        print("input missing: evidence har-browse has no HAR with a logout after a logged-in session; add one with "
+              f"`wstg capture {host} --role logout` (log in, open one page, log out, press Enter), then collect this again",
               file=sys.stderr)
         return 3
     role, entries, i = found

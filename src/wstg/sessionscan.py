@@ -74,8 +74,8 @@ def run(args) -> int:
     found = _best_har(Path(args.har) if args.har else None, base_host)
     print(f"# session fixation check of {base_host} from the login HAR (identifier values masked)")
     if not found:
-        print("no session cookie was found in any HAR; capture a logged-in session with "
-              f"`wstg capture {base_host} --role user` that starts logged out and logs in during the walk",
+        print("input missing: no session cookie in any HAR of evidence har-browse; add a capture to har-browse with "
+              f"`wstg capture {base_host} --role user` that starts logged out and logs in during the walk, then collect this again",
               file=sys.stderr)
         return 3
     role, res = found

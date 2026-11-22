@@ -34,6 +34,26 @@ def _placeholders(store: evmod.Store, t: tmod.Target) -> dict[str, str]:
         return values
 
 
+def input_rows(store: evmod.Store, cat: catmod.Catalog, t: tmod.Target, ev: catmod.Evidence) -> list[dict]:
+    """The evidence an automatic collection reads (`inputs`), each with its owner target,
+    newest complete version, and whether its newest collection failed - so the page can
+    say which one to collect (or capture) again, with a link."""
+    rows = []
+    for iid in ev.inputs:
+        iev = cat.evidence.get(iid)
+        if not iev:
+            continue
+        owner = tmod.evidence_owner(t, iev.target_type)
+        ot = tmod.get(store.db, owner) if owner else None
+        latest = store.load(owner, iid) if owner else None
+        hist = store.history(ot, iid) if ot else []
+        rows.append({"ev": iev, "owner": owner, "latest": latest,
+                     "failed": bool(hist and hist[0]["status"] == "failed"),
+                     "files": [it.name or it.caption or it.file for it in latest.items][:12] if latest else [],
+                     "more": max(0, len(latest.items) - 12) if latest else 0})
+    return rows
+
+
 def register(app: Flask, store: evmod.Store, cat: catmod.Catalog) -> None:
 
     def resolve(name: str, eid: str) -> tuple[tmod.Target, catmod.Evidence]:
@@ -86,6 +106,7 @@ def register(app: Flask, store: evmod.Store, cat: catmod.Catalog) -> None:
                                version=version, texts=texts, history=history,
                                is_latest=bool(version and latest and version.version == latest.version),
                                used_by=cat.tests_using(eid), failed=failed, failed_logs=failed_logs,
+                               inputs=input_rows(store, cat, t, ev) if ev.kind == "auto" else [],
                                latest_exists=latest is not None,
                                job_active=ev.kind == "auto" and rmod.active_job(store.db, t) is not None,
                                attempt=rmod.last_attempt(store.db, t, eid) if ev.kind == "auto" else None)

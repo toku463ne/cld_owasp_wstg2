@@ -199,8 +199,8 @@ def run(args) -> int:
     print(f"# malformed-input error probes against {host} with the captured session "
           "(token values masked; only this host contacted)")
     if not hars:
-        print("no logged-in HAR found; capture one with "
-              f"`wstg capture {host} --role user` (log in during the walk)", file=sys.stderr)
+        print("input missing: no logged-in HAR in evidence har-browse; add one with "
+              f"`wstg capture {host} --role user` (log in during the walk, do not log out), then collect this again", file=sys.stderr)
         return 3
     sent = answered = 0
     bad: list[str] = []

@@ -20,6 +20,25 @@
 {% endif %}
 <p class="muted">Used by:
   {% for tid in used_by %}<a href="{{ url_for('wstg_page', name=target.name, test_id=tid) }}">{{ tid }}</a> {% endfor %}</p>
+{% if inputs %}
+<section class="overview" id="inputs">
+  <h3>Depends on</h3>
+  <p class="muted small">This collection reads the evidence below. If it fails or reports missing input, fix or
+    collect again the evidence named in its output first, then collect this again.</p>
+  <table>
+    <tr><th>Evidence</th><th>Kind</th><th>Newest version</th><th>Files</th></tr>
+    {% for r in inputs %}
+    <tr>
+      <td><a href="{{ url_for('evidence_page', name=r.owner, eid=r.ev.id) }}">{{ r.ev.title }}</a> <code class="muted">{{ r.ev.id }}</code></td>
+      <td>{{ r.ev.kind }}</td>
+      <td class="nowrap">{% if r.latest %}v{{ r.latest.version }} · {{ r.latest.created_at }}{% else %}<b>not collected</b>{% endif %}
+        {% if r.failed %}<br><b>newest collection failed</b>{% endif %}</td>
+      <td class="small">{% for n in r.files %}{{ n }}{% if not loop.last %}<br>{% endif %}{% endfor %}{% if r.more %}<br><span class="muted">and {{ r.more }} more</span>{% endif %}{% if not r.files %}<span class="muted">-</span>{% endif %}</td>
+    </tr>
+    {% endfor %}
+  </table>
+</section>
+{% endif %}
 
 {% if version %}
 <div class="{{ 'okbox' if is_latest else 'warnbox' }}">
@@ -68,6 +87,9 @@
     {% if failed.meta.duration_s is defined %} · {{ failed.meta.duration_s }} s{% endif %}
     {% if failed.meta.message %} · {{ failed.meta.message }}{% endif %}
     · <a href="{{ url_for('evidence_page', name=target.name, eid=ev.id, v=failed.version) }}">all files of v{{ failed.version }}</a></p>
+  {% if inputs %}<p>This collection reads:
+    {% for r in inputs %}<a href="{{ url_for('evidence_page', name=r.owner, eid=r.ev.id) }}">{{ r.ev.id }}</a>{% if not r.latest %} (not collected){% elif r.failed %} (newest collection failed){% endif %}{% if not loop.last %}, {% endif %}{% endfor %}.
+    The output below says what was missing; fix that evidence, then press "Collect again".</p>{% endif %}
   {% for log in failed_logs %}
   <h4>{{ log.name }}{% if log.cut %} <span class="muted small">(last 200 lines; {{ log.cut }} earlier lines in the full file)</span>{% endif %}</h4>
   <pre class="text-item log">{{ log.text }}</pre>

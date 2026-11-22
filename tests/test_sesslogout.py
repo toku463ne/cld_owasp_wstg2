@@ -128,3 +128,4 @@ def test_replay_tools_warn_about_a_capture_that_logs_out(tmp_path, capsys):
     inv = ep.Inventory(base + "/")
     assert len(ep.read_har(inv, d)) == 1
     assert any("logs out" in n for n in inv.notes)
+
