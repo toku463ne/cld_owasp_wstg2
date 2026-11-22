@@ -22,20 +22,21 @@ steps:
       my @miss; for my $a ("Secure","HttpOnly","SameSite"){ push @miss,$a unless /(?:;|\s)\Q$a\E\b/i }
       printf "%s: %s\n", $n, (@miss ? "MISSING ".join(",",@miss) : "Secure,HttpOnly,SameSite present")'
       {ev:session-token-samples}/stdout.txt | sort -u | head -40 || echo "no Set-Cookie header in the samples"
-  - summary: Check the authenticated cookie attributes from the HAR
+  - summary: Judge the authenticated session cookie attributes from the HAR
     auto_run: true
     evidence: [har-browse]
     command: wstg-har cookies {ev:har-browse}/items/*.har
-  - summary: Review the authenticated session cookie attributes (manual)
+  - summary: Add any cookie the HAR did not capture (manual, only if needed)
     evidence: [cookie-attr-tests]
     operation: >-
-      Step 2 already extracts each cookie's attributes from the authenticated HAR (captured
-      with `uv run wstg capture`, see the har-browse evidence); this step is the human judgement over
-      that output. Using it and, if needed, a direct login
-      (`curl -si -c cookies.txt --data '<login body>' {base_url}/<login>`), confirm for each
-      session or authentication cookie: Secure, HttpOnly, SameSite, Domain, and Path, and
-      any __Host-/__Secure- prefix. Record it in cookie-attr-tests, marking which cookies are
-      session/auth versus CSRF or tracking.
+      Step 2 extracts each cookie's attributes from the authenticated HAR and prints a
+      per-cookie verdict for the session/authentication cookies ("session / authentication
+      cookies (attribute verdict)"), so the common case is automated. This step is only for a
+      cookie the HAR did not capture - for example a token/Bearer login, or a cookie set on a
+      flow you did not walk. For those, get the Set-Cookie with a direct login
+      (`curl -si -c cookies.txt --data '<login body>' {base_url}/<login>`) and record Secure,
+      HttpOnly, SameSite, Domain, Path, and any __Host-/__Secure- prefix in cookie-attr-tests;
+      otherwise mark it collected with a comment that step 2 covered every cookie.
   - summary: Judge the cookie attributes
     evidence: [cookie-attr-tests, session-token-samples]
     ai_task: >-

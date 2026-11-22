@@ -60,6 +60,29 @@ def test_cookies_flags_missing_secure_and_samesite(tmp_path, capsys):
     assert "httponly" not in out.split("MISSING", 1)[1].split("\n", 1)[0]  # httponly is present
 
 
+def test_cookies_session_auth_verdict_section(tmp_path, capsys):
+    doc = _har([
+        _entry("GET", "https://example.com/a", set_cookie=[
+            "SID=x; HttpOnly; Path=/",                              # no Secure, no SameSite, site-wide
+            "AUTH=z; Secure; HttpOnly; SameSite=None; Domain=.example.com",  # SameSite=None + Domain
+            "theme=dark; Secure; SameSite=Lax; Path=/app",          # not a session cookie
+        ]),
+    ])
+    f = _write(tmp_path, "a.har", doc)
+    _, out = _run(capsys, "cookies", f)
+    verdict = out.split("attribute verdict", 1)[1]
+    assert "SID: WEAK" in verdict and "no Secure" in verdict and "no SameSite" in verdict
+    assert "AUTH: WEAK" in verdict and "SameSite=None" in verdict and "Domain set" in verdict
+    assert "theme" not in verdict                                   # a non-session cookie is not judged here
+
+
+def test_cookies_verdict_notes_when_no_session_cookie(tmp_path, capsys):
+    doc = _har([_entry("GET", "https://example.com/a", set_cookie=["theme=dark; Secure; SameSite=Lax; Path=/app"])])
+    f = _write(tmp_path, "a.har", doc)
+    _, out = _run(capsys, "cookies", f)
+    assert "no session/authentication cookie seen" in out
+
+
 def test_cookies_flag_present_only_if_on_every_occurrence(tmp_path, capsys):
     # SID set twice; Secure only on one occurrence -> counts as missing.
     doc = _har([

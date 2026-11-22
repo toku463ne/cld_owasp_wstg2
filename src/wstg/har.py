@@ -85,19 +85,78 @@ def _iter(files: list[Path]):
         yield p.name, entries
 
 
+# A cookie name that looks like a session or authentication cookie (so its attributes
+# matter for WSTG-SESS-02); any HttpOnly cookie is treated as one too.
+_SESSION_COOKIE_RE = re.compile(
+    r"(sess|sid\b|phpsessid|jsessionid|asp\.?net|cfid|cftoken|auth|login|token|remember|"
+    r"connect\.sid|laravel_session|wordpress_logged_in|symfony)", re.I)
+
+
+def _cookie_detail(entry: dict):
+    """[(name, present-flag set, samesite value, path value, has Domain)] per Set-Cookie."""
+    out = []
+    for h in (entry.get("response") or {}).get("headers") or []:
+        if str(h.get("name", "")).lower() != "set-cookie":
+            continue
+        parts = [x.strip() for x in str(h.get("value", "")).split(";")]
+        name = parts[0].split("=", 1)[0]
+        flags, samesite, path, has_domain = set(), "", "", False
+        for p in parts[1:]:
+            k, _, v = p.partition("=")
+            kl = k.strip().lower()
+            if kl in _COOKIE_FLAGS:
+                flags.add(kl)
+            if kl == "samesite":
+                samesite = v.strip().lower()
+            elif kl == "path":
+                path = v.strip()
+            elif kl == "domain":
+                has_domain = True
+        out.append((name, flags, samesite, path, has_domain))
+    return out
+
+
+def _is_session_cookie(name: str, flags: set) -> bool:
+    return "httponly" in flags or bool(_SESSION_COOKIE_RE.search(name))
+
+
+def _cookie_weaknesses(always: set, samesites: list, paths: list, has_domain: bool) -> list[str]:
+    bad = []
+    if "secure" not in always:
+        bad.append("no Secure")
+    if "httponly" not in always:
+        bad.append("no HttpOnly")
+    if "samesite" not in always:
+        bad.append("no SameSite")
+    elif any(s == "none" for s in samesites):
+        bad.append("SameSite=None")
+    if has_domain:
+        bad.append("Domain set (sent to subdomains)")
+    if any(p in ("", "/") for p in paths):
+        bad.append("Path=/ (site-wide)")
+    return bad
+
+
 def view_cookies(files: list[Path]) -> None:
     """Set-Cookie attributes per cookie name (values dropped). Missing Secure/HttpOnly/
     SameSite on a cookie are flagged. A cookie whose set of flags differs between files
-    (for example before vs. after login) is noted as a reissue/attribute-change hint."""
+    (for example before vs. after login) is noted as a reissue/attribute-change hint. A
+    closing section judges the session/authentication cookies (WSTG-SESS-02)."""
     seen: dict[str, set] = {}
     any_cookie = False
+    detail: dict[str, dict] = {}             # cookie name -> aggregated attributes across files
     for label, entries in _iter(files):
         print(f"== {label}")
         occ: dict[str, list[set]] = {}       # cookie name -> flag set per Set-Cookie seen
         for e in entries:
-            for name, flags in _set_cookies(e):
+            for name, flags, samesite, path, has_domain in _cookie_detail(e):
                 any_cookie = True
                 occ.setdefault(name, []).append(set(flags))
+                d = detail.setdefault(name, {"sets": [], "samesites": [], "paths": [], "domain": False})
+                d["sets"].append(set(flags))
+                d["samesites"].append(samesite)
+                d["paths"].append(path)
+                d["domain"] = d["domain"] or has_domain
         for name in sorted(occ):
             sets = occ[name]
             always = set.intersection(*sets)   # a flag counts as present only on every occurrence
@@ -115,6 +174,21 @@ def view_cookies(files: list[Path]) -> None:
             print(f"! {name}: cookie attributes differ between files (reissue / attribute change — check login)")
     if not any_cookie:
         print("(no Set-Cookie header in any file)")
+        return
+    # Automated judgement of the session/authentication cookies (WSTG-SESS-02 step 3).
+    print("\n-- session / authentication cookies (attribute verdict) --")
+    judged = False
+    for name in sorted(detail):
+        d = detail[name]
+        always = set.intersection(*d["sets"])
+        if not _is_session_cookie(name, always | set.union(*d["sets"])):
+            continue
+        judged = True
+        bad = _cookie_weaknesses(always, d["samesites"], d["paths"], d["domain"])
+        print(f"  {name}: " + ("WEAK - " + "; ".join(bad) if bad else "OK - Secure, HttpOnly, SameSite not None, tight scope"))
+    if not judged:
+        print("  (no session/authentication cookie seen in the HAR; the app may use token/Bearer auth, "
+              "or the login was not captured)")
 
 
 def view_urls(files: list[Path]) -> None:
