@@ -74,7 +74,7 @@ def logged_in_hars(folder: Path | None) -> list[tuple[str, list]]:
         if f.suffix.lower() != ".har":
             continue
         role = harmod._role(f.name)
-        if harmod._ANON_ROLE_RE.match(role) or se.LOGOUT_ROLE_RE.match(role):
+        if harmod._ANON_ROLE_RE.match(role) or se.DEDICATED_ROLE_RE.match(role):
             continue
         entries = harmod._load(f) or []
         if se.logout_index(entries) is not None:

@@ -13,7 +13,8 @@ values are masked in the output, so the raw identifiers stay in the HAR evidence
 Exit 3 when no HAR with a login was found.
 
 `wstg-sess --errors ...` runs the malformed-input error probes instead (see sesserror.py),
-`wstg-sess --logout ...` the logout invalidation check (see sesslogout.py).
+`wstg-sess --logout ...` the logout invalidation check (see sesslogout.py),
+`wstg-sess --timeout ...` the session timeout measurement (see sesstimeout.py).
 """
 from __future__ import annotations
 
@@ -28,6 +29,7 @@ from . import har as harmod
 from . import session as se
 from . import sesserror
 from . import sesslogout
+from . import sesstimeout
 
 
 def _best_har(folder: Path, base_host: str) -> tuple[str, dict] | None:
@@ -37,6 +39,8 @@ def _best_har(folder: Path, base_host: str) -> tuple[str, dict] | None:
     for f in ep._files(folder):
         if f.suffix.lower() != ".har":
             continue
+        if se.DEDICATED_ROLE_RE.match(harmod._role(f.name)):
+            continue                       # logout/timeout captures (WSTG-SESS-06/07)
         entries = harmod._load(f) or []
         res = se.analyze_har(entries, se.login_fields, base_host)
         if res.get("login_found"):
@@ -132,10 +136,20 @@ def main(argv: list[str] | None = None) -> int:
                     help="instead: malformed-input error probes with the captured session (WSTG-SESS-04)")
     ap.add_argument("--logout", action="store_true",
                     help="instead: logout invalidation check from a logout capture (WSTG-SESS-06)")
+    ap.add_argument("--timeout", action="store_true",
+                    help="instead: session idle/absolute timeout measurement (WSTG-SESS-07)")
+    ap.add_argument("--idle-steps", default=",".join(str(x) for x in sesstimeout.DEFAULT_IDLE_STEPS),
+                    help="--timeout: idle waits in minutes, comma-separated")
+    ap.add_argument("--max-minutes", type=float, default=sesstimeout.DEFAULT_MAX_MINUTES,
+                    help="--timeout: longest run")
+    ap.add_argument("--keepalive", type=float, default=sesstimeout.DEFAULT_KEEPALIVE,
+                    help="--timeout: minutes between requests that keep the timeout-active session busy")
     ap.add_argument("--max", type=int, default=sesserror.DEFAULT_MAX, help="--errors: request templates to probe")
     args = ap.parse_args(argv)
     if args.logout:
         return sesslogout.run(args)
+    if args.timeout:
+        return sesstimeout.run(args)
     return sesserror.run(args) if args.errors else run(args)
 
 

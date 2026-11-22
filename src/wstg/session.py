@@ -262,6 +262,11 @@ def _url_text(entry: dict) -> str:
 # The dedicated logout capture (`wstg capture <fqdn> --role logout`): its session has
 # ended, so the checks that need a live session leave it out.
 LOGOUT_ROLE_RE = re.compile(r"^logout\b", re.I)
+# The dedicated timeout captures (`--role timeout`, `--role timeout-active`, WSTG-SESS-07):
+# any request with their session would reset the idle timer being measured.
+TIMEOUT_ROLE_RE = re.compile(r"^timeout\b", re.I)
+# Captures that the checks needing a live session must leave alone.
+DEDICATED_ROLE_RE = re.compile(r"^(logout|timeout)\b", re.I)
 
 
 def cleared_names(entry: dict, names: set | None = None) -> set:

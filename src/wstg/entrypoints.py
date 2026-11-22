@@ -134,8 +134,8 @@ def read_har(inv: Inventory, folder: Path | None) -> list[tuple[str, dict]]:
                 inv.add(str(req.get("url", "")), "har", params, role)
         elif name.startswith("storage-state") and f.suffix.lower() == ".json":
             role = _STAMP_RE.sub("", name[len("storage-state"):-5].lstrip("-_")) or "session"
-            if se.LOGOUT_ROLE_RE.match(role):
-                continue                  # the dedicated logout capture (WSTG-SESS-06): its session ended
+            if se.DEDICATED_ROLE_RE.match(role):
+                continue                  # dedicated logout/timeout captures (WSTG-SESS-06/07): leave them alone
             if role in ended:
                 inv.notes.append(f"har-browse: warning: the '{role}' capture logs out, so its session may be "
                                  "invalid now (capture the main walk without logging out)")

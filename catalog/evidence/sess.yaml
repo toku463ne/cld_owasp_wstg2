@@ -93,16 +93,34 @@ evidence:
     timeout: 300
     load_note: At most six GET requests (each page with the old cookie and without one). Needs the logout capture in har-browse.
 
-  - id: timeout-tests
-    title: Session timeout tests
+  - id: session-timeout
+    title: Session idle and absolute timeout measurement
     target_type: fqdn
-    kind: manual
+    kind: auto
+    level: full
+    heavy: true
+    inputs: [har-browse]
     description: >-
-      The measured idle timeout and absolute timeout of an authenticated session (the
-      time after which the held session cookie is rejected server-side), whether the
-      expiry is enforced on the server rather than by the cookie's own expiry, and whether
-      the length is appropriate to the application's sensitivity.
-    load_note: Measuring a timeout means waiting (idle) and retrying; leave it running and come back. Record the retry times.
+      wstg-sess --timeout measures the timeouts with dedicated captures in har-browse.
+      Idle: `uv run wstg capture {fqdn} --role timeout` (log in, open one page only a
+      logged-in user sees, press Enter without logging out). Every request resets the idle
+      timer, so the session is checked right away and then after ever longer idle waits
+      (5, 10, 15, 20, 30, 45, 60 minutes); the first rejection bounds the idle timeout.
+      Absolute (optional): also `uv run wstg capture {fqdn} --role timeout-active`; that
+      session is kept busy with one request every 5 minutes until the server rejects it
+      or the run ends (4 hours). Each check is one GET of an authenticated page from the
+      capture, compared with the same page without a cookie. It also flags a server that
+      still accepts the cookie after the cookie's own expiry. Collect it right after the
+      captures; it ends as soon as both answers are known. Cookie values are masked.
+    argv: [wstg-sess, --timeout, --base, "{base_url}/", --har, "{ev:har-browse}", "{pause_args}"]
+    pause_args: [--pause, "{pause}"]
+    est: 14400
+    timeout: 18000
+    load_note: >-
+      Runs up to about 4 hours, mostly waiting: about 16 GET requests for the idle
+      measurement and two every 5 minutes for the absolute one. Needs the `timeout` capture
+      (and optionally `timeout-active`) in har-browse, collected right after capturing.
+      Other automatic checks never use these two sessions.
 
   - id: session-puzzling-tests
     title: Session puzzling tests

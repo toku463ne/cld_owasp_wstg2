@@ -10,7 +10,7 @@ fail: >-
   There is no timeout, it is extremely long, or it is enforced only by the cookie's own
   expiry on the client while the server still accepts the token.
 notes:
-  - Measuring a timeout means waiting; leave the session idle and retry, and record the times.
+  - The timeout captures (`--role timeout`, and optionally `--role timeout-active`) are separate from the main walk; the other automatic checks never use them, so the idle timer is not reset by them.
   - A cookie expiry alone is a client control; the server must reject the token after the timeout.
 finding_kinds: [weak-session-timeout]
 steps:
@@ -21,20 +21,27 @@ steps:
       grep -iE '^set-cookie:' {ev:session-token-samples}/stdout.txt
       | grep -oiE '(max-age=[0-9]+|expires=[^;]+)' | sort -u | head
       || echo "session cookie is a session cookie (no Max-Age/Expires) or no Set-Cookie in the samples"
-  - summary: Measure the idle and absolute timeouts server-side (manual)
-    evidence: [timeout-tests]
+  - summary: Measure the idle and absolute timeouts server-side (collected automatically)
+    auto_run: true
+    evidence: [session-timeout, har-browse]
+    command: cat {ev:session-timeout}/stdout.txt
     operation: >-
-      Log in with a test account and keep the session cookie. Leave it idle and retry an
-      authenticated request at intervals to find when the server rejects it (idle timeout).
-      Separately, keep using the session actively to find any absolute lifetime. Check that
-      expiry is decided by the server, not the cookie's own Max-Age. Record the times in
-      timeout-tests.
-    load_note: This requires waiting between retries; leave it running and come back. Note each retry time.
+      Record `uv run wstg capture {fqdn} --role timeout` (log in, open one page only a
+      logged-in user sees, press Enter without logging out) and, for the absolute
+      timeout, `uv run wstg capture {fqdn} --role timeout-active` the same way. Then
+      collect session-timeout right away: it checks the idle session after ever longer
+      waits and keeps the active one busy, and runs up to about 4 hours in the background.
+      The output gives the idle timeout as a range ("between 10 min and 15 min"), the
+      absolute timeout, and flags LONG values or a server that accepts the cookie after
+      its own expiry.
+    load_note: Runs up to about 4 hours, mostly waiting; a few GET requests.
   - summary: Judge the session timeout
-    evidence: [timeout-tests, session-token-samples]
+    evidence: [session-timeout, session-token-samples]
     ai_task: >-
       From steps 1 and 2 decide whether timeouts are enforced and reasonable. Verdict: fail
-      when there is no idle or absolute timeout, it is extremely long for the application's
-      sensitivity, or it is enforced only by the client cookie while the server still
-      accepts the token; pass when both timeouts are enforced server-side with appropriate
-      lengths; "-" when timeout-tests is missing.
+      when step 2 shows no idle timeout within the run ("none within ... [LONG]"), an idle
+      or absolute timeout marked LONG for the application's sensitivity, or the server
+      accepting the cookie after its own expiry; pass when the idle timeout is bounded
+      server-side with an appropriate length (and the absolute one too, when measured);
+      "-" when session-timeout is missing, failed, or INCONCLUSIVE. An absolute timeout
+      "not measured" alone does not fail the test; mention it.
