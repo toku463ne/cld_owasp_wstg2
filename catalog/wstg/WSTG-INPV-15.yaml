@@ -16,11 +16,18 @@ finding_kinds: [http-response-splitting, http-request-smuggling]
 steps:
   - summary: Find parameters reflected into response headers (splitting candidates)
     auto_run: true
-    evidence: [katana-crawl, http-redirect-chain]
+    evidence: [katana-crawl, http-redirect-chain, reflection-check]
     command: >-
+      grep -i 'HEADER-REFLECTED' {ev:reflection-check}/stdout.txt 2>/dev/null
+      || echo "no parameter was reflected into the Location header in reflection-check";
       grep -oiE '[?&](url|return|redirect|next|dest|location|goto|continue|r|u)=[^&"'"'"'<> ]*'
       {ev:katana-crawl}/katana.txt 2>/dev/null | sort -u | head;
       head -10 {ev:http-redirect-chain}/stdout.txt 2>/dev/null
+    operation: >-
+      reflection-check (WSTG-INPV-01) already sends each GET parameter a harmless marker
+      and flags HEADER-REFLECTED when it comes back in the Location header - the
+      precondition for response splitting and open redirect. Those parameters are the ones
+      to try CRLF against in step 2. Collect reflection-check first.
   - summary: Try CRLF response splitting and CL/TE smuggling (manual)
     evidence: [http-smuggling-tests]
     operation: >-

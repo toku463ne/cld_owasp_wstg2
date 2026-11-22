@@ -151,3 +151,32 @@ def test_stored_view_without_marker(tmp_path, capsys):
     f.write_text(json.dumps({"log": {"entries": [_e("GET", "/", body="<p>hi</p>")]}}))
     har.main(["stored", str(f)])
     assert "type a marker such as wstg01" in capsys.readouterr().out
+
+
+def test_reports_location_header_reflection(tmp_path, app, capsys):
+    # /redir echoes the marker into the Location header (open-redirect / splitting candidate).
+    class R(App):
+        def do_GET(self2):
+            from urllib.parse import urlsplit, parse_qs
+            u = urlsplit(self2.path)
+            if u.path == "/redir":
+                v = parse_qs(u.query, keep_blank_values=True).get("url", [""])[0]
+                self2.send_response(302)
+                self2.send_header("Location", v)
+                self2.send_header("Content-Length", "0")
+                self2.end_headers()
+                return
+            App.do_GET(self2)
+    srv = __import__("http.server", fromlist=["ThreadingHTTPServer"]).ThreadingHTTPServer(("127.0.0.1", 0), R)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    base = f"http://127.0.0.1:{srv.server_port}"
+    kat = tmp_path / "k"
+    kat.mkdir()
+    (kat / "katana.txt").write_text(f"{base}/redir?url=/home\n{base}/search?q=a\n")
+    try:
+        assert reflect.main(["--base", base + "/", "--katana", str(kat)]) == 0
+    finally:
+        srv.shutdown()
+    out = capsys.readouterr().out
+    assert "/redir ?url: HEADER-REFLECTED into Location" in out
+    assert "1 reflected into the Location header" in out

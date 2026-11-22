@@ -16,6 +16,10 @@ removed:
 - encoded: every occurrence came back encoded (or removed) - the basic defence holds.
 - not reflected.
 
+The marker in the response Location header is reported as HEADER-REFLECTED: the
+precondition for an open redirect and for HTTP response splitting (WSTG-INPV-15, INPV-19),
+to test with a CRLF/redirect payload by hand. No attack payload is sent here.
+
 Only the host of `--base` is contacted; GET only; redirects are not followed; when the
 HAR holds a logged-in storage state its cookies are used. Exit 4 when no request got an
 answer.
@@ -160,7 +164,7 @@ def run(args) -> int:
         print("\n(no GET parameter found: collect katana-crawl, or capture har-browse while using search and filters)")
         return 0
     sent = answered = 0
-    unencoded, encoded, absent = [], [], []
+    unencoded, encoded, absent, in_header = [], [], [], []
     for path, pairs, i in probes:
         word = "wstg" + secrets.token_hex(4)
         value = word + "".join(SPECIALS)
@@ -174,31 +178,41 @@ def run(args) -> int:
             print(f"- {label}: no answer ({a.error})")
             continue
         answered += 1
+        # The marker in the Location header is the precondition for an open redirect and
+        # for HTTP response splitting (WSTG-INPV-15, INPV-19): worth a manual CRLF test.
+        hdr = word.lower() in (a.location or "").lower()
+        if hdr:
+            in_header.append(label)
         occ = classify(a.body, word)
         if not occ:
-            absent.append(label)
+            if hdr:
+                print(f"- {label}: HEADER-REFLECTED into Location (HTTP {a.status}); "
+                      "not in the body. Try a CRLF/redirect test here by hand (WSTG-INPV-15/19).")
+            else:
+                absent.append(label)
             continue
         html = "html" in (a.ctype or "")
         bad = [(ctx, risky(ctx, ch)) for ctx, ch in occ if risky(ctx, ch)]
         ctxs = ", ".join(sorted({c for c, _ in occ}))
+        tail = "; also HEADER-REFLECTED into Location (try CRLF/redirect by hand)" if hdr else ""
         if bad and html:
             unencoded.append(label)
             detail = "; ".join(f"{ctx}: raw {' '.join(r)}" for ctx, r in bad)
-            print(f"- {label}: REFLECTED-UNENCODED (HTTP {a.status} {a.ctype}; {detail})")
+            print(f"- {label}: REFLECTED-UNENCODED (HTTP {a.status} {a.ctype}; {detail}){tail}")
         elif bad:
             encoded.append(label)
             print(f"- {label}: reflected raw in a non-HTML response (HTTP {a.status} {a.ctype or '-'}; "
-                  f"contexts {ctxs}); not rendered as HTML by itself")
+                  f"contexts {ctxs}); not rendered as HTML by itself{tail}")
         else:
             encoded.append(label)
-            print(f"- {label}: reflected, encoded (HTTP {a.status} {a.ctype or '-'}; contexts {ctxs})")
+            print(f"- {label}: reflected, encoded (HTTP {a.status} {a.ctype or '-'}; contexts {ctxs}){tail}")
     if sent and not answered:
         print(f"no request to {host} got an answer; collect again", file=sys.stderr)
         return 4
     if absent:
         print(f"- not reflected: {len(absent)} parameter(s)")
     print(f"\n# verdict: {len(unencoded)} parameter(s) REFLECTED-UNENCODED, {len(encoded)} reflected but "
-          f"encoded, {len(absent)} not reflected")
+          f"encoded, {len(absent)} not reflected; {len(in_header)} reflected into the Location header")
     return 0
 
 
