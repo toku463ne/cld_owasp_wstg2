@@ -154,16 +154,6 @@ evidence:
       (and optionally `timeout-active`) in har-timeout, collected right after capturing.
       Other automatic checks never use these two sessions.
 
-  - id: session-puzzling-tests
-    title: Session puzzling tests
-    target_type: fqdn
-    kind: manual
-    description: >-
-      Evidence of session variables set in intermediate states (part-way through login,
-      password reset, or registration) and whether such a state can be used to reach a
-      screen it should not (for example a reset-in-progress state treated as
-      authenticated), by starting several flows in parallel and moving between them.
-
   - id: hijacking-tests
     title: Session hijacking (token portability) tests
     target_type: fqdn

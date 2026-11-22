@@ -144,7 +144,9 @@ evidence:
       `uv run wstg capture {fqdn} --role anon`, then once per logged-in role
       `uv run wstg capture {fqdn} --role user`, `uv run wstg capture {fqdn} --role admin`,
       and so on (from elsewhere add `--directory /path/to/cld_owasp_wstg2`). In the browser window that opens, walk every main screen and function once
-      (log in, profile, search, forms that send personal data; do not log out, so the
+      (log in, profile, search, forms that send personal data, and once each account flow
+      the application has - password change, password reset request, registration; do not
+      log out, so the
       saved session stays usable for the automatic checks) and press Enter in the terminal
       to save. The logout and timeout checks use their own captures (har-logout,
       har-timeout), not this one. The HAR and the storage state are stored here automatically. Fallback without the capture tool: in the browser press F12, open

@@ -542,3 +542,45 @@ def test_csrf_view_uses_storage_state_samesite_and_reports_empty(tmp_path, capsy
     hf2 = _write(tmp_path, "003-anon.har", _har([_csrf_entry("GET", "/home")]))
     rc, out = _run(capsys, "csrf", hf2)
     assert "no state-changing request" in out
+
+
+# -- flows view (WSTG-SESS-08): account flow timeline, names only --
+
+def _flow_entry(method, path, *, cookies=(), set_cookie=(), status=200, location=None, fields=()):
+    req = {"method": method, "url": f"https://app.example.com{path}", "headers": [],
+           "cookies": [{"name": n, "value": "secretVALUE1"} for n in cookies]}
+    if fields:
+        req["postData"] = {"mimeType": "application/x-www-form-urlencoded",
+                           "params": [{"name": f, "value": "x"} for f in fields]}
+    rh = [{"name": "Set-Cookie", "value": v} for v in set_cookie]
+    if location:
+        rh.append({"name": "Location", "value": location})
+    return {"request": req, "response": {"status": status, "headers": rh, "content": {"text": ""}}}
+
+
+def test_flows_view_lists_steps_cookie_changes_and_next_pages(tmp_path, capsys):
+    hf = _write(tmp_path, "001-user.har", _har([
+        _flow_entry("GET", "/"),
+        _flow_entry("POST", "/password/forgot", fields=["email"], set_cookie=["SID=aaa111; HttpOnly"],
+                    status=302, location="/password/sent"),
+        _flow_entry("GET", "/account/profile", cookies=["SID"]),
+        _flow_entry("POST", "/login", fields=["user", "password"], cookies=["SID"],
+                    set_cookie=["SID=bbb222; HttpOnly"], status=302, location="/home"),
+        _flow_entry("GET", "/home", cookies=["SID"]),
+        _flow_entry("GET", "/app.js", cookies=["SID"]),
+    ]))
+    rc, out = _run(capsys, "flows", hf)
+    assert rc == 0
+    assert "[password-reset] POST /password/forgot -> 302 -> /password/sent" in out
+    assert "body fields: email" in out
+    assert "response: SID set" in out
+    assert "next page: GET /account/profile -> 200" in out
+    assert "[login] POST /login -> 302 -> /home" in out and "SID changed" in out
+    assert "app.js" not in out
+    assert "aaa111" not in out and "bbb222" not in out and "secretVALUE1" not in out
+
+
+def test_flows_view_reports_no_flow(tmp_path, capsys):
+    hf = _write(tmp_path, "001-user.har", _har([_flow_entry("GET", "/")]))
+    rc, out = _run(capsys, "flows", hf)
+    assert "no login, verification, password, registration, or logout step" in out

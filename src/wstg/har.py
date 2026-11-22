@@ -13,8 +13,8 @@ holds here, and auto-run steps that call this tool are still excluded from the p
 (their command names a `.har` file).
 
 Run as `wstg-har <view> [--host HOST] FILE...` where view is cookies | urls | cleartext |
-forms | xssi | entry-points | expose | cache | frame | storage | csrf
-(`--host` is used by entry-points, expose, and csrf).
+forms | xssi | entry-points | expose | cache | frame | storage | csrf | flows
+(`--host` is used by entry-points, expose, csrf, and flows).
 Exit code is always 0 (a WSTG step reads the text output); unreadable files are noted.
 """
 import json
@@ -1011,10 +1011,100 @@ def view_csrf(files: list[Path], host: str = "") -> None:
           "Origin/Referer is not visible in a capture. CSRF-LIKELY is the finding candidate.")
 
 
+# ---- multi-step flows (WSTG-SESS-08) -------------------------------------------
+
+# Steps of account flows, by URL (path or query) or a body field name.
+_FLOW_RULES = [
+    ("password-reset", re.compile(r"(forgot|reset|recover|lost[-_]?pass)", re.I)),
+    ("password-change", re.compile(r"(change[-_]?pass|update[-_]?pass|new[-_]?pass|password)", re.I)),
+    ("registration", re.compile(r"(register|registration|sign[-_]?up|signup|join|create[-_]?account)", re.I)),
+    ("verification", re.compile(r"(otp|2fa|mfa|totp|verify|verification|confirm|activate|one[-_]?time|token=)", re.I)),
+    ("login", re.compile(r"(log[-_]?in|sign[-_]?in|auth|session)", re.I)),
+    ("logout", re.compile(r"(log[-_]?out|sign[-_]?out|log[-_]?off)", re.I)),
+]
+
+
+def _flow_of(req: dict) -> str:
+    _, _, path, qnames = _url_parts(str(req.get("url", "")))
+    text = path + "?" + "&".join(qnames)
+    fields = " ".join(_body_field_names(req))
+    for label, rx in _FLOW_RULES:
+        if rx.search(text):
+            return label
+    if re.search(r"pass", fields, re.I) and str(req.get("method", "")).upper() in _STATE_METHODS:
+        return "password-form"
+    return ""
+
+
+def view_flows(files: list[Path], host: str = "") -> None:
+    """Timeline of the account flows in the capture (login, verification, password reset
+    or change, registration, logout) for judging session puzzling (WSTG-SESS-08): per
+    step the method, path template, status, redirect target, the cookie names sent, and
+    which cookies the response set, changed, or cleared; after each flow step, the next
+    pages opened and their status. Read from the capture only; names, never values."""
+    for label, entries in _iter([p for p in files if _storage_state(p) is None]):
+        base = _base_host(entries, host)
+        print(f"== {label} (base host {base or 'unknown'})")
+        values: dict[str, str] = {}
+        steps = 0
+        follow = 0
+        for e in entries:
+            req, resp = e.get("request") or {}, e.get("response") or {}
+            _, h, path, qnames = _url_parts(str(req.get("url", "")))
+            if base and not _same_site(h, base):
+                continue
+            changes = []
+            for hd in resp.get("headers") or []:
+                if str(hd.get("name", "")).lower() != "set-cookie":
+                    continue
+                v = str(hd.get("value", ""))
+                n, _, rest = v.partition("=")
+                n, val = n.strip(), rest.split(";", 1)[0].strip()
+                cleared = (not val or re.search(r"max-age\s*=\s*0\b", v, re.I)
+                           or re.search(r"expires\s*=\s*[^;]*(19[0-9]{2}|200[0-9])", v, re.I))
+                if cleared:
+                    changes.append(f"{n} cleared")
+                elif n not in values:
+                    changes.append(f"{n} set")
+                elif values[n] != val:
+                    changes.append(f"{n} changed")
+                if cleared:
+                    values.pop(n, None)
+                else:
+                    values[n] = val
+            flow = _flow_of(req)
+            if _STATIC_RE.search(path):
+                continue
+            status = resp.get("status", "?")
+            loc = _header(resp.get("headers"), "location")
+            loc_t = _template(_url_parts(loc)[2]) if loc else ""
+            line = (f"{str(req.get('method', '?')).upper()} {_template(path)}"
+                    + (" ?" + "&".join(n + "=…" for n in qnames) if qnames else "")
+                    + f" -> {status}" + (f" -> {loc_t}" if loc_t else ""))
+            if flow:
+                steps += 1
+                follow = 3
+                sent = [str(c.get("name", "")) for c in req.get("cookies") or [] if c.get("name")]
+                fields = _body_field_names(req)
+                print(f"  [{flow}] {line}")
+                if fields:
+                    print(f"      body fields: {', '.join(fields)}")
+                print(f"      cookies sent: {', '.join(sent) or 'none'}"
+                      + (f"; response: {', '.join(changes)}" if changes else ""))
+            elif follow and str(req.get("method", "")).upper() == "GET":
+                follow -= 1
+                print(f"      next page: {line}" + (f"  (response: {', '.join(changes)})" if changes else ""))
+        if not steps:
+            print("  (no login, verification, password, registration, or logout step in this capture)")
+    print("note: read from the capture only (no request sent); a flow not walked during the capture "
+          "is not shown. Judge whether an unfinished flow step was followed by access to a page that "
+          "needs a completed flow.")
+
+
 _VIEWS = {"cookies": view_cookies, "urls": view_urls, "cleartext": view_cleartext,
           "forms": view_forms, "xssi": view_xssi, "entry-points": view_entry_points,
           "expose": view_expose, "cache": view_cache, "frame": view_frame,
-          "storage": view_storage, "csrf": view_csrf}
+          "storage": view_storage, "csrf": view_csrf, "flows": view_flows}
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -1029,7 +1119,7 @@ def main(argv: list[str] | None = None) -> int:
             return 2
         host, rest = rest[1], rest[2:]
     files = [Path(a) for a in rest]
-    if view in ("entry-points", "expose", "csrf"):
+    if view in ("entry-points", "expose", "csrf", "flows"):
         _VIEWS[view](files, host)
     else:
         _VIEWS[view](files)

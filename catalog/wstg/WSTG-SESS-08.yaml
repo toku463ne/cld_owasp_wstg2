@@ -10,28 +10,30 @@ fail: >-
   A session variable set part-way through one flow is reused by another so that an
   intermediate state grants access, confirms identity, or skips a check it should not.
 notes:
-  - Start several flows in parallel and move between them; that is how puzzling is usually found.
-  - Use the tester's own test accounts only.
+  - Judged from the main capture (har-browse) without sending a request; walk the account flows the application has (login with a second factor, password change, password reset request, registration) once during the capture, with the tester's own test accounts.
+  - A flow not walked in the capture cannot be judged; say so.
 finding_kinds: [session-puzzling]
 steps:
-  - summary: Identify intermediate-state variables in multi-step flows (manual)
-    evidence: [session-puzzling-tests]
+  - summary: List the account flows in the capture and the cookies each step sets
+    auto_run: true
+    evidence: [har-browse]
+    command: wstg-har flows {ev:har-browse}/items/*
     operation: >-
-      Walk through each multi-step flow (login with a second factor, password reset,
-      registration with verification) and note the session variables or cookies set at the
-      intermediate steps (before completion). Record them in session-puzzling-tests.
-  - summary: Reuse an intermediate state in another flow (manual)
-    evidence: [session-puzzling-tests]
-    operation: >-
-      With an intermediate-state session (for example reset-in-progress, or part-way
-      through login), try to reach a screen or function that should need a completed flow
-      (an authenticated page, a confirmed identity). Start several flows in parallel and
-      move between them. Record whether any intermediate state grants unintended access in
-      session-puzzling-tests.
+      Automated from the capture (`uv run wstg capture {fqdn} --role user`); no request is
+      sent. During the capture, walk once each account flow the application has: login
+      (with a second factor if any), password change, password reset request, and
+      registration. The output shows, per flow step, the method, path, status, redirect,
+      body field names, the cookie names sent, which cookies the response set, changed, or
+      cleared, and the next pages opened. Values are never shown.
   - summary: Judge session puzzling
-    evidence: [session-puzzling-tests]
+    evidence: [har-browse]
     ai_task: >-
-      From steps 1 and 2 decide whether a session variable is reused unsafely across flows.
-      Verdict: fail when an intermediate state of one flow is treated as another so it
-      grants access, confirms identity, or skips a check; pass when each flow keeps its own
-      state; "-" when session-puzzling-tests is missing.
+      From step 1 decide whether a session state set part-way through one flow is reused
+      by another. Signs: a cookie set at an unfinished step (for example a reset or
+      verification step) that later pages accept as logged in, a "next page" that needs a
+      completed flow opened with 200 right after an unfinished step, or the same cookie
+      carrying both a reset/registration state and the login state without being
+      reissued. Verdict: fail when the capture shows such reuse; pass when each flow step
+      that grants access comes after its flow completed and the session cookie is reissued
+      at login; "-" when the capture holds no multi-step flow or not enough to decide. Say
+      that it was judged from the capture only.
