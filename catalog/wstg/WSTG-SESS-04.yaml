@@ -35,23 +35,23 @@ steps:
     auto_run: true
     evidence: [har-browse]
     command: wstg-har expose {ev:har-browse}/items/*
-  - summary: Trigger malformed-input errors in the browser (manual, only if needed)
-    evidence: [session-exposure-tests]
+  - summary: Trigger malformed-input errors with the session and check the responses
+    auto_run: true
+    evidence: [session-error-probes]
+    command: cat {ev:session-error-probes}/stdout.txt
     operation: >-
-      Step 4 already judges the captured HAR and the browser storage state: it reports a
-      session token riding the Referer to an external host, the token kept in local/session
-      storage, and the token echoed in an error response body ("REFERER-LEAK",
-      "STORAGE-TOKEN", "ERROR-ECHO"), so the common case is automated from the login
-      capture. This step is only for errors the capture did not already trigger: in the
-      browser developer tools, deliberately cause errors (invalid type, missing id,
-      oversized value, broken JSON) and check the response body, stack trace, and debug
-      output for the token or internal variables; record anything new in
-      session-exposure-tests, or mark it collected with a comment that step 4 covered it.
+      Automated: session-error-probes replays the logged-in HAR requests with malformed
+      input (array instead of scalar, missing parameters, oversized value, invalid
+      encoding, broken JSON) and flags "ERROR-ECHO" (the token in the error response) and
+      "DEBUG-OUTPUT" (stack trace, SQL error, server variables). Collect it after the HAR.
+      Only if a flow was not in the capture (or the session expired), cause the error by
+      hand in the browser developer tools and record it in session-exposure-tests.
   - summary: Judge session token exposure
-    evidence: [session-exposure-tests, katana-crawl]
+    evidence: [session-error-probes, session-exposure-tests, katana-crawl]
     ai_task: >-
       From steps 1 to 5 decide whether the token is exposed outside a cookie. Verdict: fail
       when it appears in a URL or redirect, in local/session storage, in a Referer to an
       external site, or in an error page or stack trace; pass when it is cookie-only
-      everywhere observed; "-" when there is no token in a URL and neither the HAR/storage
-      (step 4) nor session-exposure-tests shows any exposure.
+      everywhere observed (a DEBUG-OUTPUT line without the token is an error-handling
+      issue for WSTG-ERRH-01/02, not a token exposure); "-" when the HAR (steps 2, 4) and
+      session-error-probes (step 5) are missing and no token is seen in a URL.

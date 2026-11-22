@@ -216,7 +216,8 @@ class Answer:
         return s + (f" -> {self.location}" if self.location else "")
 
 
-def fetch(url: str, cookie: str = "", extra_headers: dict | None = None) -> Answer:
+def fetch(url: str, cookie: str = "", extra_headers: dict | None = None,
+          data: bytes | None = None, method: str | None = None) -> Answer:
     ctx = ssl.create_default_context()
     ctx.check_hostname = False
     ctx.verify_mode = ssl.CERT_NONE
@@ -230,7 +231,8 @@ def fetch(url: str, cookie: str = "", extra_headers: dict | None = None) -> Answ
         headers.update(extra_headers)
     try:
         try:
-            resp = opener.open(urllib.request.Request(url, headers=headers), timeout=TIMEOUT)
+            resp = opener.open(urllib.request.Request(url, data=data, headers=headers, method=method),
+                               timeout=TIMEOUT)
         except urllib.error.HTTPError as e:
             resp = e
         body = resp.read(BODY_BYTES)

@@ -351,8 +351,8 @@ def view_expose(files: list[Path], host: str = "") -> None:
     if not found:
         print("  no session-token exposure seen in the HAR or storage state "
               "(Referer to a third party, local/session storage, error body)")
-    print("  note: deliberately triggering malformed-input errors stays a manual step; "
-          "this judges only what the capture recorded.")
+    print("  note: this judges only what the capture recorded; malformed-input errors are "
+          "triggered by the session-error-probes evidence (step 5).")
 
 
 def _content_type(resp: dict) -> str:

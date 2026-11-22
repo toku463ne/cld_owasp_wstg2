@@ -11,6 +11,8 @@ authenticated URL seen in the HAR to check whether the old identifier is still a
 Only the host of `--base` is contacted (the one replay request); GET only; identifier
 values are masked in the output, so the raw identifiers stay in the HAR evidence only.
 Exit 3 when no HAR with a login was found.
+
+`wstg-sess --errors ...` runs the malformed-input error probes instead (see sesserror.py).
 """
 from __future__ import annotations
 
@@ -23,6 +25,7 @@ from urllib.parse import urlsplit
 from . import entrypoints as ep
 from . import har as harmod
 from . import session as se
+from . import sesserror
 
 
 def _best_har(folder: Path, base_host: str) -> tuple[str, dict] | None:
@@ -123,7 +126,11 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--base", required=True, help="base URL of the target (the only host contacted)")
     ap.add_argument("--har", help="har-browse evidence version folder")
     ap.add_argument("--pause", type=int, default=0)
-    return run(ap.parse_args(argv))
+    ap.add_argument("--errors", action="store_true",
+                    help="instead: malformed-input error probes with the captured session (WSTG-SESS-04)")
+    ap.add_argument("--max", type=int, default=sesserror.DEFAULT_MAX, help="--errors: request templates to probe")
+    args = ap.parse_args(argv)
+    return sesserror.run(args) if args.errors else run(args)
 
 
 if __name__ == "__main__":

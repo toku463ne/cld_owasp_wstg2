@@ -49,6 +49,30 @@ evidence:
       When there is no privilege-change step, mark this evidence collected with a comment.
       The raw identifier values stay inside evidence only.
 
+  - id: session-error-probes
+    title: Malformed-input error probes with the session
+    target_type: fqdn
+    kind: auto
+    level: full
+    inputs: [har-browse]
+    description: >-
+      wstg-sess --errors replays the requests of the logged-in HAR (har-browse) with
+      malformed input and the captured session cookie: a query parameter sent as an array
+      (invalid type), all parameters dropped (missing id), an oversized value, an invalid
+      percent-encoding, a broken JSON body for JSON requests, and one missing path. Each
+      error response is checked for the session or bearer token echoed back (ERROR-ECHO)
+      and for stack traces or debug output (DEBUG-OUTPUT: Python, Java, .NET, PHP, Node,
+      Rails, SQL errors, server variables). Token values are masked; the raw values stay
+      in the HAR only. Login and state-changing requests (logout, delete, ...) are skipped.
+    argv: [wstg-sess, --errors, --base, "{base_url}/", --har, "{ev:har-browse}", "{pause_args}"]
+    pause_args: [--pause, "{pause}"]
+    est: 60
+    timeout: 600
+    load_note: >-
+      Up to about 80 requests with malformed input (4 per GET template, 1 per JSON request,
+      20 templates per role); a WAF may flag them. Needs a logged-in har-browse capture
+      whose session is still valid.
+
   - id: session-exposure-tests
     title: Session token exposure tests
     target_type: fqdn
