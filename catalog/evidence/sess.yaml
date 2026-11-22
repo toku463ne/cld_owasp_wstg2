@@ -73,17 +73,6 @@ evidence:
       20 templates per role); a WAF may flag them. Needs a logged-in har-browse capture
       whose session is still valid.
 
-  - id: csrf-tests
-    title: Cross-site request forgery tests
-    target_type: fqdn
-    kind: manual
-    description: >-
-      Per state-changing request (money transfer, setting change, delete): whether it
-      carries an anti-CSRF token, and the result of replaying it with the token removed,
-      with a fixed or guessed token, and with another user's token, plus whether SameSite
-      cookies or an Origin/Referer check protect it. A proof-of-concept HTML page is the
-      clearest reproduction; save it here.
-
   - id: logout-tests
     title: Logout invalidation tests
     target_type: fqdn

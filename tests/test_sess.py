@@ -80,3 +80,25 @@ def test_sess04_prompt_has_masked_har_views_and_storage_summary(admin_client, st
     assert "SENSITIVE" in prompt
     assert secret not in prompt                            # never a raw value
     assert "session-exposure-tests" not in p               # the manual evidence is gone
+
+
+def test_sess05_csrf_posture_runs_from_the_har_and_goes_into_the_prompt(admin_client, store, site):
+    import json
+    secret = "TOPSECRETsessionVALUE99"
+    har_doc = {"log": {"entries": [
+        {"request": {"method": "GET", "url": f"{BASE}/home", "headers": [],
+                     "cookies": [{"name": "SESSIONID", "value": secret}]},
+         "response": {"status": 200, "headers": [{"name": "Set-Cookie", "value": f"SESSIONID={secret}; HttpOnly"}]}},
+        {"request": {"method": "POST", "url": f"{BASE}/profile", "headers": [],
+                     "cookies": [{"name": "SESSIONID", "value": secret}],
+                     "postData": {"mimeType": "application/x-www-form-urlencoded",
+                                  "params": [{"name": "name", "value": "x"}]}},
+         "response": {"status": 302, "headers": []}}]}}
+    store.add_file(site, "har-browse", json.dumps(har_doc).encode(), "user-20260101-1200.har", "", "admin")
+    p = page(admin_client, "WSTG-SESS-05")
+    s2 = p.split("Step 2")[1].split("Step 3")[0]
+    assert "CSRF-LIKELY" in s2 and "POST /profile" in s2
+    prompt = p[p.index('id="ai-prompt"'):]
+    assert "CSRF-LIKELY" in prompt
+    assert secret not in prompt
+    assert "csrf-tests" not in p

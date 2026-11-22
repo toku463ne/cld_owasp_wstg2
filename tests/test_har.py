@@ -474,3 +474,71 @@ def test_storage_notes_when_no_storage_state(tmp_path, capsys):
     f = _write(tmp_path, "a.har", _har([_page("https://app.example.com/")]))
     rc, out = _run(capsys, "storage", f)
     assert "no storage-state file" in out
+
+
+# -- csrf view (WSTG-SESS-05): CSRF posture from the capture, no request sent --
+
+def _csrf_entry(method, path, *, ctype=None, fields=(), headers=(), cookies=("SESSIONID",),
+                set_cookie=None, resp_headers=()):
+    req = {"method": method, "url": f"https://app.example.com{path}",
+           "headers": [{"name": n, "value": v} for n, v in headers],
+           "cookies": [{"name": n, "value": "secretVALUE123"} for n in cookies]}
+    if ctype:
+        req["postData"] = {"mimeType": ctype, "params": [{"name": f, "value": "v"} for f in fields],
+                           "text": '{"a": 1}' if "json" in ctype else ""}
+    rh = [{"name": n, "value": v} for n, v in resp_headers]
+    if set_cookie:
+        rh.append({"name": "Set-Cookie", "value": set_cookie})
+    return {"request": req, "response": {"status": 200, "headers": rh, "content": {"text": ""}}}
+
+
+def test_csrf_view_judges_each_state_changing_request(tmp_path, capsys):
+    hf = _write(tmp_path, "001-user.har", _har([
+        _csrf_entry("GET", "/home", set_cookie="SESSIONID=secretVALUE123; Path=/; HttpOnly"),
+        _csrf_entry("POST", "/profile", ctype="application/x-www-form-urlencoded", fields=["name"]),
+        _csrf_entry("POST", "/settings", ctype="application/x-www-form-urlencoded",
+                    fields=["csrf_token", "mail"]),
+        _csrf_entry("POST", "/api/save", ctype="application/json"),
+        _csrf_entry("DELETE", "/api/item/42"),
+        _csrf_entry("GET", "/item/42/delete"),
+        _csrf_entry("POST", "/api/bearer", ctype="application/x-www-form-urlencoded", cookies=(),
+                    headers=[("Authorization", "Bearer x")]),
+    ]))
+    rc, out = _run(capsys, "csrf", hf)
+    assert rc == 0
+    lines = {ln.split()[1] + " " + ln.split()[2]: ln.split()[0] for ln in out.splitlines()
+             if ln.startswith("  ") and not ln.startswith("      ") and ln.strip()}
+    assert lines["POST /profile"] == "CSRF-LIKELY"          # no token, form, no SameSite
+    assert lines["POST /settings"] == "TOKEN"
+    assert lines["POST /api/save"] == "PREFLIGHT"           # JSON body needs a preflight
+    assert lines["DELETE /api/item/<id>"] == "PREFLIGHT"
+    assert lines["GET /item/<id>/delete"] == "CSRF-LIKELY"
+    assert lines["POST /api/bearer"] == "NOT-APPLICABLE"
+    assert "secretVALUE123" not in out
+    assert "no request sent" in out
+
+
+def test_csrf_view_samesite_lax_mitigates_post_and_cors_reopens(tmp_path, capsys):
+    hf = _write(tmp_path, "001-user.har", _har([
+        _csrf_entry("GET", "/home", set_cookie="SESSIONID=secretVALUE123; Path=/; SameSite=Lax"),
+        _csrf_entry("POST", "/profile", ctype="application/x-www-form-urlencoded", fields=["name"]),
+        _csrf_entry("POST", "/api/save", ctype="application/json",
+                    resp_headers=[("Access-Control-Allow-Origin", "https://evil.test"),
+                                  ("Access-Control-Allow-Credentials", "true")]),
+    ]))
+    rc, out = _run(capsys, "csrf", hf)
+    assert "MITIGATED      POST /profile" in out
+    assert "SameSite=Lax" in out
+    assert "POST /api/save" in out and "CORS allows a credentialed cross-site request" in out
+
+
+def test_csrf_view_uses_storage_state_samesite_and_reports_empty(tmp_path, capsys):
+    hf = _write(tmp_path, "001-user.har", _har([
+        _csrf_entry("POST", "/profile", ctype="application/x-www-form-urlencoded", fields=["name"])]))
+    sf = _write(tmp_path, "002-storage-state.json", {"cookies": [
+        {"name": "SESSIONID", "value": "secretVALUE123", "sameSite": "None"}], "origins": []})
+    rc, out = _run(capsys, "csrf", hf, sf)
+    assert "CSRF-LIKELY" in out and "SameSite=None" in out
+    hf2 = _write(tmp_path, "003-anon.har", _har([_csrf_entry("GET", "/home")]))
+    rc, out = _run(capsys, "csrf", hf2)
+    assert "no state-changing request" in out

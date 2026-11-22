@@ -13,8 +13,8 @@ holds here, and auto-run steps that call this tool are still excluded from the p
 (their command names a `.har` file).
 
 Run as `wstg-har <view> [--host HOST] FILE...` where view is cookies | urls | cleartext |
-forms | xssi | entry-points | expose | cache | frame | storage
-(`--host` is used by entry-points and expose).
+forms | xssi | entry-points | expose | cache | frame | storage | csrf
+(`--host` is used by entry-points, expose, and csrf).
 Exit code is always 0 (a WSTG step reads the text output); unreadable files are noted.
 """
 import json
@@ -865,10 +865,156 @@ def view_entry_points(files: list[Path], host: str = "") -> None:
               + ", ".join(f"{n}: {c}" for n, c in sorted(other_hosts.items(), key=lambda kv: -kv[1])[:20]))
 
 
+# ---- CSRF posture (WSTG-SESS-05) ---------------------------------------------
+
+# Request content types a cross-site HTML form (or a no-preflight fetch) can send.
+_SIMPLE_CT = ("application/x-www-form-urlencoded", "multipart/form-data", "text/plain")
+_SIMPLE_HEADERS = {"accept", "accept-language", "content-language", "content-type", "range"}
+# Headers the browser sets itself; they do not make a request "non-simple".
+_BROWSER_HEADERS = {"host", "connection", "content-length", "cookie", "origin", "referer", "user-agent",
+                    "accept-encoding", "cache-control", "pragma", "upgrade-insecure-requests", "priority",
+                    "te", "dnt", "if-none-match", "if-modified-since"}
+
+
+def _custom_headers(req: dict) -> list[str]:
+    """Request headers that a cross-site page cannot add without a CORS preflight."""
+    out = []
+    for h in req.get("headers") or []:
+        n = str(h.get("name", "")).lower()
+        if not n or n.startswith(":") or n.startswith("sec-") or n in _BROWSER_HEADERS or n in _SIMPLE_HEADERS:
+            continue
+        out.append(n)
+    return sorted(set(out))
+
+
+def _state_samesite(files: list[Path]) -> dict[str, str]:
+    """cookie name -> SameSite from the captured storage state (lower case), as a fallback
+    for cookies whose Set-Cookie is not in the HAR."""
+    out: dict[str, str] = {}
+    for p in files:
+        st = _storage_state(p)
+        for c in (st or {}).get("cookies") or []:
+            n = str(c.get("name", ""))
+            if n:
+                out.setdefault(n, str(c.get("sameSite") or "").lower())
+    return out
+
+
+def _csrf_verdict(method: str, state_get: bool, token: bool, preflight: list[str], cors_open: bool,
+                  weakest: str | None) -> tuple[str, str]:
+    """(verdict, reason) for one state-changing request, from what the capture shows."""
+    if weakest is None:
+        return "NOT-APPLICABLE", "no session cookie is sent (header/bearer auth is not sent by a cross-site page)"
+    if token:
+        return "TOKEN", "carries an anti-CSRF token (whether the server verifies it is not tested)"
+    if preflight and not cors_open:
+        return "PREFLIGHT", ("a cross-site page cannot send it without a CORS preflight ("
+                             + ", ".join(preflight) + "), and CORS does not allow it; check by hand only if the "
+                             "server might also accept a form or text/plain body")
+    open_note = " (CORS allows a credentialed cross-site request)" if preflight and cors_open else ""
+    if weakest == "none":
+        return "CSRF-LIKELY", "no token, a simple cross-site request, and the session cookie is SameSite=None" + open_note
+    if weakest == "":
+        return "CSRF-LIKELY", ("no token, a simple cross-site request, and the session cookie has no SameSite "
+                               "(Firefox/Safari and older browsers send it; Chromium defaults to Lax)") + open_note
+    if weakest == "lax" and (method == "GET" or state_get):
+        return "CSRF-LIKELY", ("state change on GET: SameSite=Lax cookies ride a cross-site top-level "
+                               "navigation") + open_note
+    return "MITIGATED", (f"no token, but the session cookie is SameSite={weakest.capitalize()}, so it is not "
+                         "sent on a cross-site POST (a same-site subdomain could still send it)") + open_note
+
+
+def view_csrf(files: list[Path], host: str = "") -> None:
+    """CSRF posture of every state-changing request in the logged-in capture
+    (WSTG-SESS-05), from the HAR and the storage state only - no request is sent. Per
+    request (method and path template): whether it carries an anti-CSRF token, whether
+    a cross-site page could send it without a CORS preflight (method, content type,
+    custom headers), the SameSite of the session cookies it carries, whether the browser
+    sent Origin, and whether the response's CORS allows a credentialed cross-site call.
+    A GET whose path looks state-changing is included too. Names only, never values."""
+    loaded = list(_iter([p for p in files if _storage_state(p) is None]))
+    all_entries = [e for _, ents in loaded for e in ents]
+    base = _base_host(all_entries, host)
+    samesite = {**{k: v for k, v in _state_samesite(files).items()}, **_samesite_map(all_entries)}
+    print(f"base host: {base or '(unknown)'}; judged from the capture only (no request sent)")
+    rows: dict[tuple[str, str], dict] = {}
+    for label, ents in loaded:
+        role = _role(label)
+        for e in ents:
+            req, resp = e.get("request") or {}, e.get("response") or {}
+            method = str(req.get("method", "?")).upper()
+            _, h, path, qnames = _url_parts(str(req.get("url", "")))
+            if base and not _same_site(h, base):
+                continue
+            state_get = method == "GET" and bool(_STATE_GET_RE.search(path))
+            if method not in _STATE_METHODS and not state_get:
+                continue
+            key = (method, _template(path))
+            fields = _body_field_names(req)
+            names = [str(c.get("name", "")) for c in req.get("cookies") or [] if c.get("name")]
+            if not names:
+                ck = _header(req.get("headers"), "cookie")
+                names = [x.split("=", 1)[0].strip() for x in ck.split(";") if "=" in x]
+            sess = [n for n in names if _is_session_cookie(n, set()) and not _CSRF_RE.search(n)]
+            ct = str((req.get("postData") or {}).get("mimeType") or _header(req.get("headers"), "content-type"))
+            ct = ct.split(";")[0].strip().lower()
+            custom = _custom_headers(req)
+            preflight = []
+            if method not in ("GET", "HEAD", "POST"):
+                preflight.append(f"method {method}")
+            if ct and not ct.startswith(_SIMPLE_CT):
+                preflight.append(f"content type {ct}")
+            if custom:
+                preflight.append("header " + ", ".join(custom))
+            acao = _header(resp.get("headers"), "access-control-allow-origin").strip()
+            acac = _header(resp.get("headers"), "access-control-allow-credentials").strip().lower() == "true"
+            _, ao_host, _, _ = _url_parts(acao)
+            cors_open = acac and bool(acao) and acao != "*" and not (ao_host and _same_site(ao_host, base))
+            r = rows.setdefault(key, {"roles": set(), "token": False, "preflight": None, "cors": False,
+                                      "sess": set(), "origin": False, "status": set(), "state_get": state_get})
+            r["roles"].add(role)
+            r["token"] = r["token"] or any(_CSRF_RE.search(n) for n in fields + qnames) or any(
+                str(x.get("name", "")).lower() in ("x-csrf-token", "x-xsrf-token", "x-csrftoken")
+                for x in req.get("headers") or [])
+            # the weakest form seen counts: a request once sent as a simple request is sendable cross-site
+            if r["preflight"] is None or not preflight:
+                r["preflight"] = preflight
+            r["cors"] = r["cors"] or cors_open
+            r["sess"].update(sess)
+            r["origin"] = r["origin"] or bool(_header(req.get("headers"), "origin"))
+            r["status"].add(str(resp.get("status", "?")))
+    if not rows:
+        print("(no state-changing request in the HAR; capture a logged-in walk that changes a setting, "
+              "submits a form, or deletes something)")
+        return
+    order = {"none": 0, "": 1, "?": 1, "lax": 2, "strict": 3}
+    counts: dict[str, int] = {}
+    for (method, path), r in sorted(rows.items(), key=lambda kv: (kv[0][1], kv[0][0])):
+        ss = {n: samesite.get(n, "?") for n in sorted(r["sess"])}
+        weakest = min(ss.values(), key=lambda v: order.get(v, 1)) if ss else None
+        if weakest == "?":
+            weakest = ""
+        verdict, reason = _csrf_verdict(method, r["state_get"], r["token"], r["preflight"] or [],
+                                        r["cors"], weakest)
+        counts[verdict] = counts.get(verdict, 0) + 1
+        cookies = ", ".join(f"{n} (SameSite={v.capitalize() if v not in ('', '?') else 'unset'})"
+                            for n, v in ss.items()) or "none"
+        print(f"\n  {verdict:<14} {method} {path}   [roles: {', '.join(sorted(r['roles']))}; "
+              f"HTTP {', '.join(sorted(r['status']))}]")
+        print(f"      {reason}")
+        print(f"      token: {'yes' if r['token'] else 'no'}; cross-site sendable without preflight: "
+              f"{'no (' + ', '.join(r['preflight']) + ')' if r['preflight'] else 'yes'}; "
+              f"session cookies: {cookies}; browser sent Origin: {'yes' if r['origin'] else 'no'}"
+              + ("; CORS: credentialed cross-site allowed" if r["cors"] else ""))
+    print("\nsummary: " + ", ".join(f"{k} {v}" for k, v in sorted(counts.items())))
+    print("note: TOKEN means a token is sent, not that the server checks it; whether the server checks "
+          "Origin/Referer is not visible in a capture. CSRF-LIKELY is the finding candidate.")
+
+
 _VIEWS = {"cookies": view_cookies, "urls": view_urls, "cleartext": view_cleartext,
           "forms": view_forms, "xssi": view_xssi, "entry-points": view_entry_points,
           "expose": view_expose, "cache": view_cache, "frame": view_frame,
-          "storage": view_storage}
+          "storage": view_storage, "csrf": view_csrf}
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -883,7 +1029,7 @@ def main(argv: list[str] | None = None) -> int:
             return 2
         host, rest = rest[1], rest[2:]
     files = [Path(a) for a in rest]
-    if view in ("entry-points", "expose"):
+    if view in ("entry-points", "expose", "csrf"):
         _VIEWS[view](files, host)
     else:
         _VIEWS[view](files)
