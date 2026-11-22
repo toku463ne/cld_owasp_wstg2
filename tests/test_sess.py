@@ -121,3 +121,15 @@ def test_evidence_page_names_the_input_to_fix(admin_client, store, site):
     assert "user-20260101-1200.har" in html                # what har-browse holds now
     assert "This collection reads:" in html
     assert "input missing: evidence har-browse" in html
+
+
+def test_evidence_page_shows_copyable_uv_run_commands(admin_client, store, site):
+    store.add_file(site, "har-browse", b'{"log": {"entries": []}}', "timeout-20260101-1200.har", "", "admin")
+    html = admin_client.get("/t/www.example.com/evidence/session-timeout").get_data(as_text=True)
+    assert "uv run wstg-sess --timeout --base https://www.example.com/ --har " in html
+    assert "/har-browse/v" in html                              # the input folder is filled in
+    assert "{ev:" not in html.split("Run it by hand")[1].split("</pre>")[0]
+    assert "uv run wstg collect www.example.com --evidence session-timeout --force --run" in html
+    # evidence that writes files under {out} gets only the collect command
+    html = admin_client.get("/t/www.example.com/evidence/http-root-https").get_data(as_text=True)
+    assert "Run it by hand" not in html and "--evidence http-root-https --force --run" in html

@@ -6,6 +6,8 @@ page that links to it is redirected there. Every write needs the admin role.
 
 from __future__ import annotations
 
+import shlex
+
 from flask import (Flask, abort, flash, g, jsonify, redirect, render_template, request, send_file,
                    url_for)
 
@@ -52,6 +54,27 @@ def input_rows(store: evmod.Store, cat: catmod.Catalog, t: tmod.Target, ev: catm
                      "files": [it.name or it.caption or it.file for it in latest.items][:12] if latest else [],
                      "more": max(0, len(latest.items) - 12) if latest else 0})
     return rows
+
+
+def shell_commands(store: evmod.Store, cat: catmod.Catalog, t: tmod.Target, ev: catmod.Evidence) -> dict:
+    """Commands to copy for an automatic evidence, run from the project directory on the
+    tool's host: `run` - the evidence command itself with placeholders and input folders
+    filled in (prints to the terminal, stores nothing; only when it writes no files under
+    {out}); `collect` - the CLI that collects and stores it like the Collect button.
+    A project tool (wstg-*) gets a `uv run` prefix. A proxy password is masked."""
+    out = {"collect": f"uv run wstg collect {shlex.quote(t.name)} --evidence {ev.id} --force --run"}
+    if ev.kind != "auto" or ev.target_type != t.type or any("{out}" in a for a in ev.argv):
+        return out
+    try:
+        values = tmod.placeholder_values(store.cfg, t, tmod.get_scope(store.db, t))
+        _, _, shown = rmod.build_argv(ev, values, store.cfg.http_proxy, store.cfg.pause,
+                                      rmod.input_paths(store.cfg, t, ev, cat))
+    except (tmod.TargetError, rmod.RunError):
+        return out
+    if ev.fqdn_targets or any(catmod.PLACEHOLDER_RE.search(a) or catmod.EV_REF_RE.search(a) for a in shown):
+        return out
+    out["run"] = ("uv run " if shown and shown[0].startswith("wstg") else "") + shlex.join(shown)
+    return out
 
 
 def register(app: Flask, store: evmod.Store, cat: catmod.Catalog) -> None:
@@ -107,6 +130,7 @@ def register(app: Flask, store: evmod.Store, cat: catmod.Catalog) -> None:
                                is_latest=bool(version and latest and version.version == latest.version),
                                used_by=cat.tests_using(eid), failed=failed, failed_logs=failed_logs,
                                inputs=input_rows(store, cat, t, ev) if ev.kind == "auto" else [],
+                               shell=shell_commands(store, cat, t, ev) if ev.kind == "auto" else {},
                                latest_exists=latest is not None,
                                job_active=ev.kind == "auto" and rmod.active_job(store.db, t) is not None,
                                attempt=rmod.last_attempt(store.db, t, eid) if ev.kind == "auto" else None)
