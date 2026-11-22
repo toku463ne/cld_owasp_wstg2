@@ -41,6 +41,9 @@ tools:
   - name: wstg-reflect
     install: none
     note: this project's console script (uv sync installs it); output-encoding check of reflected parameters (WSTG-INPV-01)
+  - name: wstg-cryp
+    install: none
+    note: this project's console script (uv sync installs it); CBC padding-oracle probe (WSTG-CRYP-02)
   - name: seclists
     path: /usr/share/seclists/Discovery/DNS/subdomains-top1million-5000.txt
     note: word lists for vhost-ffuf

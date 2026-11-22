@@ -130,7 +130,7 @@ uv run pytest -q                          # tests (temporary directories only)
 Code layout: `src/wstg/` (`config.py`, `db.py` + `migrations/NNNN_*.sql`, `users.py`,
 `web.py`, `web_targets.py`, `web_evidence.py` + `templates/` + `static/`, `cli.py`, `catalog.py`,
 `targets.py` (targets, scope check, status), `evidence.py` (versioned store), `runner.py`
-(jobs, worker, evidence `inputs` ordering), `har.py` (`wstg-har`), `dnscheck.py` (`wstg-dns`), `entrypoints.py` (`wstg-entry`), `traversal.py` (`wstg-trav`), `sessionscan.py` + `session.py`, `sesserror.py`, `sesslogout.py`, `sesstimeout.py` (`wstg-sess`), `reflect.py` (`wstg-reflect`), `analysis.py` (auto-run step commands), `prompt.py` + `ai_review.py` + `ai_files.py`
+(jobs, worker, evidence `inputs` ordering), `har.py` (`wstg-har`), `dnscheck.py` (`wstg-dns`), `entrypoints.py` (`wstg-entry`), `traversal.py` (`wstg-trav`), `sessionscan.py` + `session.py`, `sesserror.py`, `sesslogout.py`, `sesstimeout.py` (`wstg-sess`), `reflect.py` (`wstg-reflect`), `cryp.py` (`wstg-cryp`, CBC padding-oracle probe), `analysis.py` (auto-run step commands), `prompt.py` + `ai_review.py` + `ai_files.py`
 (AI prompt, answer import, prompt/answer files)), catalog data in `catalog/`
 (`wstg_index.yaml`, `evidence/*.yaml`, `wstg/WSTG-*.yaml`, `tools.yaml`; schema in `catalog/evidence/core.yaml`
 and `src/wstg/catalog.py`), tests in `tests/`, setup in

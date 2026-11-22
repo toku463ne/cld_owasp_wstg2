@@ -21,6 +21,7 @@ wstg-entry = "wstg.entrypoints:main"
 wstg-trav = "wstg.traversal:main"
 wstg-sess = "wstg.sessionscan:main"
 wstg-reflect = "wstg.reflect:main"
+wstg-cryp = "wstg.cryp:main"
 
 [build-system]
 requires = ["uv_build>=0.11.8,<0.12.0"]

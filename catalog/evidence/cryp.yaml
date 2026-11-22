@@ -70,13 +70,40 @@ evidence:
   - id: padding-oracle-responses
     title: Padding oracle probe responses
     target_type: fqdn
+    kind: auto
+    level: full
+    inputs: [http-root-https, har-browse, session-token-samples]
+    description: >-
+      wstg-cryp padding-probe takes each encrypted-looking value sent to the client (an
+      anonymous cookie or hidden field from http-root-https, a logged-in session cookie or
+      URL parameter from har-browse, extra cookie samples from session-token-samples) and
+      sends three versions of it back: (1) the original value, (2) the last byte of the
+      last ciphertext block flipped (padding almost certainly invalid), (3) the first byte
+      of the second-to-last block flipped (content garbled, padding still valid). It reports
+      the median status, length, and time of each case and flags a candidate SUSPECTED-ORACLE
+      when (2) and (3) differ. No decryption is attempted and token values are not printed
+      (name, codec, and decoded length only); padbuster confirmation stays manual
+      (padding-oracle-confirm). Only the base host is contacted; logged-in values reuse the
+      har-browse session. If no encrypted-looking value is found, that is recorded (not a pass).
+    argv: [wstg-cryp, padding-probe, --base, "{base_url}/", --http-root, "{ev:http-root-https}",
+           --har, "{ev:har-browse}", --samples, "{ev:session-token-samples}", "{pause_args}"]
+    pause_args: [--pause, "{pause}"]
+    est: 60
+    timeout: 300
+    load_note: >-
+      Up to 3 requests per case (default repeat 5) for at most 20 candidate values - a few
+      hundred normal requests with one value changed, far below padbuster. A WAF may flag
+      them; WSTG_PAUSE slows it down. Full mode only (excluded from light).
+
+  - id: padding-oracle-confirm
+    title: Padding oracle confirmation (padbuster)
+    target_type: fqdn
     kind: manual
     description: >-
-      For each candidate encrypted value (cookie, hidden field, URL parameter): the
-      original value, and the status line, length, and the relevant part of the body of
-      the response to (1) the original value, (2) the last byte of the last block changed,
-      (3) a byte of the second-to-last block changed. Text or screenshots, one item per
-      parameter.
+      Only when padding-oracle-responses flags a SUSPECTED-ORACLE candidate and the
+      engagement agrees to run padbuster: the padbuster command used, the parameter, and the
+      first decrypted block (stop after one block). Heavy and noisy; may lock the session or
+      trigger a WAF. Keep the proof to the minimum.
 
   - id: crypto-review
     title: Cryptography design review notes

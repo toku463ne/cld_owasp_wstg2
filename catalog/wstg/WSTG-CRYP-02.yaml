@@ -56,20 +56,26 @@ steps:
       decoded length, block multiple, readable share; no values). For logged-in values from the
       HAR, run `v='VALUE'; printf '%s' "$v" | tr '_-' '/+' | base64 -d | wc -c` (or `xxd -r -p`
       for hex) on each candidate.
-  - summary: Send the original value and values with a changed byte in the last and second-to-last block, and compare responses
-    operation: >-
-      For each candidate, decode it, change one byte in the last byte of the ciphertext
-      (bad padding) and, separately, a byte of the second-to-last block (valid padding,
-      garbled plaintext), re-encode, and send each value back in its cookie or parameter,
-      recording the status code, response size, and total time for the three cases.
+  - summary: Send the original value and values with a changed byte in the last and second-to-last block, and compare responses (collected automatically)
+    auto_run: true
     evidence: [padding-oracle-responses]
+    command: cat {ev:padding-oracle-responses}/stdout.txt
+    operation: >-
+      Automated: padding-oracle-responses (wstg-cryp padding-probe) decodes each
+      encrypted-looking value, sends it back three times - original, last byte of the last
+      block changed (bad padding), a byte of the second-to-last block changed (valid
+      padding, garbled content) - and reports the median status, length, and time of each
+      case, flagging SUSPECTED-ORACLE when the last two differ. If a candidate it could not
+      reach matters (for example a value only submitted deep in a logged-in flow), decode
+      and send the three versions by hand and record the status, size, and time here.
   - summary: Confirm a suspected oracle with padbuster, limited to one block
     command: padbuster {base_url}/PATH ENCRYPTED_VALUE 16 -cookies "NAME=ENCRYPTED_VALUE" -encoding 0 -noiv
     load_note: >-
       Up to 256 requests per byte (about 4000 per block). Heavy and noisy; may lock the
-      session or trigger a WAF. Run only with agreement, stop after the first decrypted
-      block, and use -encoding 1/2 for hex or 3 for .NET UrlToken values.
-    evidence: [padding-oracle-responses]
+      session or trigger a WAF. Run only with agreement and only for a value the previous
+      step flagged SUSPECTED-ORACLE, stop after the first decrypted block, and use
+      -encoding 1/2 for hex or 3 for .NET UrlToken values.
+    evidence: [padding-oracle-confirm]
   - summary: Record each oracle with the parameter, the response difference, and the recovered block as a finding
     operation: >-
       Write the parameter name, the request that shows the difference, the two distinct
