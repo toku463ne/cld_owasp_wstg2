@@ -222,6 +222,27 @@ def cmd_capture(args) -> int:
     return 0
 
 
+def cmd_capture_fixation(args) -> int:
+    from . import capture as capmod, targets as tmod
+    r = _runner(_cfg())
+    t = _target(r, args.target)
+    try:
+        res = capmod.record_fixation(r.cfg, r.db, r.store, t, role=args.role or "", actor="cli",
+                                     headless=args.headless, start_url=args.url, inject=not args.no_inject)
+    except (capmod.CaptureError, tmod.TargetError) as e:
+        raise config.ConfigError(str(e)) from None
+    print(f"saved session fixation result as {capmod.FIXATION_EVIDENCE_ID} v{res['version']} for {t.name}")
+    if res["not_reissued"]:
+        print(f"  FAIL: not reissued at login: {', '.join(res['not_reissued'])}")
+    if res["injected_survived"]:
+        print(f"  FAIL: injected identifier survived login: {', '.join(res['injected_survived'])}")
+    if res["replay"]["verdict"] == "still accepted":
+        print("  FAIL: the pre-login identifier is still accepted after login")
+    if not res["fail"]:
+        print("  no fixation detected (reissued at login; see the evidence for details)")
+    return 0
+
+
 def _target(r, name):
     from . import targets as tmod
     t = tmod.get(r.db, name)
@@ -356,6 +377,15 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--url", default=None, help="start URL (default: the scope base URL)")
     s.add_argument("--headless", action="store_true", help="run the browser headless (for automation/testing)")
     s.set_defaults(func=cmd_capture)
+
+    s = sub.add_parser("capture-fixation",
+                       help="session fixation check: capture a login and compare the session id before/after (WSTG-SESS-03)")
+    s.add_argument("target")
+    s.add_argument("--role", default="", help="a label for this capture (for example admin)")
+    s.add_argument("--url", default=None, help="login/start URL (default: the scope base URL)")
+    s.add_argument("--no-inject", action="store_true", help="do not inject a chosen id before login (only measure reissue)")
+    s.add_argument("--headless", action="store_true", help="run the browser headless (for automation/testing)")
+    s.set_defaults(func=cmd_capture_fixation)
 
     s = sub.add_parser("ai-prompts", help="save AI prompts to <evidence>/<target>/_ai/prompts for an AI agent")
     s.add_argument("target")

@@ -22,10 +22,14 @@ evidence:
     target_type: fqdn
     kind: manual
     description: >-
-      The session identifier value before login and after login (and after a privilege
-      change) with a test account, to check that it is reissued and the old one is
-      rejected. Include whether a session id can be injected through a URL or parameter.
-      Keep the identifier values inside evidence only.
+      Whether the session identifier is reissued at login and the pre-login one rejected,
+      and whether an identifier can be injected through a cookie or URL. Preferred: on the
+      Kali host, from the project directory, run `uv run wstg capture-fixation {fqdn}` and
+      log in with a test account in the browser window; the tool compares the session cookie
+      before and after login, injects a chosen value to test fixation, replays the pre-login
+      cookie to see if it is still accepted, and saves a masked summary here (identifier
+      values stay masked). Add anything it could not do (reissue on a privilege change) as a
+      text item. The raw identifier values stay inside evidence only.
 
   - id: session-exposure-tests
     title: Session token exposure tests
