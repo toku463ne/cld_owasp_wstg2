@@ -13,7 +13,7 @@ holds here, and auto-run steps that call this tool are still excluded from the p
 (their command names a `.har` file).
 
 Run as `wstg-har <view> [--host HOST] FILE...` where view is cookies | urls | cleartext |
-forms | xssi | entry-points (`--host` is used by entry-points only).
+forms | xssi | entry-points | expose (`--host` is used by entry-points and expose).
 Exit code is always 0 (a WSTG step reads the text output); unreadable files are noted.
 """
 import json
@@ -214,6 +214,144 @@ def view_urls(files: list[Path]) -> None:
             if line not in seen:
                 seen.add(line)
                 print("  " + line)
+
+
+def _mask(value: str) -> str:
+    """A session value is never printed in full: show only a short head and its length."""
+    v = str(value)
+    return "*" * len(v) if len(v) <= 4 else f"{v[:2]}…({len(v)} chars)"
+
+
+def _looks_token(value: str) -> bool:
+    """True for a JWT-shaped value (three base64url parts), to flag it in storage even
+    when its key name is not obviously session-related."""
+    return bool(re.match(r"^[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}$", str(value)))
+
+
+def _storage_state(path: Path):
+    """Return the parsed Playwright storage state if the file is one, else None.
+    A storage state is a JSON object with `origins` (and usually `cookies`); a HAR has `log`."""
+    try:
+        obj = json.loads(path.read_text(errors="replace"))
+    except (OSError, ValueError):
+        return None
+    if isinstance(obj, dict) and "log" not in obj and ("origins" in obj or "cookies" in obj):
+        return obj
+    return None
+
+
+def _base_host(entries: list, host: str = "") -> str:
+    """The target host: the one given with --host, else the most frequent request host."""
+    if host:
+        return host.lower()
+    counts: dict[str, int] = {}
+    for e in entries:
+        _, h, _, _ = _url_parts(str((e.get("request") or {}).get("url", "")))
+        if h:
+            counts[h] = counts.get(h, 0) + 1
+    return max(counts, key=counts.get) if counts else ""
+
+
+def _same_site(host: str, base: str) -> bool:
+    """Whether `host` is the base host or a sub/parent of it (not an external third party)."""
+    host, base = host.lower(), base.lower()
+    if not base:
+        return True
+    return host == base or host.endswith("." + base) or base.endswith("." + host)
+
+
+def _session_values(entries: list) -> set:
+    """Real session/auth cookie values seen in the HAR (request Cookie and Set-Cookie),
+    kept only to search for leaks. They are masked by _mask before anything is printed."""
+    vals = set()
+    for e in entries:
+        for c in (e.get("request") or {}).get("cookies") or []:
+            n, v = str(c.get("name", "")), str(c.get("value", ""))
+            if v and _is_session_cookie(n, set()):
+                vals.add(v)
+        for h in (e.get("response") or {}).get("headers") or []:
+            if str(h.get("name", "")).lower() != "set-cookie":
+                continue
+            head = str(h.get("value", "")).split(";", 1)[0]
+            n, _, v = head.partition("=")
+            if v and _is_session_cookie(n.strip(), set()):
+                vals.add(v.strip())
+    return {v for v in vals if len(v) >= 6}
+
+
+def view_expose(files: list[Path], host: str = "") -> None:
+    """Judge whether the session token leaks outside its cookie, from the login HAR and
+    the captured browser storage state (WSTG-SESS-04 step 4): a token-bearing Referer
+    sent to an external host, the token held in local/session storage, or the token
+    echoed in an error response body. Token values are masked, never printed in full."""
+    har_entries, states = [], []
+    for p in files:
+        ents = _load(p)
+        if ents is not None:
+            har_entries.append((p.name, ents))
+            continue
+        st = _storage_state(p)
+        if st is not None:
+            states.append((p.name, st))
+        else:
+            print(f"== {p.name}: not a readable HAR or storage-state file")
+    all_entries = [e for _, ents in har_entries for e in ents]
+    base = _base_host(all_entries, host)
+    values = _session_values(all_entries)
+    if base:
+        print(f"base host: {base}; {len(values)} session/auth cookie value(s) tracked, "
+              f"{len(states)} storage state(s)")
+    else:
+        print(f"base host: (unknown); {len(values)} session/auth cookie value(s) tracked")
+    found = False
+
+    # 1) A Referer carrying a session token sent to an external (third-party) host.
+    seen = set()
+    for _, ents in har_entries:
+        for e in ents:
+            req = e.get("request") or {}
+            _, h, _, _ = _url_parts(str(req.get("url", "")))
+            if not h or _same_site(h, base):
+                continue
+            ref = _header(req.get("headers"), "referer")
+            if not ref:
+                continue
+            _, _, _, rnames = _url_parts(ref)
+            if any(_TOKEN_RE.search(n) for n in rnames) or any(v in ref for v in values):
+                found = True
+                if h not in seen:
+                    seen.add(h)
+                    print(f"  REFERER-LEAK a session token rides the Referer to external host {h}")
+
+    # 2) The session token kept in local or session storage.
+    for _, st in states:
+        for origin in st.get("origins") or []:
+            o = str(origin.get("origin", ""))
+            for item in origin.get("localStorage") or []:
+                n, v = str(item.get("name", "")), str(item.get("value", ""))
+                if _TOKEN_RE.search(n) or _SESSION_COOKIE_RE.search(n) or v in values or _looks_token(v):
+                    found = True
+                    print(f"  STORAGE-TOKEN localStorage[{n}] at {o}  <= {_mask(v)}")
+
+    # 3) An error response body echoing a session token.
+    for _, ents in har_entries:
+        for e in ents:
+            resp = e.get("response") or {}
+            if (resp.get("status") or 0) < 400:
+                continue
+            body = _body_text(resp)
+            hit = [v for v in values if body and v in body]
+            if hit:
+                found = True
+                _, _, path, _ = _url_parts(str((e.get("request") or {}).get("url", "")))
+                print(f"  ERROR-ECHO HTTP {resp.get('status')} {path} echoes a session token "
+                      f"in its body  <= {_mask(hit[0])}")
+
+    if not found:
+        print("  no session-token exposure seen in the HAR or storage state "
+              "(Referer to a third party, local/session storage, error body)")
+    print("  note: deliberately triggering malformed-input errors stays a manual step; "
+          "this judges only what the capture recorded.")
 
 
 def view_cleartext(files: list[Path]) -> None:
@@ -597,7 +735,8 @@ def view_entry_points(files: list[Path], host: str = "") -> None:
 
 
 _VIEWS = {"cookies": view_cookies, "urls": view_urls, "cleartext": view_cleartext,
-          "forms": view_forms, "xssi": view_xssi, "entry-points": view_entry_points}
+          "forms": view_forms, "xssi": view_xssi, "entry-points": view_entry_points,
+          "expose": view_expose}
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -612,8 +751,8 @@ def main(argv: list[str] | None = None) -> int:
             return 2
         host, rest = rest[1], rest[2:]
     files = [Path(a) for a in rest]
-    if view == "entry-points":
-        view_entry_points(files, host)
+    if view in ("entry-points", "expose"):
+        _VIEWS[view](files, host)
     else:
         _VIEWS[view](files)
     return 0

@@ -31,19 +31,27 @@ steps:
     command: >-
       grep -ioE '(session|token|phpsessid|jsessionid|aspsessionid|csrf|auth)[^<>"'"'"' ]{0,40}'
       {ev:http-404}/body.html 2>/dev/null | sort -u | head || echo "no session-like string in the 404 body"
-  - summary: Trigger errors and check the Referer and storage in the browser (manual)
+  - summary: Judge the Referer, storage, and error bodies from the HAR
+    auto_run: true
+    evidence: [har-browse]
+    command: wstg-har expose {ev:har-browse}/items/*
+  - summary: Trigger malformed-input errors in the browser (manual, only if needed)
     evidence: [session-exposure-tests]
     operation: >-
-      In the browser developer tools, confirm whether the session token is kept in local
-      or session storage. On a page that loads an external resource, check whether the
-      token leaks in the Referer. Deliberately cause errors (invalid type, missing id,
+      Step 4 already judges the captured HAR and the browser storage state: it reports a
+      session token riding the Referer to an external host, the token kept in local/session
+      storage, and the token echoed in an error response body ("REFERER-LEAK",
+      "STORAGE-TOKEN", "ERROR-ECHO"), so the common case is automated from the login
+      capture. This step is only for errors the capture did not already trigger: in the
+      browser developer tools, deliberately cause errors (invalid type, missing id,
       oversized value, broken JSON) and check the response body, stack trace, and debug
-      output for the token or internal variables. Record it in session-exposure-tests.
+      output for the token or internal variables; record anything new in
+      session-exposure-tests, or mark it collected with a comment that step 4 covered it.
   - summary: Judge session token exposure
     evidence: [session-exposure-tests, katana-crawl]
     ai_task: >-
-      From steps 1 to 4 decide whether the token is exposed outside a cookie. Verdict: fail
+      From steps 1 to 5 decide whether the token is exposed outside a cookie. Verdict: fail
       when it appears in a URL or redirect, in local/session storage, in a Referer to an
       external site, or in an error page or stack trace; pass when it is cookie-only
-      everywhere observed; "-" when session-exposure-tests is missing and the crawl shows no
-      token in a URL.
+      everywhere observed; "-" when there is no token in a URL and neither the HAR/storage
+      (step 4) nor session-exposure-tests shows any exposure.

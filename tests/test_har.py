@@ -10,7 +10,8 @@ import pytest
 
 from wstg import har
 
-SECRETS = ["s3cr3t-session-abc123", "hunter2", "Bearer-token-xyz789", "deadbeefcsrf"]
+SECRETS = ["s3cr3t-session-abc123", "hunter2", "Bearer-token-xyz789", "deadbeefcsrf",
+           "abc123secretXYZ", "eyJhbGci.payloadpart.sigsig"]
 
 
 def _har(entries):
@@ -333,3 +334,76 @@ def test_entry_points_role_ignores_the_store_item_number(tmp_path, capsys):
     _, out = _run(capsys, "entry-points", "--host", "www.example.com", f)
     assert "-> anon (anonymous)" in out and "no anonymous HAR" not in out
     assert "login: no (anonymous HAR)" in out
+
+
+# -- expose view (WSTG-SESS-04 step 4): token exposure from the HAR + storage state --
+
+def _exp_entry(method, url, *, req_cookies=(), referer=None, status=200, body=""):
+    headers = [{"name": "Referer", "value": referer}] if referer else []
+    return {
+        "request": {"method": method, "url": url, "headers": headers,
+                    "cookies": [{"name": n, "value": v} for n, v in req_cookies]},
+        "response": {"status": status, "headers": [], "content": {"text": body}},
+    }
+
+
+def _storage(origin, items):
+    return {"cookies": [], "origins": [
+        {"origin": origin, "localStorage": [{"name": n, "value": v} for n, v in items]}]}
+
+
+def test_expose_flags_referer_storage_and_error_echo(tmp_path, capsys):
+    sid = "abc123secretXYZ"
+    har_doc = _har([
+        _exp_entry("GET", "https://app.example.com/dash", req_cookies=[("SESSIONID", sid)]),
+        _exp_entry("GET", "https://cdn.thirdparty.test/a.js",
+                   referer=f"https://app.example.com/p?sid={sid}"),
+        _exp_entry("GET", "https://app.example.com/boom", status=500,
+                   body=f"error: session {sid} is not valid"),
+    ])
+    hf = _write(tmp_path, "001-user.har", har_doc)
+    sf = _write(tmp_path, "002-storage-state.json",
+                _storage("https://app.example.com",
+                         [("auth_token", "eyJhbGci.payloadpart.sigsig"), ("theme", "dark")]))
+    rc, out = _run(capsys, "expose", hf, sf)
+    assert rc == 0
+    assert "base host: app.example.com" in out
+    assert "REFERER-LEAK" in out and "cdn.thirdparty.test" in out
+    assert "STORAGE-TOKEN localStorage[auth_token]" in out
+    assert "theme" not in out                       # a non-token key is not flagged
+    assert "ERROR-ECHO HTTP 500 /boom" in out
+    assert "chars)" in out                           # values are masked by length
+
+
+def test_expose_clean_capture_reports_no_exposure(tmp_path, capsys):
+    sid = "abc123secretXYZ"
+    hf = _write(tmp_path, "001-user.har", _har([
+        _exp_entry("GET", "https://app.example.com/dash", req_cookies=[("SESSIONID", sid)],
+                   body="ok"),
+    ]))
+    sf = _write(tmp_path, "002-storage-state.json",
+                _storage("https://app.example.com", [("theme", "dark")]))
+    rc, out = _run(capsys, "expose", hf, sf)
+    assert rc == 0
+    assert "no session-token exposure seen" in out
+    assert "REFERER-LEAK" not in out and "STORAGE-TOKEN" not in out and "ERROR-ECHO" not in out
+
+
+def test_expose_does_not_flag_same_site_referer(tmp_path, capsys):
+    sid = "abc123secretXYZ"
+    hf = _write(tmp_path, "001-user.har", _har([
+        _exp_entry("GET", "https://app.example.com/dash", req_cookies=[("SESSIONID", sid)]),
+        _exp_entry("GET", "https://static.example.com/a.js",      # same-site subdomain
+                   referer=f"https://app.example.com/p?sid={sid}"),
+    ]))
+    rc, out = _run(capsys, "expose", "--host", "example.com", hf)
+    assert rc == 0
+    assert "REFERER-LEAK" not in out
+
+
+def test_expose_ignores_unreadable_file(tmp_path, capsys):
+    junk = tmp_path / "x.txt"
+    junk.write_text("not json or har")
+    rc, out = _run(capsys, "expose", junk)
+    assert rc == 0
+    assert "not a readable HAR or storage-state file" in out
