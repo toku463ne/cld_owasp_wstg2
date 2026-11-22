@@ -12,7 +12,8 @@ Only the host of `--base` is contacted (the one replay request); GET only; ident
 values are masked in the output, so the raw identifiers stay in the HAR evidence only.
 Exit 3 when no HAR with a login was found.
 
-`wstg-sess --errors ...` runs the malformed-input error probes instead (see sesserror.py).
+`wstg-sess --errors ...` runs the malformed-input error probes instead (see sesserror.py),
+`wstg-sess --logout ...` the logout invalidation check (see sesslogout.py).
 """
 from __future__ import annotations
 
@@ -26,6 +27,7 @@ from . import entrypoints as ep
 from . import har as harmod
 from . import session as se
 from . import sesserror
+from . import sesslogout
 
 
 def _best_har(folder: Path, base_host: str) -> tuple[str, dict] | None:
@@ -128,8 +130,12 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--pause", type=int, default=0)
     ap.add_argument("--errors", action="store_true",
                     help="instead: malformed-input error probes with the captured session (WSTG-SESS-04)")
+    ap.add_argument("--logout", action="store_true",
+                    help="instead: logout invalidation check from a logout capture (WSTG-SESS-06)")
     ap.add_argument("--max", type=int, default=sesserror.DEFAULT_MAX, help="--errors: request templates to probe")
     args = ap.parse_args(argv)
+    if args.logout:
+        return sesslogout.run(args)
     return sesserror.run(args) if args.errors else run(args)
 
 

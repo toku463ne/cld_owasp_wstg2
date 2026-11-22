@@ -73,16 +73,25 @@ evidence:
       20 templates per role); a WAF may flag them. Needs a logged-in har-browse capture
       whose session is still valid.
 
-  - id: logout-tests
-    title: Logout invalidation tests
+  - id: logout-replay
+    title: Logout invalidation check
     target_type: fqdn
-    kind: manual
+    kind: auto
+    level: light
+    inputs: [har-browse]
     description: >-
-      Evidence that logout invalidates the session server-side: the previous session
-      cookie replayed after logout and whether it is still accepted, whether logout clears
-      the cookie only on the client or also on the server, and whether the back button,
-      other tabs, or another device's session are invalidated. Note whether a clear logout
-      control exists at all.
+      wstg-sess --logout reads the logout capture in har-browse (`wstg capture {fqdn}
+      --role logout`: log in, open one page, log out): the logout request, the session
+      cookie in use just before it, whether the logout response clears the cookie in the
+      browser and whether the browser still held it at the end of the capture. Then it
+      replays the pre-logout cookie against up to three authenticated pages seen before the
+      logout, each compared with the same page fetched without a cookie, and reports
+      "still accepted" [FAIL] or "rejected" [GOOD]. Cookie values are masked.
+    argv: [wstg-sess, --logout, --base, "{base_url}/", --har, "{ev:har-browse}", "{pause_args}"]
+    pause_args: [--pause, "{pause}"]
+    est: 20
+    timeout: 300
+    load_note: At most six GET requests (each page with the old cookie and without one). Needs the logout capture in har-browse.
 
   - id: timeout-tests
     title: Session timeout tests

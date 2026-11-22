@@ -37,6 +37,7 @@ from pathlib import Path
 from urllib.parse import urljoin, urlsplit
 
 from . import har as harmod
+from . import session as se
 
 TIMEOUT = 10
 BODY_BYTES = 512 * 1024
@@ -116,6 +117,10 @@ def read_list(inv: Inventory, folder: Path | None) -> None:
 def read_har(inv: Inventory, folder: Path | None) -> list[tuple[str, dict]]:
     """Adds the HAR requests; returns [(role, storage-state dict)] found next to them."""
     states = []
+    ended = set()                     # roles whose capture logs out: their session may be dead
+    for f in _files(folder):
+        if f.suffix.lower() == ".har" and se.logout_index(harmod._load(f) or []) is not None:
+            ended.add(harmod._role(f.name))
     for f in _files(folder):
         name = re.sub(r"^\d{3}-", "", f.name)
         if f.suffix.lower() == ".har":
@@ -129,6 +134,11 @@ def read_har(inv: Inventory, folder: Path | None) -> list[tuple[str, dict]]:
                 inv.add(str(req.get("url", "")), "har", params, role)
         elif name.startswith("storage-state") and f.suffix.lower() == ".json":
             role = _STAMP_RE.sub("", name[len("storage-state"):-5].lstrip("-_")) or "session"
+            if se.LOGOUT_ROLE_RE.match(role):
+                continue                  # the dedicated logout capture (WSTG-SESS-06): its session ended
+            if role in ended:
+                inv.notes.append(f"har-browse: warning: the '{role}' capture logs out, so its session may be "
+                                 "invalid now (capture the main walk without logging out)")
             try:
                 states.append((role, json.loads(_read(f))))
             except ValueError:

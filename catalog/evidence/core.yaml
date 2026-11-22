@@ -140,8 +140,11 @@ evidence:
       `uv run wstg capture {fqdn} --role anon`, then once per logged-in role
       `uv run wstg capture {fqdn} --role user`, `uv run wstg capture {fqdn} --role admin`,
       and so on (from elsewhere add `--directory /path/to/cld_owasp_wstg2`). In the browser window that opens, walk every main screen and function once
-      (log in, profile, search, forms that send personal data, log out) and press Enter in
-      the terminal to save. The HAR and the storage state are stored here automatically. Fallback without the capture tool: in the browser press F12, open
+      (log in, profile, search, forms that send personal data; do not log out, so the
+      saved session stays usable for the automatic checks) and press Enter in the terminal
+      to save. For the logout check (WSTG-SESS-06) record one more short capture with
+      `uv run wstg capture {fqdn} --role logout`: log in, open one page only a logged-in
+      user sees, log out, and press Enter. The HAR and the storage state are stored here automatically. Fallback without the capture tool: in the browser press F12, open
       Network, tick "Preserve log" (Firefox: "Persist Logs"), press Ctrl+Shift+R, walk the
       application, then right-click the request list, choose "Save all as HAR (with sensitive
       data)" (older browsers: "Save all as HAR"), and upload the file with the caption

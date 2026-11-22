@@ -210,3 +210,50 @@ def analyze_har(entries: list, field_names=login_fields, base_host: str = "") ->
 
 def _host(url: str) -> str:
     return (urlsplit(url).hostname or "").lower()
+
+
+# ---- logout (WSTG-SESS-06) ------------------------------------------------
+
+LOGOUT_PATH_RE = re.compile(r"(logout|log-out|log_out|signout|sign-out|sign_out|logoff|log-off|"
+                            r"end[-_]?session)", re.I)
+
+
+# The dedicated logout capture (`wstg capture <fqdn> --role logout`): its session has
+# ended, so the checks that need a live session leave it out.
+LOGOUT_ROLE_RE = re.compile(r"^logout\b", re.I)
+
+
+def cleared_names(entry: dict) -> set:
+    """Session cookie names the response expires or empties (Max-Age=0, a past Expires,
+    or an empty value)."""
+    out = set()
+    for h in (entry.get("response") or {}).get("headers") or []:
+        if str(h.get("name", "")).lower() != "set-cookie":
+            continue
+        v = str(h.get("value", ""))
+        name, _, rest = v.partition("=")
+        name = name.strip()
+        if not is_session_cookie({"name": name}):
+            continue
+        val = rest.split(";", 1)[0].strip().strip('"')
+        if (not val or val.lower() in ("deleted", "null", "none")
+                or re.search(r"max-age\s*=\s*(0|-\d+)\b", v, re.I)
+                or re.search(r"expires\s*=\s*[^;]*(19[0-9]{2}|200[0-9])", v, re.I)):
+            out.add(name)
+    return out
+
+
+def logout_index(entries: list) -> int | None:
+    """Index of the logout request in a HAR: the first request to a logout-like path, or
+    else the first response that clears a session cookie after a session was in use."""
+    for i, e in enumerate(entries):
+        path = urlsplit(str((e.get("request") or {}).get("url", ""))).path
+        if LOGOUT_PATH_RE.search(path):
+            return i
+    seen_session = False
+    for i, e in enumerate(entries):
+        if _sess(_req_cookies(e)):
+            seen_session = True
+        if seen_session and cleared_names(e):
+            return i
+    return None

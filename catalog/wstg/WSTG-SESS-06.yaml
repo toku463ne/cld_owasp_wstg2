@@ -10,28 +10,33 @@ fail: >-
   The previous session token is still accepted after logout (the server did not
   invalidate it), logout only clears the client cookie, or there is no clear logout.
 notes:
-  - After this test, log out to invalidate the token used; keep the token value inside evidence only.
+  - The logout capture (`wstg capture` with `--role logout`) is separate from the main walk, which does not log out, so the other automatic checks keep a usable session.
   - Record a missing or hard-to-find logout control as a finding of its own.
 finding_kinds: [weak-logout]
 steps:
-  - summary: Replay the session token after logout (manual)
-    evidence: [logout-tests]
+  - summary: Replay the session cookie after logout (from the logout capture)
+    auto_run: true
+    evidence: [logout-replay, har-browse]
+    command: cat {ev:logout-replay}/stdout.txt
     operation: >-
-      Log in with a test account and keep the session cookie. Log out, then replay a
-      request to an authenticated page with the kept cookie. If it still succeeds, the
-      server did not invalidate the session. Record the request and response in
-      logout-tests.
-  - summary: Check client-only logout, back button, and other sessions (manual)
-    evidence: [logout-tests]
-    operation: >-
-      Check whether logout clears the cookie only on the client (server still accepts it),
-      whether the back button re-displays authenticated pages after logout (see also
-      WSTG-ATHN-06), and whether logout ends the session in other tabs or on another
-      device. Note whether a clear logout control exists. Add the results to logout-tests.
+      Automated: record the logout capture with `uv run wstg capture {fqdn} --role logout`
+      (log in, open one page only a logged-in user sees, log out, press Enter), then
+      collect logout-replay. It finds the logout, shows whether the logout response clears
+      the cookie in the browser, and replays the pre-logout cookie against the pages seen
+      before the logout: "still accepted" [FAIL] means the server did not end the session.
+      Other tabs share the same cookie, so the same result applies to them.
+  - summary: Check whether authenticated pages can be re-displayed from the cache (back button)
+    auto_run: true
+    evidence: [har-browse]
+    command: wstg-har cache {ev:har-browse}/items/*.har
   - summary: Judge logout functionality
-    evidence: [logout-tests]
+    evidence: [logout-replay, har-browse]
     ai_task: >-
       From steps 1 and 2 decide whether logout invalidates the session server-side.
-      Verdict: fail when the previous token is still accepted after logout, logout only
-      clears the client cookie, or there is no clear logout; pass when the token is rejected
-      server-side after logout; "-" when logout-tests is missing.
+      Verdict: fail when step 1 shows "still accepted" for the pre-logout cookie, or no
+      logout was found in a capture that tried to log out (no clear logout control); pass
+      when the old cookie is "rejected" after logout; "-" when logout-replay is missing,
+      failed, or INCONCLUSIVE. A cookie not cleared in the browser while the server
+      rejects it is a minor note, and CACHEABLE authenticated pages in step 2 (back button)
+      belong to WSTG-ATHN-06; mention them but do not fail this test on them alone. Ending
+      the session on another device is not judged here.

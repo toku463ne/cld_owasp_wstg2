@@ -29,6 +29,7 @@ from urllib.parse import parse_qsl, quote, urlencode, urlsplit
 
 from . import entrypoints as ep
 from . import har as harmod
+from . import session as se
 
 DEFAULT_MAX = 20
 OVERSIZE = 4096
@@ -73,9 +74,13 @@ def logged_in_hars(folder: Path | None) -> list[tuple[str, list]]:
         if f.suffix.lower() != ".har":
             continue
         role = harmod._role(f.name)
-        if harmod._ANON_ROLE_RE.match(role):
+        if harmod._ANON_ROLE_RE.match(role) or se.LOGOUT_ROLE_RE.match(role):
             continue
-        out.append((role, harmod._load(f) or []))
+        entries = harmod._load(f) or []
+        if se.logout_index(entries) is not None:
+            print(f"# warning: the '{role}' capture logs out, so its session may be invalid now "
+                  "(capture the main walk without logging out)")
+        out.append((role, entries))
     return out
 
 
