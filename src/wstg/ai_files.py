@@ -43,7 +43,8 @@ For each prompt file `prompts/WSTG-XXXX-NN.md`:
 
 1. Skip it when `answers/WSTG-XXXX-NN.json` already exists and is newer than the prompt.
 2. Read the prompt and follow it. You may read the evidence folders it lists for
-   more detail. Do not read or copy `*.har` files: they hold cookies and tokens.
+   more detail. Do not read or copy `*.har` or `storage-state*.json` files: they hold
+   cookies and tokens (the prompt already has their summary without values).
    Do not send any request to the target or its hosts.
 3. A missing or failed collection is never a pass: use "-" when the evidence is
    missing or not enough to decide.
@@ -150,7 +151,7 @@ def build_prompt(cfg: Config, db: dbmod.Database, cat: catmod.Catalog, store: ev
                         all_tests=for_file)
     if not for_file:
         return text
-    lines = ["", "Evidence folders on this host (latest complete version; do not read *.har files):"]
+    lines = ["", "Evidence folders on this host (latest complete version; do not read *.har or storage-state*.json files):"]
     seen = set()
     for s in steps:
         for e in s["evidence"]:

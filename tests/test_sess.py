@@ -58,3 +58,25 @@ def test_sess04_finds_token_in_url_and_error_body(admin_client, store, site):
 @pytest.mark.parametrize("tid", [f"WSTG-SESS-{n:02d}" for n in range(1, 10)])
 def test_every_sess_page_renders(admin_client, site, tid):
     assert page(admin_client, tid).count("Step 1") >= 1
+
+
+def test_sess04_prompt_has_masked_har_views_and_storage_summary(admin_client, store, site):
+    import json
+    secret = "TOPSECRETsessionVALUE99"
+    har_doc = {"log": {"entries": [
+        {"request": {"method": "GET", "url": f"{BASE}/home?sid={secret}", "headers": [],
+                     "cookies": [{"name": "SESSIONID", "value": secret}]},
+         "response": {"status": 200, "headers": [], "content": {"text": "ok"}}}]}}
+    state = {"cookies": [{"name": "SESSIONID", "value": secret, "domain": "www.example.com", "path": "/",
+                          "secure": True, "httpOnly": True, "sameSite": "Lax"}],
+             "origins": [{"origin": BASE, "localStorage": [{"name": "auth_token", "value": secret}]}]}
+    store.add_file(site, "har-browse", json.dumps(har_doc).encode(), "user-20260101-1200.har", "", "admin")
+    store.add_file(site, "har-browse", json.dumps(state).encode(), "storage-state-user-20260101-1200.json", "", "admin")
+    p = page(admin_client, "WSTG-SESS-04")
+    prompt = p[p.index('id="ai-prompt"'):]
+    assert "TOKEN-IN-URL" in prompt                        # step 2 (wstg-har urls) output is included
+    assert "STORAGE-TOKEN localStorage[auth_token]" in prompt   # step 4 (wstg-har expose)
+    assert "browser storage state" in prompt and "cookie SESSIONID" in prompt
+    assert "SENSITIVE" in prompt
+    assert secret not in prompt                            # never a raw value
+    assert "session-exposure-tests" not in p               # the manual evidence is gone

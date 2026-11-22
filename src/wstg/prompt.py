@@ -7,17 +7,21 @@ block that `ai_review.py` imports back.
 
 Excerpts: text items and small text files are included (each cut at
 PER_FILE chars, the whole prompt at TOTAL chars). Images are listed by
-caption. HAR files are summarized without values (cookies and tokens removed),
-and the output of auto-run commands that read HAR files is left out for the
-same reason. Outputs of other auto-run commands (`auto_run: true`) are included.
+caption. HAR files and browser storage-state files are summarized without values
+(cookies and tokens removed). The output of an auto-run command that reads HAR
+files is left out for the same reason, unless the command is a single `wstg-har`
+view, which masks every value by design. Outputs of other auto-run commands
+(`auto_run: true`) are included.
 """
 
 from __future__ import annotations
 
 import json
+import re
 
 from . import catalog as catmod
 from . import evidence as evmod
+from . import har as harmod
 
 PER_FILE = 6000
 TOTAL = 60000
@@ -25,6 +29,33 @@ TEXT_SUFFIXES = (".txt", ".json", ".xml", ".html", ".htm", ".csv", ".md", ".log"
 
 
 HAR_LINES = 400
+# A step command that is one `wstg-har` view and nothing else (no pipe or chaining):
+# its output masks every value, so it can go into the prompt.
+_WSTG_HAR_ONLY_RE = re.compile(r"^\s*wstg-har\s+[a-z-]+(\s+[^|;&<>`$()]+)?\s*$")
+
+
+def masked_har_view(command: str) -> bool:
+    return bool(_WSTG_HAR_ONLY_RE.match(command or ""))
+
+
+def storage_summary(state: dict) -> list[str]:
+    """A Playwright storage state without values: cookie names with their flags, and the
+    localStorage keys per origin (values masked, token-like keys flagged)."""
+    out = []
+    for c in state.get("cookies") or []:
+        flags = [f for f, on in (("Secure", c.get("secure")), ("HttpOnly", c.get("httpOnly"))) if on]
+        if c.get("sameSite"):
+            flags.append(f"SameSite={c.get('sameSite')}")
+        out.append(f"cookie {c.get('name', '')} (domain {c.get('domain', '')}, path {c.get('path', '')})"
+                   f" {', '.join(flags) or 'no flags'}")
+    for o in state.get("origins") or []:
+        for item in o.get("localStorage") or []:
+            n, v = str(item.get("name", "")), str(item.get("value", ""))
+            sensitive = (harmod._TOKEN_RE.search(n) or harmod._SESSION_COOKIE_RE.search(n)
+                         or harmod._CREDENTIAL_RE.match(n) or harmod._looks_token(v))
+            out.append(f"localStorage {o.get('origin', '')} {n} = {harmod._mask(v)}"
+                       + ("  <= SENSITIVE (token/credential stored client-side)" if sensitive else ""))
+    return out or ["(no cookies or localStorage)"]
 
 
 def har_summary(path, budget: list[int]) -> list[str]:
@@ -90,6 +121,12 @@ def _excerpt(version: evmod.Version, budget: list[int]) -> list[str]:
                        " and parameter values removed):")
             out += ["     " + ln for ln in har_summary(version.path / it.file, budget)]
             continue
+        if it.file.lower().endswith(".json"):
+            state = harmod._storage_state(version.path / it.file)
+            if state is not None:
+                out.append(f"   - browser storage state {it.name or it.file}: summary without values:")
+                out += ["     " + ln for ln in storage_summary(state)]
+                continue
         if it.type == "file" and not it.file.lower().endswith(TEXT_SUFFIXES):
             out.append(f"   - file {it.name or it.file}, {it.size} bytes (binary, not included)")
             continue
@@ -141,7 +178,7 @@ def build(*, test: catmod.Test, scenario: catmod.Scenario, target, steps: list[d
         if auto is not None:
             if auto.status == "missing":
                 lines.append(f"   Command output: {auto.note}")
-            elif ".har" in s["step"].command:
+            elif ".har" in s["step"].command and not masked_har_view(s["step"].command):
                 lines.append("   Command output: not included (it reads HAR files, which hold cookies and tokens;"
                              " see the HAR summary below)")
             elif budget[0] > 0:

@@ -44,14 +44,17 @@ steps:
       input (array instead of scalar, missing parameters, oversized value, invalid
       encoding, broken JSON) and flags "ERROR-ECHO" (the token in the error response) and
       "DEBUG-OUTPUT" (stack trace, SQL error, server variables). Collect it after the HAR.
-      Only if a flow was not in the capture (or the session expired), cause the error by
-      hand in the browser developer tools and record it in session-exposure-tests.
+      When a flow is missing from the output (it was not in the capture, or the run says
+      the session expired), capture it again with `uv run wstg capture {fqdn} --role user`
+      and collect session-error-probes again.
   - summary: Judge session token exposure
-    evidence: [session-error-probes, session-exposure-tests, katana-crawl]
+    evidence: [katana-crawl, http-404, har-browse, session-error-probes]
     ai_task: >-
-      From steps 1 to 5 decide whether the token is exposed outside a cookie. Verdict: fail
-      when it appears in a URL or redirect, in local/session storage, in a Referer to an
-      external site, or in an error page or stack trace; pass when it is cookie-only
-      everywhere observed (a DEBUG-OUTPUT line without the token is an error-handling
-      issue for WSTG-ERRH-01/02, not a token exposure); "-" when the HAR (steps 2, 4) and
-      session-error-probes (step 5) are missing and no token is seen in a URL.
+      From the outputs of steps 1 to 5 decide whether the token is exposed outside a
+      cookie. Verdict: fail when step 1 or 2 shows a session token in a URL
+      (TOKEN-IN-URL), step 3 or 5 shows it echoed in an error page (ERROR-ECHO), or step 4
+      shows REFERER-LEAK, STORAGE-TOKEN, or ERROR-ECHO; pass when the HAR (steps 2 and 4)
+      and session-error-probes (step 5) were collected and none of them shows an
+      exposure; "-" when the HAR or session-error-probes is missing or failed. A
+      DEBUG-OUTPUT line without the token is an error-handling issue for WSTG-ERRH-01/02,
+      not a token exposure.

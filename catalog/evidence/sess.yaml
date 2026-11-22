@@ -73,17 +73,6 @@ evidence:
       20 templates per role); a WAF may flag them. Needs a logged-in har-browse capture
       whose session is still valid.
 
-  - id: session-exposure-tests
-    title: Session token exposure tests
-    target_type: fqdn
-    kind: manual
-    description: >-
-      Evidence that the session token does or does not appear outside a cookie: in URL
-      query strings or redirect targets, in local/session storage (developer tools), in a
-      Referer sent to an external resource, or in an error page or stack trace produced on
-      purpose (invalid type, missing id, oversized value, broken JSON). Note where it
-      appears; keep the token value inside evidence only.
-
   - id: csrf-tests
     title: Cross-site request forgery tests
     target_type: fqdn
