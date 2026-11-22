@@ -17,19 +17,34 @@ evidence:
       judged. Mark session and authentication cookies apart from CSRF or tracking cookies.
       The headers hold the session value, so they stay inside evidence, never in a finding.
 
+  - id: session-reissue
+    title: Session identifier reissue (fixation) check
+    target_type: fqdn
+    kind: auto
+    level: full
+    inputs: [har-browse]
+    description: >-
+      Read from the login HAR (har-browse) by wstg-sess: the session identifier before and
+      after login and whether it is reissued, whether a session id is carried in a URL, and -
+      best effort - a replay of the pre-login cookie against an authenticated URL to check
+      whether the old identifier is still accepted. No extra capture is needed; it reuses the
+      logged-in capture. Identifier values are masked, so the raw values stay in the HAR only.
+    argv: [wstg-sess, --base, "{base_url}/", --har, "{ev:har-browse}", "{pause_args}"]
+    pause_args: [--pause, "{pause}"]
+    est: 30
+    timeout: 300
+    load_note: One replay request to the target; reads the login HAR. Needs a har-browse capture that includes the login step.
+
   - id: session-reissue-tests
-    title: Session identifier reissue (fixation) tests
+    title: Session fixation notes (privilege change)
     target_type: fqdn
     kind: manual
     description: >-
-      Whether the session identifier is reissued at login and the pre-login one rejected,
-      and whether an identifier can be injected through a cookie or URL. Preferred: on the
-      Kali host, from the project directory, run `uv run wstg capture-fixation {fqdn}` and
-      log in with a test account in the browser window; the tool compares the session cookie
-      before and after login, injects a chosen value to test fixation, replays the pre-login
-      cookie to see if it is still accepted, and saves a masked summary here (identifier
-      values stay masked). Add anything it could not do (reissue on a privilege change) as a
-      text item. The raw identifier values stay inside evidence only.
+      Anything the automatic check (session-reissue) could not do: reissue on a privilege
+      change (an admin step-up or sudo), and an active id-injection test if needed. One text
+      item per check: what was tried and whether the identifier was reissued or accepted.
+      When there is no privilege-change step, mark this evidence collected with a comment.
+      The raw identifier values stay inside evidence only.
 
   - id: session-exposure-tests
     title: Session token exposure tests

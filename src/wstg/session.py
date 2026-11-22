@@ -76,3 +76,70 @@ def looks_logged_out(status, location: str, body: str) -> bool:
     if status in (301, 302, 303, 307, 308) and re.search(r"login|signin|auth|session", location or "", re.I):
         return True
     return bool(LOGIN_FORM_RE.search(body or ""))
+
+
+# ---- reading a login from a captured HAR ----------------------------------
+
+PASSWORD_FIELD_RE = re.compile(r"(pass|passwd|password|passwort|pwd|mot_de_passe)", re.I)
+
+
+def _req_cookies(entry: dict) -> dict[str, str]:
+    return {c.get("name", ""): c.get("value", "")
+            for c in (entry.get("request") or {}).get("cookies") or [] if c.get("name")}
+
+
+def _set_cookie_values(entry: dict) -> dict[str, str]:
+    out = {}
+    for h in (entry.get("response") or {}).get("headers") or []:
+        if str(h.get("name", "")).lower() == "set-cookie":
+            first = str(h.get("value", "")).split(";", 1)[0]
+            if "=" in first:
+                n, v = first.split("=", 1)
+                out[n.strip()] = v.strip()
+    return out
+
+
+def cookie_header(entry: dict) -> str:
+    return "; ".join(f"{n}={v}" for n, v in _req_cookies(entry).items())
+
+
+def find_login(entries: list, field_names) -> int | None:
+    """Index of the first POST whose body carries a password field (the login request)."""
+    for i, e in enumerate(entries):
+        req = e.get("request") or {}
+        if str(req.get("method", "")).upper() == "POST" and any(PASSWORD_FIELD_RE.search(n) for n in field_names(req)):
+            return i
+    return None
+
+
+def analyze_har(entries: list, field_names, base_host: str) -> dict:
+    """From the entries of one HAR that spans a login, return the session identifier
+    before and after login, an authenticated URL on `base_host` to replay against, and the
+    request URLs. `field_names(req)` returns a request's body field names."""
+    i = find_login(entries, field_names)
+    if i is None:
+        return {"login_found": False, "urls": [(e.get("request") or {}).get("url", "") for e in entries]}
+    login = entries[i]
+    sess = lambda d: {n: v for n, v in d.items() if is_session_cookie({"name": n})}  # noqa: E731
+    before = sess(_req_cookies(login))
+    after = sess(_set_cookie_values(login))
+    for e in entries[i + 1:]:                      # fill from later requests when the login response set nothing
+        for n, v in sess(_req_cookies(e)).items():
+            after.setdefault(n, v)
+    authed_url = ""
+    for e in entries[i + 1:]:
+        req = e.get("request") or {}
+        u = req.get("url", "")
+        if str(req.get("method", "")).upper() == "GET" and _host(u) == base_host \
+                and (e.get("response") or {}).get("status") == 200:
+            authed_url = u
+            break
+    post_entry = next((e for e in entries[i + 1:] if _host((e.get("request") or {}).get("url", "")) == base_host), None)
+    return {"login_found": True, "before": before, "after": after, "authed_url": authed_url,
+            "pre_cookie": cookie_header(login), "post_cookie": cookie_header(post_entry) if post_entry else "",
+            "urls": [(e.get("request") or {}).get("url", "") for e in entries]}
+
+
+def _host(url: str) -> str:
+    from urllib.parse import urlsplit
+    return (urlsplit(url).hostname or "").lower()

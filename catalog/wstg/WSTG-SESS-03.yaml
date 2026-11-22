@@ -15,30 +15,28 @@ notes:
   - Use the tester's own test account; record the pre-login and post-login identifiers inside evidence only.
 finding_kinds: [session-fixation]
 steps:
-  - summary: Capture a login and compare the session identifier (reissue, injection, replay)
-    evidence: [session-reissue-tests]
+  - summary: Compare the session identifier before and after login (from the login HAR)
+    evidence: [session-reissue, har-browse]
     operation: >-
-      On the Kali host, from the project directory, run `uv run wstg capture-fixation {fqdn}`
-      and log in with a TEST account in the browser window that opens. The tool reads the
-      session cookie before login, injects a chosen value to test fixation, waits for your
-      manual login, reads the cookie again, replays the pre-login cookie against the page you
-      ended on to see whether it is still accepted, and checks for a session id in the URLs;
-      it saves a masked summary to session-reissue-tests. It flags: the identifier NOT
-      reissued at login, an injected value that survived login, the pre-login identifier
-      still accepted, and a session id carried in a URL.
+      No separate capture is needed: this reads the `har-browse` login capture (record it
+      with `uv run wstg capture {fqdn} --role user`, starting logged out and logging in
+      during the walk, so the HAR spans the login). wstg-sess then reads the session
+      identifier before and after login and flags it NOT REISSUED, replays the pre-login
+      cookie against an authenticated URL to check whether the old identifier is still
+      accepted, and flags a session id carried in a URL. Collect it after the HAR.
   - summary: Confirm reissue on a privilege change (manual, only if needed)
     evidence: [session-reissue-tests]
     operation: >-
-      The capture (step 1) covers login. If the application raises privilege after login
-      (for example an admin "sudo" step or a step-up authentication), repeat the check
-      across that boundary by hand: read the session cookie before and after the privilege
-      change and see whether it is reissued. Add the result to session-reissue-tests, or mark
-      it collected with a comment when there is no privilege-change step.
+      The automatic check (step 1) covers login. If the application raises privilege after
+      login (an admin "sudo" step or a step-up authentication), repeat the check across that
+      boundary by hand: read the session cookie before and after the privilege change and see
+      whether it is reissued. Add the result to session-reissue-tests, or mark it collected
+      with a comment when there is no privilege-change step.
   - summary: Judge session fixation
-    evidence: [session-reissue-tests]
+    evidence: [session-reissue, session-reissue-tests]
     ai_task: >-
-      From the session-reissue-tests summary decide whether the session is fixable. Verdict:
-      fail when the identifier is not reissued at login (a `[FAIL]` "NOT REISSUED" line), an
-      injected identifier survived login, the pre-login identifier is still accepted, or a
+      From the session-reissue output (step 1) and session-reissue-tests (step 2) decide
+      whether the session is fixable. Verdict: fail when the identifier is not reissued at
+      login (a `[FAIL]` "NOT REISSUED" line), the pre-login identifier is still accepted, or a
       session id is carried in a URL; pass when the identifier is reissued at login and the
-      old one is rejected; "-" when session-reissue-tests is missing.
+      old one is rejected; "-" when session-reissue is missing.
