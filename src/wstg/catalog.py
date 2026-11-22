@@ -130,6 +130,7 @@ class Evidence:
     load_note: str = ""
     inputs: tuple[str, ...] = ()      # auto only: evidence read through {ev:ID} in argv (collected first)
     fqdn_targets: bool = False        # domain auto only: contacts its registered FQDN targets (each scope-checked)
+    after_capture: str = ""           # auto only: login | logout | timeout - needs that manual har-browse capture first; not in bulk runs
     source: str = ""                  # file it was defined in
 
 
@@ -264,9 +265,14 @@ def _load_index(path: Path, problems: list[str]) -> tuple[str, dict[str, Test]]:
     return _str(data.get("wstg_version")), tests
 
 
+# Manual har-browse captures an automatic evidence can wait for (`after_capture`), and the
+# `wstg capture --role` that records each.
+CAPTURE_KINDS = {"login": "user", "logout": "logout", "timeout": "timeout"}
+
 EVIDENCE_KEYS = {"id", "title", "target_type", "kind", "description", "level", "passive", "heavy",
                  "argv", "files", "timeout", "est", "ok_exit_codes", "load_note",
-                 "proxy_args", "direct", "pause_args", "incomplete_if", "inputs", "fqdn_targets"}
+                 "proxy_args", "direct", "pause_args", "incomplete_if", "inputs", "fqdn_targets",
+                 "after_capture"}
 
 
 def _load_evidence(dir_: Path, problems: list[str]) -> dict[str, Evidence]:
@@ -293,7 +299,7 @@ def _load_evidence(dir_: Path, problems: list[str]) -> dict[str, Evidence]:
                 proxy_args=_strs(e.get("proxy_args")), direct=bool(e.get("direct", False)),
                 pause_args=_strs(e.get("pause_args")), incomplete_if=_strs(e.get("incomplete_if")),
                 inputs=_strs(e.get("inputs")), fqdn_targets=bool(e.get("fqdn_targets", False)),
-                source=path.name,
+                after_capture=_str(e.get("after_capture")), source=path.name,
             )
             _check_evidence(ev, problems)
             out[eid] = ev
@@ -326,6 +332,8 @@ def _check_evidence(ev: Evidence, problems: list[str]) -> None:
                 problems.append(f"{w}: fqdn_targets cannot be direct")
         elif FQDN_TARGET_URLS in ev.argv:
             problems.append(f"{w}: argv has \"{FQDN_TARGET_URLS}\" but not fqdn_targets: true")
+        if ev.after_capture and (ev.after_capture not in CAPTURE_KINDS or "har-browse" not in ev.inputs):
+            problems.append(f"{w}: after_capture must be one of {', '.join(CAPTURE_KINDS)} and har-browse an input")
         if ev.heavy and not ev.load_note:
             problems.append(f"{w}: heavy evidence needs a load_note")
         if not 1 <= ev.timeout <= MAX_TIMEOUT:

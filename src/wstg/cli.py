@@ -190,7 +190,7 @@ def cmd_collect(args) -> int:
         raise config.ConfigError(f"no such target: {args.target}")
     try:
         job = rmod.enqueue(r.db, r.cat, t, args.mode, actor="cli", evidence_id=args.evidence or "",
-                           force=args.force)
+                           force=args.force, cfg=r.cfg)
     except rmod.RunError as e:
         raise config.ConfigError(str(e)) from None
     print(f"queued job {job} ({args.evidence or args.mode}) for {t.name}")
@@ -219,7 +219,27 @@ def cmd_capture(args) -> int:
               + ", ".join(res["out_of_scope_hosts"]))
     print(f"  analyse it with the WSTG pages, or: uv run wstg-har cookies "
           f"{tmod.evidence_dir(r.cfg, t) / capmod.EVIDENCE_ID / 'latest' / 'items'}/*.har")
+    from . import runner as rmod
+    waiting = [e for e in r.cat.evidence.values()
+               if e.after_capture and e.target_type == t.type and rmod.capture_status(r.cfg, t, e)[0]
+               and _role_kind(args.role or "") == e.after_capture]
+    if waiting:
+        print("  automatic evidence that this capture makes ready (collect it now):")
+        for e in waiting:
+            print(f"    uv run wstg collect {t.name} --evidence {e.id} --force --run")
     return 0
+
+
+def _role_kind(role: str) -> str:
+    """Which after_capture kind a `wstg capture --role` serves."""
+    from . import har as harmod, session as se
+    if se.LOGOUT_ROLE_RE.match(role):
+        return "logout"
+    if role.lower() == "timeout":
+        return "timeout"
+    if role and not harmod._ANON_ROLE_RE.match(role) and not se.DEDICATED_ROLE_RE.match(role):
+        return "login"
+    return ""
 
 
 def _target(r, name):

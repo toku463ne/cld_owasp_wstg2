@@ -327,3 +327,26 @@ def test_single_evidence_job_and_collect_again(cfg, db, site):
     assert rmod.job_items(db, job)[0]["status"] == "complete" and store.load(site.name, "b").version == 2
     with pytest.raises(rmod.RunError, match="not automatic evidence"):
         rmod.enqueue(db, r.cat, site, "light", "test", evidence_id="nope")
+
+
+def test_after_capture_evidence_waits_for_its_capture(cfg, db, site):
+    har = catmod.Evidence(id="har-browse", title="HAR", target_type="fqdn", kind="manual")
+    timing = ev("session-timeout", [PY, "-c", "print('measured')"], level="full",
+                inputs=("har-browse",), after_capture="timeout")
+    plain = ev("plain", [PY, "-c", "print('x')"])
+    r, store = make(cfg, db, har, timing, plain)
+    # never part of a bulk run
+    assert [e.id for e in rmod.plan(r.cat, site, "full")] == ["plain"]
+    # refused on its own until har-browse holds the timeout capture
+    ready, note = rmod.capture_status(cfg, site, timing)
+    assert not ready and "uv run wstg capture www.example.com --role timeout" in note
+    with pytest.raises(rmod.RunError, match="waiting for a timeout capture"):
+        rmod.enqueue(db, r.cat, site, "", "test", evidence_id="session-timeout", cfg=cfg)
+    store.add_file(site, "har-browse", b'{"log": {"entries": []}}', "user-20260101-1200.har", "", "test")
+    assert not rmod.capture_status(cfg, site, timing)[0]          # a user capture is not a timeout capture
+    store.add_file(site, "har-browse", b'{"log": {"entries": []}}', "timeout-20260101-1300.har", "", "test")
+    assert rmod.capture_status(cfg, site, timing)[0]
+    job = rmod.enqueue(db, r.cat, site, "", "test", evidence_id="session-timeout", cfg=cfg)
+    assert r.claim() == job
+    r.run_job(job)
+    assert rmod.job_items(db, job)[0]["status"] == "complete"

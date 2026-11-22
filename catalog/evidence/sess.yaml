@@ -22,6 +22,7 @@ evidence:
     target_type: fqdn
     kind: auto
     level: full
+    after_capture: login
     inputs: [har-browse]
     description: >-
       Read from the login HAR (har-browse) by wstg-sess: the session identifier before and
@@ -54,6 +55,7 @@ evidence:
     target_type: fqdn
     kind: auto
     level: full
+    after_capture: login
     inputs: [har-browse]
     description: >-
       wstg-sess --errors replays the requests of the logged-in HAR (har-browse) with
@@ -78,6 +80,7 @@ evidence:
     target_type: fqdn
     kind: auto
     level: light
+    after_capture: logout
     inputs: [har-browse]
     description: >-
       Before collecting (by hand, stored in the manual evidence har-browse): run
@@ -101,6 +104,7 @@ evidence:
     kind: auto
     level: full
     heavy: true
+    after_capture: timeout
     inputs: [har-browse]
     description: >-
       Before collecting (by hand, stored in the manual evidence har-browse): run

@@ -115,7 +115,10 @@ def build_argv(ev: catmod.Evidence, values: dict[str, str], proxy: str,
 def plan(cat: catmod.Catalog, target: tmod.Target, mode: str) -> list[catmod.Evidence]:
     if mode not in MODES:
         raise RunError(f"mode must be one of {', '.join(MODES)}")
-    evs = [e for e in cat.evidence.values() if e.kind == "auto" and e.target_type == target.type]
+    # Evidence that waits for a manual capture (after_capture) is collected on its own once
+    # the capture exists, never by a bulk run (it would only fail for lack of input).
+    evs = [e for e in cat.evidence.values()
+           if e.kind == "auto" and e.target_type == target.type and not e.after_capture]
     if mode == "light":
         evs = [e for e in evs if e.level == "light"]
     # Shortest expected run first so quick evidence finishes early and the long,
@@ -124,6 +127,32 @@ def plan(cat: catmod.Catalog, target: tmod.Target, mode: str) -> list[catmod.Evi
     # evidence that reads other evidence (inputs) still comes after those inputs.
     evs = sorted(evs, key=est_seconds)
     return catmod.order_by_inputs(evs, cat.evidence)
+
+
+def capture_status(cfg: Config, target: tmod.Target, ev: catmod.Evidence) -> tuple[bool, str]:
+    """(ready, note) for evidence with `after_capture`: whether the newest har-browse
+    version holds the capture it needs (a HAR of the right role)."""
+    from . import har as harmod
+    from . import session as se
+    kind = ev.after_capture
+    if not kind:
+        return True, ""
+    role = catmod.CAPTURE_KINDS[kind]
+    how = f"uv run wstg capture {target.name} --role {role}"
+    items = tmod.evidence_dir(cfg, target.name) / "har-browse" / "latest" / "items"
+    roles = [harmod._role(p.name) for p in sorted(items.glob("*.har"))] if items.is_dir() else []
+    if kind == "login":
+        ok = [r for r in roles if not harmod._ANON_ROLE_RE.match(r) and not se.DEDICATED_ROLE_RE.match(r)]
+        need = "a logged-in capture (log in during the walk, do not log out)"
+    elif kind == "logout":
+        ok = [r for r in roles if se.LOGOUT_ROLE_RE.match(r)]
+        need = "a logout capture (log in, open one page, log out)"
+    else:
+        ok = [r for r in roles if r.lower() == "timeout"]
+        need = "a timeout capture (log in, open one page, do not log out; collect right after)"
+    if ok:
+        return True, f"ready: har-browse has the {', '.join(sorted(set(ok)))} capture"
+    return False, f"waiting for {need}: run `{how}`"
 
 
 def est_seconds(ev: catmod.Evidence) -> int:
@@ -199,7 +228,7 @@ def job_items(db: dbmod.Database, job_id: int) -> list[dict]:
 
 
 def enqueue(db: dbmod.Database, cat: catmod.Catalog, target: tmod.Target, mode: str, actor: str, *,
-            evidence_id: str = "", force: bool = False) -> int:
+            evidence_id: str = "", force: bool = False, cfg: Config | None = None) -> int:
     """Queue a collection job: every automatic evidence of the mode, or with
     `evidence_id` that one only (mode = its level). `force` collects it even when
     a complete version exists (a new version is added; older ones are kept)."""
@@ -211,6 +240,10 @@ def enqueue(db: dbmod.Database, cat: catmod.Catalog, target: tmod.Target, mode: 
         if not ev or ev.kind != "auto" or ev.target_type != target.type:
             raise RunError(f"{evidence_id} is not automatic evidence of {target.type} targets")
         evs, mode = [ev], ev.level or "light"
+        if ev.after_capture and cfg is not None:
+            ready, note = capture_status(cfg, target, ev)
+            if not ready:
+                raise RunError(f"{evidence_id} is {note}, then collect it")
     else:
         evs = plan(cat, target, mode)
         force = False

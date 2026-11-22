@@ -242,12 +242,16 @@ def register(app: Flask, cfg: Config, db: dbmod.Database, cat: catmod.Catalog, s
         have = {k: v for k, v in collected(t).items() if v["owner"] == t.name}
         failed = {r["evidence_id"]: r for r in db.query(
             "SELECT * FROM evidence_versions WHERE target_id = ? AND status = 'failed' ORDER BY version", (t.id,))}
-        evs = [e for e in cat.evidence.values() if e.kind == "auto" and e.target_type == t.type]
+        evs = [e for e in cat.evidence.values()
+               if e.kind == "auto" and e.target_type == t.type and not e.after_capture]
+        after = [{"ev": e, "role": catmod.CAPTURE_KINDS[e.after_capture], "status": rmod.capture_status(cfg, t, e)}
+                 for e in cat.evidence.values()
+                 if e.kind == "auto" and e.target_type == t.type and e.after_capture]
         job = rmod.last_job(db, t)
         items = rmod.job_items(db, job["id"]) if job else []
         active = bool(job and job["status"] in rmod.ACTIVE)
         waiting = bool(job and job["status"] == "queued")
-        return render_template("auto_tab.html", tab="auto", evidence=evs, cat=cat, have=have, failed=failed,
+        return render_template("auto_tab.html", tab="auto", evidence=evs, after=after, cat=cat, have=have, failed=failed,
                                job=job, items=items, active=active, waiting=waiting,
                                stale=bool(job and rmod.stale(db, cfg, job)),
                                light_count=len(rmod.plan(cat, t, "light")), full_count=len(rmod.plan(cat, t, "full")),
@@ -270,7 +274,7 @@ def register(app: Flask, cfg: Config, db: dbmod.Database, cat: catmod.Catalog, s
         t = load_target(name)
         force = bool(request.form.get("force"))
         try:
-            job = rmod.enqueue(db, cat, t, "light", g.user["username"], evidence_id=eid, force=force)
+            job = rmod.enqueue(db, cat, t, "light", g.user["username"], evidence_id=eid, force=force, cfg=cfg)
             flash(f"Job {job} queued: {eid}" + (" (collect again; earlier versions are kept)." if force else "."))
         except rmod.RunError as e:
             flash(str(e))

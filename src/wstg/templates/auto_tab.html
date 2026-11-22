@@ -1,6 +1,36 @@
 {% extends "target_base.html" %}
 {% from "_macros.html" import test_links %}
-{% block head_extra %}{% if active %}<meta http-equiv="refresh" content="5">{% endif %}{% endblock %}
+{% block head_extra %}{% if active %}<meta http-equiv="refresh" content="5">{% endif %}
+{% if after %}
+<h3 id="after-capture">Collected after a manual capture</h3>
+<p class="muted">These read a browser capture stored in the manual evidence
+  <a href="{{ url_for('evidence_page', name=target.name, eid='har-browse') }}">har-browse</a>, so they are not in the Light/Full
+  run. Record the capture on the tool's host with the command shown (it opens a browser), then press Collect here.</p>
+<table>
+  <tr><th>Evidence</th><th>Manual capture it needs</th><th>Collected</th><th class="col-used">Used by</th>{% if can_write %}<th></th>{% endif %}</tr>
+  {% for a in after %}{% set e = a.ev %}
+  <tr>
+    <td><a href="{{ url_for('evidence_page', name=target.name, eid=e.id) }}"><b>{{ e.title }}</b></a><br><code class="muted">{{ e.id }}</code>
+      {% if e.heavy %} <span class="chip warn">heavy</span>{% endif %}{% if e.load_note %}<div class="note">{{ e.load_note }}</div>{% endif %}</td>
+    <td><code class="small">uv run wstg capture {{ target.name }} --role {{ a.role }}</code><br>
+      {% if a.status[0] %}<span class="status s-pass">ready</span>{% else %}<span class="status s-none">waiting</span>{% endif %}
+      <span class="muted small">{{ a.status[1] }}</span></td>
+    <td class="nowrap">{% if have.get(e.id) %}{{ have[e.id].created_at }}<br><span class="muted">v{{ have[e.id].version }}</span>
+      {% elif failed.get(e.id) %}<a href="{{ url_for('evidence_page', name=target.name, eid=e.id) }}#failed-log"><span class="status s-fail">failed</span></a><br><span class="muted small">{{ failed[e.id].summary }}</span>
+      {% else %}<span class="muted">not collected</span>{% endif %}</td>
+    <td>{{ test_links(cat.tests_using(e.id), target) }}</td>
+    {% if can_write %}<td class="nowrap">
+      <form method="post" class="inline" action="{{ url_for('auto_collect_one', name=target.name, eid=e.id) }}">
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        {% if have.get(e.id) %}<input type="hidden" name="force" value="1">{% endif %}
+        <button {{ 'disabled' if active or scope_problems or not a.status[0] }}
+          {% if e.heavy %}data-confirm="{{ e.id }} is heavy: {{ e.load_note }} Collect it now?"{% endif %}
+          title="{{ a.status[1] }}">{{ 'Collect again' if have.get(e.id) else 'Collect' }}</button></form></td>{% endif %}
+  </tr>
+  {% endfor %}
+</table>
+{% endif %}
+{% endblock %}
 {% block content %}
 {% if scope_problems %}
 <div class="warnbox">The scope record does not allow commands yet: {{ scope_problems | join('; ') }}.
@@ -11,7 +41,9 @@
 <section class="overview">
   <h3>Collect automatic evidence</h3>
   <p class="muted">Runs before testing. Evidence that is already collected is skipped, so an interrupted run continues where it stopped.
-  {% if target.type == 'fqdn' %}Domain evidence (DNS, WHOIS, certificate logs) is collected on the domain target{% if target.parent_name %} <a href="{{ url_for('auto_tab', name=target.parent_name) }}">{{ target.parent_name }}</a>{% endif %}.{% endif %}</p>
+  {% if target.type == 'fqdn' %}Domain evidence (DNS, WHOIS, certificate logs) is collected on the domain target{% if target.parent_name %} <a href="{{ url_for('auto_tab', name=target.parent_name) }}">{{ target.parent_name }}</a>{% endif %}.{% endif %}
+  {% if after %}Evidence that needs a manual browser capture first is not part of this run; it is listed under
+  <a href="#after-capture">Collected after a manual capture</a>.{% endif %}</p>
   {% if can_write %}
   <form method="post" class="inline" action="{{ url_for('auto_collect', name=target.name) }}">
     <input type="hidden" name="csrf" value="{{ csrf }}">
@@ -73,4 +105,34 @@
   </tr>
   {% endfor %}
 </table>
+
+{% if after %}
+<h3 id="after-capture">Collected after a manual capture</h3>
+<p class="muted">These read a browser capture stored in the manual evidence
+  <a href="{{ url_for('evidence_page', name=target.name, eid='har-browse') }}">har-browse</a>, so they are not in the Light/Full
+  run. Record the capture on the tool's host with the command shown (it opens a browser), then press Collect here.</p>
+<table>
+  <tr><th>Evidence</th><th>Manual capture it needs</th><th>Collected</th><th class="col-used">Used by</th>{% if can_write %}<th></th>{% endif %}</tr>
+  {% for a in after %}{% set e = a.ev %}
+  <tr>
+    <td><a href="{{ url_for('evidence_page', name=target.name, eid=e.id) }}"><b>{{ e.title }}</b></a><br><code class="muted">{{ e.id }}</code>
+      {% if e.heavy %} <span class="chip warn">heavy</span>{% endif %}{% if e.load_note %}<div class="note">{{ e.load_note }}</div>{% endif %}</td>
+    <td><code class="small">uv run wstg capture {{ target.name }} --role {{ a.role }}</code><br>
+      {% if a.status[0] %}<span class="status s-pass">ready</span>{% else %}<span class="status s-none">waiting</span>{% endif %}
+      <span class="muted small">{{ a.status[1] }}</span></td>
+    <td class="nowrap">{% if have.get(e.id) %}{{ have[e.id].created_at }}<br><span class="muted">v{{ have[e.id].version }}</span>
+      {% elif failed.get(e.id) %}<a href="{{ url_for('evidence_page', name=target.name, eid=e.id) }}#failed-log"><span class="status s-fail">failed</span></a><br><span class="muted small">{{ failed[e.id].summary }}</span>
+      {% else %}<span class="muted">not collected</span>{% endif %}</td>
+    <td>{{ test_links(cat.tests_using(e.id), target) }}</td>
+    {% if can_write %}<td class="nowrap">
+      <form method="post" class="inline" action="{{ url_for('auto_collect_one', name=target.name, eid=e.id) }}">
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        {% if have.get(e.id) %}<input type="hidden" name="force" value="1">{% endif %}
+        <button {{ 'disabled' if active or scope_problems or not a.status[0] }}
+          {% if e.heavy %}data-confirm="{{ e.id }} is heavy: {{ e.load_note }} Collect it now?"{% endif %}
+          title="{{ a.status[1] }}">{{ 'Collect again' if have.get(e.id) else 'Collect' }}</button></form></td>{% endif %}
+  </tr>
+  {% endfor %}
+</table>
+{% endif %}
 {% endblock %}

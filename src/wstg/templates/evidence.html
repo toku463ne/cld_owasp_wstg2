@@ -5,6 +5,9 @@
   <h2>{{ ev.title }} <code class="muted">{{ ev.id }}</code></h2>
   <span class="chip">{{ ev.kind }}{% if ev.level %} · {{ ev.level }}{% endif %}</span>
 </div>
+{% if capture %}<div class="{{ 'okbox' if capture[0] else 'warnbox' }}"><b>Needs a manual capture first</b> (not part of the Light/Full run):
+  <code>uv run wstg capture {{ target.name }} --role {{ capture_role }}</code> on the tool's host, stored in
+  <a href="{{ url_for('evidence_page', name=target.name, eid='har-browse') }}">har-browse</a>. {{ capture[1] }}.</div>{% endif %}
 <p>{{ description | desctext }}</p>
 {% if ev.kind == 'auto' %}<p><code>{{ ev.argv | reject('in', ['{proxy_args}', '{pause_args}']) | join(' ') }}</code></p>
 {% if ev.proxy_args %}<p class="muted small">With WSTG_HTTP_PROXY set, adds <code>{{ ev.proxy_args | join(' ') }}</code>.</p>{% endif %}

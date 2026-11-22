@@ -133,3 +133,20 @@ def test_evidence_page_shows_copyable_uv_run_commands(admin_client, store, site)
     # evidence that writes files under {out} gets only the collect command
     html = admin_client.get("/t/www.example.com/evidence/http-root-https").get_data(as_text=True)
     assert "Run it by hand" not in html and "--evidence http-root-https --force --run" in html
+
+
+def test_auto_tab_lists_capture_dependent_evidence_apart(admin_client, store, site):
+    html = admin_client.get("/t/www.example.com/auto").get_data(as_text=True)
+    after = html.split('id="after-capture"')[1]
+    bulk = html.split('id="after-capture"')[0]
+    for eid, role in [("session-timeout", "timeout"), ("logout-replay", "logout"),
+                      ("session-reissue", "user"), ("session-error-probes", "user")]:
+        assert f"<code class=\"muted\">{eid}</code>" in after
+        assert f"<code class=\"muted\">{eid}</code>" not in bulk
+    assert "uv run wstg capture www.example.com --role timeout" in after
+    assert "waiting" in after
+    store.add_file(site, "har-browse", b'{"log": {"entries": []}}', "logout-20260101-1200.har", "", "admin")
+    after = admin_client.get("/t/www.example.com/auto").get_data(as_text=True).split('id="after-capture"')[1]
+    assert "ready: har-browse has the logout capture" in after
+    page = admin_client.get("/t/www.example.com/evidence/session-timeout").get_data(as_text=True)
+    assert "Needs a manual capture first" in page
