@@ -1,6 +1,7 @@
 """Runner tests: a synthetic catalog with harmless local commands only."""
 
 import os
+import socket
 import sys
 import time
 
@@ -147,7 +148,10 @@ def test_recover_marks_interrupted_and_cleans_temp(cfg, db, site):
     r.claim()
     tmp = store.begin(site, "a")
     (tmp / "stdout.txt").write_text("partial")
+    young = store.begin(site, "a")          # e.g. a manual edit being saved right now
+    os.utime(tmp, (0, 0))
     assert r.recover() == [job]
+    assert young.exists()
     assert rmod.last_job(db, site)["status"] == "interrupted"
     assert not tmp.exists() and store.load(site.name, "a") is None
 
@@ -372,3 +376,40 @@ def test_mutating_single_collection_needs_agreement(cfg, db, site):
     # With the owner's agreement it is queued.
     job = rmod.enqueue(r.db, r.cat, site, "full", "test", evidence_id="change-put", agreed=True)
     assert job
+
+
+def test_recover_leaves_a_live_worker_alone(cfg, db, site):
+    """`wstg collect --run` or a second worker must not interrupt a long job
+    (session-timeout runs for hours) of the live worker, nor delete its temp folder."""
+    import subprocess as sp
+    r, store = make(cfg, db, ev("a", [PY, "-c", "print(1)"]), ev("b", [PY, "-c", "print(2)"]))
+    job = rmod.enqueue(db, r.cat, site, "light", "test", evidence_id="a")
+    other = sp.Popen([PY, "-c", "import time; time.sleep(30)"])
+    try:
+        r.claim()
+        with db.tx() as conn:   # the job belongs to another live process on this host
+            conn.execute("UPDATE jobs SET worker = ? WHERE id = ?", (f"{socket.gethostname()}:{other.pid}", job))
+            conn.execute("UPDATE job_items SET status = 'running' WHERE job_id = ?", (job,))
+        tmp = store.begin(site, "a")
+        os.utime(tmp, (0, 0))
+        assert r.recover() == []
+        assert rmod.last_job(db, site)["status"] == "running" and tmp.exists()
+        assert r.claim(job) is None       # the CLI never takes a job that is not queued
+    finally:
+        other.kill()
+        other.wait()
+    # the process is gone: the job is interrupted and its temp folder removed
+    assert r.recover() == [job]
+    assert rmod.last_job(db, site)["status"] == "interrupted" and not tmp.exists()
+
+
+def test_recover_stale_heartbeat(cfg, db, site):
+    r, store = make(cfg, db, ev("a", [PY, "-c", "print(1)"]))
+    job = rmod.enqueue(db, r.cat, site, "light", "test")
+    r.claim()
+    with db.tx() as conn:   # another host, heartbeat fresh: alive
+        conn.execute("UPDATE jobs SET worker = 'elsewhere.test:1' WHERE id = ?", (job,))
+    assert r.recover() == []
+    with db.tx() as conn:
+        conn.execute("UPDATE jobs SET heartbeat_at = '2000-01-01T00:00:00Z' WHERE id = ?", (job,))
+    assert r.recover() == [job]

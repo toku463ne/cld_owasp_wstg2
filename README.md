@@ -39,7 +39,8 @@ The script is safe to run again. It:
    retire) and prints `wstg tools-check`; then `wstg check-config`, `wstg migrate`,
 5. asks for the first admin password if no user exists (12+ characters),
 6. installs and restarts the systemd **user** services `wstg2-web` (web app) and `wstg2-worker`
-   (automatic evidence jobs), with lingering,
+   (automatic evidence jobs), with lingering; a worker that is collecting (`wstg worker --busy`)
+   is not restarted, so a long run such as session-timeout is not interrupted (restart it later),
 7. renders `deploy/nginx/wstg2.conf.template` into `/etc/nginx/sites-available/wstg2.conf`
    (port and allowed networks from the config file), checks it with `nginx -t`, reloads nginx,
 8. checks `http://127.0.0.1:5083/login` and `http://127.0.0.1:8083/login`.

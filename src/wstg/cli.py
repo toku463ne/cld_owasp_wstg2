@@ -211,6 +211,12 @@ def _runner(cfg):
 
 def cmd_worker(args) -> int:
     r = _runner(_cfg())
+    if args.busy:
+        live = [j for j in r.db.query("SELECT * FROM jobs WHERE status IN ('running', 'cancelling')")
+                if not r._dead(j)]
+        for j in live:
+            print(f"job {j['id']} is running (worker {j['worker']})")
+        return 0 if live else 1
     print(f"worker {r.worker} polling for jobs", flush=True)
     r.serve(once=args.once)
     return 0
@@ -229,8 +235,11 @@ def cmd_collect(args) -> int:
         raise config.ConfigError(str(e)) from None
     print(f"queued job {job} ({args.evidence or args.mode}) for {t.name}")
     if args.run:
-        r.recover()
-        r.run_job(r.claim())
+        r.recover()                     # leaves a job of a live worker alone
+        if r.claim(job) is None:        # the worker took it first
+            print(f"job {job} is being run by the worker; see the Automatic evidence tab")
+            return 0
+        r.run_job(job)
         for it in rmod.job_items(r.db, job):
             print(f"  {it['status']:<9} {it['evidence_id']:<24} {it['message']}")
     return 0
@@ -399,6 +408,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     s = sub.add_parser("worker", help="run queued automatic evidence jobs (one at a time)")
     s.add_argument("--once", action="store_true", help="run what is queued, then exit")
+    s.add_argument("--busy", action="store_true",
+                   help="exit 0 and list them when jobs are running, 1 when none (runs nothing)")
     s.set_defaults(func=cmd_worker)
 
     s = sub.add_parser("collect", help="queue automatic evidence collection for a target")

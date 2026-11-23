@@ -22,8 +22,11 @@
   newest complete version folder, or a path that does not exist when it was never
   collected). A job orders it after its inputs, and collects it again when one of
   its inputs got a new version in the same job (its old version is then stale).
-- One worker process (`wstg worker`) runs jobs one at a time. On start it marks
-  jobs left running by a dead worker as interrupted.
+- One worker process (`wstg worker`) runs jobs one at a time. It marks jobs left
+  running by a dead worker as interrupted: on start and while idle. A job counts as
+  dead only when its worker process on this host is gone or its heartbeat is older
+  than WSTG_JOB_STALE_SECONDS, so `wstg collect --run` or a second worker never
+  interrupts a live job (a long one such as session-timeout runs for hours).
 """
 
 from __future__ import annotations
@@ -541,10 +544,30 @@ class Runner:
 
     # ---- worker ---------------------------------------------------------
 
+    def _dead(self, job: dict) -> bool:
+        """True when the worker of a running job is gone: its process on this host
+        no longer exists, or it sent no heartbeat for WSTG_JOB_STALE_SECONDS.
+        recover() runs between jobs, so a running job of this very process is a leftover."""
+        if stale(self.db, self.cfg, job) or not job["heartbeat_at"]:
+            return True
+        host, _, pid = (job["worker"] or "").rpartition(":")
+        if host == socket.gethostname() and pid.isdigit():
+            if int(pid) == os.getpid():
+                return True
+            try:
+                os.kill(int(pid), 0)
+            except ProcessLookupError:
+                return True
+            except PermissionError:
+                return False
+        return False
+
     def recover(self) -> list[int]:
         """Mark jobs left running by a worker that is gone as interrupted.
+        Jobs whose worker is alive (another process) are left alone.
         A later job in the same mode skips what was already collected."""
-        ids = [r["id"] for r in self.db.query("SELECT id FROM jobs WHERE status IN ('running', 'cancelling')")]
+        rows = self.db.query("SELECT * FROM jobs WHERE status IN ('running', 'cancelling')")
+        ids = [r["id"] for r in rows if self._dead(dict(r))]
         if ids:
             with self.db.tx() as conn:
                 for i in ids:
@@ -553,14 +576,31 @@ class Runner:
                     conn.execute("UPDATE jobs SET status = 'interrupted', finished_at = ? WHERE id = ?",
                                  (dbmod.utcnow(), i))
                     self.db.audit(conn, "worker", "job.interrupted", job=i)
-        # Temp folders of interrupted collections are never evidence.
+        # Temp folders of interrupted collections are never evidence. Keep the one
+        # a live job is writing, and young ones (a manual edit being saved).
+        busy = {(r["name"], r["evidence_id"]) for r in self.db.query(
+            "SELECT t.name, ji.evidence_id FROM job_items ji JOIN jobs j ON j.id = ji.job_id"
+            " JOIN targets t ON t.id = j.target_id"
+            " WHERE j.status IN ('running', 'cancelling') AND ji.status = 'running'")}
+        now = time.time()
         for tmp in self.cfg.evidence_root.glob("*/*/.tmp-*"):
+            if (tmp.parent.parent.name, tmp.parent.name) in busy:
+                continue
+            try:
+                if now - tmp.stat().st_mtime < 60:
+                    continue
+            except OSError:
+                continue
             shutil.rmtree(tmp, ignore_errors=True)
         return ids
 
-    def claim(self) -> int | None:
+    def claim(self, job_id: int | None = None) -> int | None:
+        """Take the oldest queued job (or job `job_id`, when it is still queued)."""
         with self.db.tx() as conn:
-            row = conn.execute("SELECT id FROM jobs WHERE status = 'queued' ORDER BY id LIMIT 1").fetchone()
+            if job_id is None:
+                row = conn.execute("SELECT id FROM jobs WHERE status = 'queued' ORDER BY id LIMIT 1").fetchone()
+            else:
+                row = conn.execute("SELECT id FROM jobs WHERE status = 'queued' AND id = ?", (job_id,)).fetchone()
             if not row:
                 return None
             now = dbmod.utcnow()
@@ -570,6 +610,7 @@ class Runner:
 
     def serve(self, once: bool = False, poll: float = 2.0) -> None:
         self.recover()
+        last_recover = time.monotonic()
         while True:
             job_id = self.claim()
             if job_id is not None:
@@ -577,6 +618,9 @@ class Runner:
                 continue
             if once:
                 return
+            if time.monotonic() - last_recover > 60:
+                self.recover()
+                last_recover = time.monotonic()
             time.sleep(poll)
 
 

@@ -117,7 +117,7 @@ uv run wstg catalog-check [-v]            # validate catalog/ (index, evidence, 
 uv run wstg evidence-classify [-v]        # split evidence into read-only recon and may-change-the-target; needs no config
 uv run wstg tools-check [--strict]        # which tools of catalog/tools.yaml are installed; needs no config
 uv run wstg tools-check --remote          # tools on the jump host (WSTG_DIRECT_SSH)
-uv run wstg worker [--once]               # run queued automatic evidence jobs
+uv run wstg worker [--once] [--busy]      # run queued automatic evidence jobs; --busy: exit 0 if a job is running
 uv run wstg collect TARGET [--mode light|full] [--evidence ID [--force]] [--agree] [--run]
                                           # bulk run is read-only recon; --agree is required to collect a mutating evidence
 uv run wstg capture TARGET [--role NAME] [--url URL] [--headless]

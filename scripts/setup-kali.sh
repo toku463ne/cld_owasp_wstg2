@@ -304,9 +304,17 @@ EOF
   fi
   run systemctl --user daemon-reload
   run systemctl --user enable wstg2-web.service wstg2-worker.service
-  # Restart (not just start) so an update picks up the new code. A collection
-  # that is running is marked interrupted; collecting again skips what is done.
-  run systemctl --user restart wstg2-web.service wstg2-worker.service
+  # Restart (not just start) so an update picks up the new code. The worker is
+  # left running while it collects (a session-timeout run takes hours; a restart
+  # would interrupt it): restart it by hand once the job is done.
+  run systemctl --user restart wstg2-web.service
+  if [ "$DRY" != 1 ] && systemctl --user is-active --quiet wstg2-worker.service \
+     && (cd "$REPO" && WSTG_CONFIG="$CONFIG" "$UV_BIN" run --frozen wstg worker --busy); then
+    echo "  wstg2-worker NOT restarted: a collection is running (above). When it is done:"
+    echo "    systemctl --user restart wstg2-worker"
+  else
+    run systemctl --user restart wstg2-worker.service
+  fi
   [ "$BACKUP_TIMER" = 0 ] || run systemctl --user enable --now wstg2-backup.timer
   # Keep the user service running without an open login session.
   if [ "$(loginctl show-user "$USER" -p Linger --value 2>/dev/null || true)" != yes ]; then
