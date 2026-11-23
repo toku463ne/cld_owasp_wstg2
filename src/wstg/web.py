@@ -174,7 +174,7 @@ def create_app(cfg: Config, db: dbmod.Database | None = None, cat: catmod.Catalo
     web_targets.register(app, cfg, db, cat, store)
     web_evidence.register(app, store, cat)
     web_findings.register(app, db, cat)
-    web_tools.register(app, cfg, db)
+    web_tools.register(app, cfg, db, cat, store)
 
     @app.errorhandler(400)
     @app.errorhandler(403)

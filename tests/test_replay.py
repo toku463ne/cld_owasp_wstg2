@@ -178,3 +178,38 @@ def test_send_is_scope_checked_and_needs_agreement(admin_client, db, cfg, monkey
     assert post(admin_client, "/t/www.example.com/tools/replay", raw=get, action="send").status_code == 200
     log = db.query("SELECT detail FROM audit_log WHERE action = 'tool.replay'")
     assert len(log) == 2 and "Cookie" not in log[0]["detail"]
+
+
+def test_send_from_an_evidence_page_adds_request_and_response(admin_client, db, cfg, monkeypatch, app):
+    t = _target(db, cfg)
+    monkeypatch.setattr(rp, "send", lambda req, proxy="": rp.Response(
+        302, "Found", [("Location", "/login")], b"moved", 0.1, 5))
+    page = admin_client.get("/t/www.example.com/evidence/hijacking-tests").get_data(as_text=True)
+    assert "/t/www.example.com/tools/replay?ev=hijacking-tests" in page
+    page = admin_client.get("/t/www.example.com/tools/replay?ev=hijacking-tests").get_data(as_text=True)
+    assert 'name="ev" value="hijacking-tests"' in page and "Add the request and response" in page
+    r = post(admin_client, "/t/www.example.com/tools/replay", raw="GET /me HTTP/1.1\nHost: www.example.com\nCookie: sid=s1\n\n",
+             action="send", ev="hijacking-tests", save="1", caption="token in a second browser")
+    assert r.status_code == 200 and "Added to" in r.get_data(as_text=True)
+    store = app.extensions["wstg.store"]
+    v = store.load(t.name, "hijacking-tests")
+    assert v.items[-1].caption == "token in a second browser"
+    text = store.file_path(v, v.items[-1].file).read_text()
+    assert "GET /me HTTP/1.1" in text and "Cookie: sid=s1" in text and "HTTP/1.1 302 Found" in text and "moved" in text
+    # not ticked: nothing added
+    post(admin_client, "/t/www.example.com/tools/replay", raw="GET / HTTP/1.1\nHost: www.example.com\n\n",
+         action="send", ev="hijacking-tests")
+    assert store.load(t.name, "hijacking-tests").version == v.version
+    # auto evidence or unknown ID is refused
+    assert admin_client.get("/t/www.example.com/tools/replay?ev=http-root-https").status_code == 404
+    assert admin_client.get("/t/www.example.com/tools/replay?ev=nope").status_code == 404
+
+
+def test_evidence_text_is_cut_to_the_text_limit():
+    from wstg import evidence as evmod
+    from wstg.web_tools import evidence_text
+    req = rp.parse_raw("GET / HTTP/1.1\nHost: www.example.com\n\n")
+    big = rp.Response(200, "OK", [], b"x" * (2 * evmod.MAX_TEXT_BYTES), 0.1, 0)
+    text = evidence_text(req, big, "", "admin", "")
+    assert len(text.encode()) <= evmod.MAX_TEXT_BYTES and "more bytes not kept" in text
+    assert "no answer: timeout" in evidence_text(req, None, "no answer: timeout", "admin", "")

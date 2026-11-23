@@ -139,6 +139,14 @@
     <p><textarea name="text" rows="4" required></textarea></p>
     <p><button>Add text</button></p>
   </form>
+  {% if target.type == 'fqdn' %}
+  <div class="stack">
+    <h4>Replay a request</h4>
+    <p class="muted small">Paste a request from Burp, change it, send it once (scope-checked), and add the request
+      and response here.</p>
+    <p><a href="{{ url_for('tool_replay', name=target.name, ev=ev.id) }}">Open the request replay tool</a></p>
+  </div>
+  {% endif %}
 </div>
 {% endif %}
 

@@ -9,6 +9,10 @@ send it once from here: the host and port must be in the target's scope record,
 and a method that may change the target (anything but GET, HEAD, OPTIONS,
 TRACE) needs the owner's agreement ticked. Each send is written to the audit
 log (method, URL, status; not the headers or body).
+
+Opened from a manual evidence page (`?ev=<evidence id>`), the page keeps that
+evidence and *Send once* also adds the request as sent and the response (or the
+error) to it as a new text item, so the replay is kept with the test.
 """
 from __future__ import annotations
 
@@ -17,7 +21,9 @@ import shlex
 
 from flask import Flask, abort, g, render_template, request, session
 
+from . import catalog as catmod
 from . import db as dbmod
+from . import evidence as evmod
 from . import replay as rp
 from . import targets as tmod
 from . import users
@@ -32,7 +38,8 @@ TOOLS = [
      "summary": "Paste a request from Burp (Proxy history or Repeater: Copy to file, or select all and copy), "
                 "change headers, cookies, or parameters, and get a curl command, a wstg-replay command line, "
                 "or a Python script for repeated requests. An admin can send it once from here "
-                "(scope-checked)."},
+                "(scope-checked). Opened from a manual evidence page, it adds the request and response "
+                "to that evidence."},
 ]
 
 
@@ -40,7 +47,16 @@ def _lines(text: str) -> list[str]:
     return [ln.strip() for ln in (text or "").splitlines() if ln.strip()]
 
 
-def register(app: Flask, cfg: Config, db: dbmod.Database) -> None:
+def register(app: Flask, cfg: Config, db: dbmod.Database, cat: catmod.Catalog, store: evmod.Store) -> None:
+
+    def target_evidence(t: tmod.Target, eid: str) -> catmod.Evidence | None:
+        """The manual evidence of this target a replay may be added to (404 when not)."""
+        if not eid:
+            return None
+        ev = cat.evidence.get(eid)
+        if not ev or ev.kind != "manual" or tmod.evidence_owner(t, ev.target_type) != t.name:
+            abort(404)
+        return ev
 
     def load_target(name: str) -> tmod.Target:
         t = tmod.get(db, name)
@@ -61,8 +77,9 @@ def register(app: Flask, cfg: Config, db: dbmod.Database) -> None:
     def tool_replay(name: str):
         t = load_target(name)
         f = request.form
+        ev = target_evidence(t, (f.get("ev") or request.args.get("ev", "")).strip())
         ctx = {"tab": "tools", "form": f, "req": None, "error": "", "resp": None, "send_error": "",
-               "scope_error": "", "proxy": cfg.http_proxy}
+               "scope_error": "", "proxy": cfg.http_proxy, "ev": ev, "saved": None}
         if request.method == "GET":
             return render_template("tool_replay.html", **ctx)
         raw = f.get("raw", "")
@@ -108,8 +125,32 @@ def register(app: Flask, cfg: Config, db: dbmod.Database) -> None:
             status = None
         with db.tx() as conn:
             db.audit(conn, g.user["username"], "tool.replay", target=t.name, method=req.method, url=req.url,
-                     status=status)
+                     status=status, evidence=ev.id if ev and f.get("save") == "1" else None)
+        if ev and f.get("save") == "1":
+            result = f"{status} {ctx['resp'].reason}" if status else "no answer"
+            caption = f.get("caption", "").strip() or f"Replay: {req.method} {req.url} -> {result}"
+            try:
+                v = store.add_text(t, ev.id, evidence_text(req, ctx["resp"], ctx["send_error"], g.user["username"],
+                                                           cfg.http_proxy), caption, g.user["username"])
+                ctx["saved"] = v.version
+            except evmod.EvidenceError as e:
+                ctx["send_error"] = (ctx["send_error"] + "; " if ctx["send_error"] else "") + f"not added: {e}"
         return render_template("tool_replay.html", **ctx)
+
+
+def evidence_text(req: rp.Request, resp: rp.Response | None, error: str, actor: str, proxy: str) -> str:
+    """The request as sent and the response, as one text item (cut to fit the 1 MB text limit)."""
+    head = (f"# wstg replay: {req.method} {req.url}\n# sent {dbmod.utcnow()} by {actor}"
+            + (f" via {proxy}" if proxy else "") + "\n\n## Request\n\n")
+    text = head + req.raw().decode("utf-8", "replace") + "\n\n## Response\n\n"
+    if resp is None:
+        return text + (error or "no answer") + "\n"
+    text += f"# {resp.summary()}\n" + resp.raw_head() + "\n"
+    room = evmod.MAX_TEXT_BYTES - len(text.encode()) - 200
+    body = resp.body
+    if len(body) > room:
+        return text + body[:max(room, 0)].decode("utf-8", "replace") + f"\n... {len(body) - max(room, 0)} more bytes not kept\n"
+    return text + body.decode("utf-8", "replace") + "\n"
 
 
 def _hostport(req: rp.Request) -> str:

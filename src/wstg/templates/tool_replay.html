@@ -1,6 +1,9 @@
 {% extends "target_base.html" %}
 {% block content %}
 <h3><a href="{{ url_for('tools_tab', name=target.name) }}">Tools</a> › Request replay</h3>
+{% if ev %}<div class="okbox">For evidence <a href="{{ url_for('evidence_page', name=target.name, eid=ev.id) }}"><b>{{ ev.title }}</b></a>
+  <code class="muted">{{ ev.id }}</code>: <i>Send once</i> adds the request as sent and the response to it as a new text item
+  (untick below to only look).</div>{% endif %}
 <p class="muted">Paste a request from Burp: in Proxy history or Repeater, select the request and use
   <i>Copy to file</i> or select all and copy (a <i>Save items</i> XML export works too).
   A raw request has no scheme: https is assumed unless the Host header names port 80.
@@ -8,6 +11,7 @@
   The same is done on the command line by <code>wstg-replay</code>.</p>
 <form method="post" class="stack replay">
   <input type="hidden" name="csrf" value="{{ csrf }}">
+  {% if ev %}<input type="hidden" name="ev" value="{{ ev.id }}">{% endif %}
   <label>Request <textarea name="raw" rows="14" class="mono" required placeholder="POST /path HTTP/1.1
 Host: www.example.com
 Content-Type: application/x-www-form-urlencoded
@@ -35,6 +39,8 @@ name=value">{{ form.raw }}</textarea></label>
   <div><button name="action" value="convert">Show commands</button>
     {% if can_write %}
     <label><input type="checkbox" name="agree" value="1"> The owner agreed to requests that may change the target (needed for POST, PUT, DELETE, ...)</label>
+    {% if ev %}<div><label><input type="checkbox" name="save" value="1" {{ 'checked' if form.save or not req }}> Add the request and response to {{ ev.id }}</label>
+      <input name="caption" size="50" value="{{ form.caption }}" placeholder="Caption (default: method, URL, and status)"></div>{% endif %}
     <button name="action" value="send">Send once</button>
     {% endif %}</div>
 </form>
@@ -43,6 +49,7 @@ name=value">{{ form.raw }}</textarea></label>
 <h4>{{ req.method }} {{ req.url }}</h4>
 {% if scope_error %}<div class="warnbox">Sending from here is refused: {{ scope_error }}</div>
 {% else %}<p class="muted small">In the scope of {{ target.name }}.{% if proxy %} Sent through {{ proxy }}.{% endif %}</p>{% endif %}
+{% if saved %}<div class="okbox">Added to <a href="{{ url_for('evidence_page', name=target.name, eid=ev.id) }}">{{ ev.id }}</a> (v{{ saved }}).</div>{% endif %}
 {% if send_error %}<div class="warnbox">{{ send_error }}</div>{% endif %}
 {% if resp %}
 <div class="okbox"><b>{{ resp.summary() }}</b></div>
