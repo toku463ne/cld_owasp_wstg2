@@ -303,7 +303,7 @@ def test_owner_questions_on_the_index_and_their_page(admin_client, guest_client,
     page = admin_client.get("/t/www.example.com/").get_data(as_text=True)
     assert "Questions for the owner:" in page and ">Owner</th>" in page
     assert "open</span> 11" in page and "List and copy the open questions" in page
-    assert "Waiting for the owner: role-definitions, test-accounts" in page       # WSTG-IDNT-01 row
+    assert "Waiting for the owner: role-definitions, test-accounts\">0/2</a>" in page   # WSTG-IDNT-01 row
     q = admin_client.get("/t/www.example.com/owner-questions").get_data(as_text=True)
     assert "11 open questions" in q and 'data-copy="#owner-text"' in q
     assert "inbound firewall / security group" in q and "rules for www.example.com" in q   # {fqdn} rendered

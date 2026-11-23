@@ -63,7 +63,7 @@
       {% elif rc %}<span class="muted small" title="No automatic recon evidence; judged by hand">–</span>{% endif %}</td>
     <td class="nowrap">{% set oc = r.owner %}{% if oc and oc.total %}<a href="{{ url_for('owner_questions', name=target.name) }}"
         class="status s-{{ {'complete': 'pass', 'partial': 'started', 'none': 'none'}[oc.state] }}"
-        title="{{ 'Waiting for the owner: ' ~ (oc.missing | join(', ')) if oc.missing else 'All owner answers recorded' }}">{{ '✓' if oc.state == 'complete' else '? %d' % (oc.total - oc.have) }}</a>{% endif %}</td>
+        title="{{ 'Waiting for the owner: ' ~ (oc.missing | join(', ')) if oc.missing else 'All owner answers recorded' }}">{{ oc.have }}/{{ oc.total }}</a>{% endif %}</td>
     <td class="nowrap">{% set e = r.evidence %}{% if e and e.total %}<span class="status s-{{ {'complete': 'pass', 'partial': 'started', 'none': 'none'}[e.state] }}"
         title="{{ 'Missing: ' ~ (e.missing | join(', ')) if e.missing else 'All evidence collected' }}">{{ e.have }}/{{ e.total }}</span>
       {% elif e %}<span class="muted small">no evidence</span>{% endif %}
