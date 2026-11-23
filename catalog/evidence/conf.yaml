@@ -249,6 +249,8 @@ evidence:
     title: Firewall and security group rules
     target_type: fqdn
     kind: manual
+    ask_owner: >-
+      Please send the inbound firewall / security group / load balancer listener rules for {fqdn} (port, protocol, allowed source, purpose), as an export or screenshot with the date.
     description: >-
       The inbound rules for {fqdn} from the system owner (cloud security group, firewall,
       or load balancer listener export, or a screenshot): port, protocol, allowed source,
@@ -258,6 +260,8 @@ evidence:
     title: File permissions on the server
     target_type: fqdn
     kind: manual
+    ask_owner: >-
+      Please run on the server, as an administrator, `ls -la` (Linux) or `icacls` (Windows) of the web root, configuration files, key and certificate files, log folders, and upload folders, and tell us the user the web server and application run as.
     description: >-
       Output provided by the system owner, run on the server as an administrator:
       `ls -la` (Linux) or `icacls` (Windows) of the web root, the configuration files,
@@ -310,3 +314,27 @@ evidence:
     timeout: 600
     load_note: One GET per registered FQDN target that has a live CNAME; WSTG_PAUSE applies between requests. Only registered targets in scope are contacted.
 
+  - id: admin-interface-protection
+    title: Protection of the administrative interfaces (owner's answer)
+    target_type: fqdn
+    kind: manual
+    ask_owner: >-
+      For each administrative interface we found (listed in the report draft), is access
+      restricted by source address and is MFA required? May we try the product's default
+      credentials once?
+    description: >-
+      Per administrative interface found by WSTG-CONF-05: the owner's answer on source
+      address restriction and MFA, whether a default-credential check was agreed, and the
+      tester's check from the tester's network that the restriction applies.
+
+  - id: cloud-storage-ownership
+    title: Cloud storage confirmed by the owner
+    target_type: fqdn
+    kind: manual
+    ask_owner: >-
+      Which of these cloud storage buckets or containers (listed in the report draft) are
+      yours and in scope for testing anonymous listing and reading?
+    description: >-
+      The storage URLs from WSTG-CONF-11 steps 1 to 3 that the owner confirmed as theirs and
+      in scope, one per line (this list is storage-urls.txt of step 4), with the date and
+      who answered.

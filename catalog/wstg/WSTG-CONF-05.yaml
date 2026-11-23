@@ -46,10 +46,12 @@ steps:
       Internet; pass when none is reachable; "-" when the evidence is missing or the
       protection must be checked by hand (step 5).
   - summary: Check the protection of each interface found
+    evidence: [admin-interface-protection]
     operation: >-
       For each interface: ask the owner whether its source addresses are restricted (and
       check from the tester's network that the restriction applies), whether MFA is on, and,
       with the owner's agreement, try the product's default credentials once (for example
       admin/admin, tomcat/tomcat, the vendor's documented defaults). Record the result as a
-      text item of the finding, without the passwords that worked.
+      text item of the finding, without the passwords that worked. Save the owner's answer
+      and your check in admin-interface-protection.
     load_note: Login attempts can lock accounts and raise alerts.

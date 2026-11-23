@@ -8,6 +8,7 @@
   <tr>
     <td><a href="{{ url_for('evidence_page', name=r.owner, eid=r.ev.id) }}"><b>{{ r.ev.title }}</b></a> <code class="muted">{{ r.ev.id }}</code>
       {% if r.owner != target.name %}<span class="chip">from {{ r.owner }}</span>{% endif %}
+      {% if r.ev.ask_owner %}<a class="chip" href="{{ url_for('owner_questions', name=target.name) }}" title="An answer from the system owner or developers">ask owner</a>{% endif %}
       {% if r.ev.mutating %}<span class="chip warn" title="May change the target; do it only with the owner's agreement">may change target</span>{% endif %}
       <div class="muted small">{{ r.desc | desctext }}</div></td>
     <td>{{ test_links(r.used_by, target) }}</td>

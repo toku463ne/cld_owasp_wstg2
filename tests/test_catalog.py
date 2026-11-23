@@ -303,3 +303,26 @@ def test_mutating_auto_needs_note_and_not_passive(tmp_path):
         """)
     assert "mutating and passive are contradictory" in p
     assert "mutating evidence needs a load_note" in p
+
+
+def test_owner_questions_are_manual_and_marked():
+    c = catalog.load()
+    asked = sorted(e.id for e in c.evidence.values() if e.ask_owner)
+    assert asked == sorted(["firewall-rules", "file-permissions", "crypto-review", "role-definitions",
+                            "provisioning-process", "architecture-map", "test-accounts", "frontend-config",
+                            "monitoring-answer", "admin-interface-protection", "cloud-storage-ownership"])
+    assert all(c.evidence[e].kind == "manual" and c.tests_using(e) for e in asked)
+
+
+def test_ask_owner_refused_on_auto(tmp_path):
+    p = problems_for(tmp_path, """\
+        evidence:
+          - id: x-auto
+            title: x
+            target_type: fqdn
+            kind: auto
+            level: light
+            ask_owner: what?
+            argv: [curl, "{base_url}/"]
+        """)
+    assert "ask_owner is for manual evidence" in p

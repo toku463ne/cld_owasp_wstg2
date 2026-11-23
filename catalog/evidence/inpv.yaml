@@ -263,3 +263,16 @@ evidence:
       schemes) and whether the server fetched them, plus filter-bypass attempts (redirects,
       DNS rebinding, alternative notations). A blind SSRF is proved with an out-of-band
       callback log.
+
+  - id: frontend-config
+    title: Front-end configuration from the owner
+    target_type: fqdn
+    kind: manual
+    ask_owner: >-
+      Which paths and methods does the front end (reverse proxy, WAF, load balancer) block or
+      keep internal-only, and what are its request limits (header size, body size, allowed
+      methods)? An excerpt of the configuration is ideal.
+    description: >-
+      The owner's answer or configuration excerpt of the front end (reverse proxy, WAF, LB):
+      paths and methods meant to be blocked or internal-only, and request size limits, with
+      the date and who answered. Input for the raw-request tests of WSTG-INPV-16.

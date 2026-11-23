@@ -200,6 +200,29 @@ def recon_state(cat: catmod.Catalog, test_id: str, have: dict) -> dict:
     return {"have": n, "total": len(evs), "missing": missing, "state": state}
 
 
+def owner_state(cat: catmod.Catalog, test_id: str, have: dict) -> dict:
+    """Questions for the system owner or developers that a test still waits for: its
+    evidence marked `ask_owner` (an answer cannot be found from outside), with the same
+    shape as evidence_state. "no evidence" = the test needs no answer from the owner."""
+    evs = [e for e in cat.evidence_for(test_id) if e.ask_owner]
+    missing = [e.id for e in evs if e.id not in have]
+    n = len(evs) - len(missing)
+    state = ("no evidence" if not evs else "complete" if not missing else "partial" if n else "none")
+    return {"have": n, "total": len(evs), "missing": missing, "state": state}
+
+
+def owner_questions(cat: catmod.Catalog, target_type: str, have: dict) -> list[dict]:
+    """Every `ask_owner` evidence of this target type, with the tests that use it and
+    whether it is answered (collected), open questions first."""
+    rows = []
+    for e in cat.evidence.values():
+        if not e.ask_owner or e.target_type != target_type:
+            continue
+        rows.append({"ev": e, "answered": e.id in have, "row": have.get(e.id), "used_by": cat.tests_using(e.id)})
+    rows.sort(key=lambda r: (r["answered"], r["used_by"][:1], r["ev"].id))
+    return rows
+
+
 def _wanted(state: dict, evidence: str) -> bool:
     if evidence == "complete":
         return state["state"] in ("complete", "no evidence")

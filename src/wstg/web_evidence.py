@@ -125,6 +125,7 @@ def register(app: Flask, store: evmod.Store, cat: catmod.Catalog) -> None:
                                             "text": "\n".join(lines[-LOG_TAIL:]) or "(empty)"})
         return render_template("evidence.html", tab="manual" if ev.kind == "manual" else "auto", ev=ev,
                                description=catmod.render(ev.description, _placeholders(store, t)),
+                               question=catmod.render(ev.ask_owner, _placeholders(store, t)) if ev.ask_owner else "",
                                comment=tmod.evidence_comments(store.db, t, eid).get(eid),
                                version=version, texts=texts, history=history,
                                is_latest=bool(version and latest and version.version == latest.version),

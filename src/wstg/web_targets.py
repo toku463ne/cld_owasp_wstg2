@@ -210,6 +210,7 @@ def register(app: Flask, cfg: Config, db: dbmod.Database, cat: catmod.Catalog, s
             rows.append({"test": test, "scenario": sc, "status": st,
                          "evidence": ai_files.evidence_state(cat, test.id, have) if sc else None,
                          "recon": ai_files.recon_state(cat, test.id, have) if sc else None,
+                         "owner": ai_files.owner_state(cat, test.id, have) if sc else None,
                          "prompt": sc is not None and (prompts_dir / f"{test.id}.md").exists()})
         counts = {s: sum(1 for r in rows if r["status"] == s) for s in tmod.STATUSES}
         ev_counts = {s: sum(1 for r in rows if r["evidence"] and r["evidence"]["state"] == s)
@@ -219,12 +220,31 @@ def register(app: Flask, cfg: Config, db: dbmod.Database, cat: catmod.Catalog, s
         recon_counts = {"done": sum(1 for r in recon_rows if r["recon"]["state"] == "complete"),
                         "pending": sum(1 for r in recon_rows if r["recon"]["state"] != "complete"),
                         "total": len(recon_rows)}
+        questions = ai_files.owner_questions(cat, t.type, have)
+        owner_counts = {"answered": sum(1 for q in questions if q["answered"]),
+                        "open": sum(1 for q in questions if not q["answered"]), "total": len(questions)}
         scope_problems = tmod.scope_problems(tmod.get_scope(db, t))
-        return render_template("wstg_index.html", tab="index", rows=rows, counts=counts,
+        return render_template("wstg_index.html", tab="index", rows=rows, counts=counts, owner_counts=owner_counts,
                                scope_problems=scope_problems, ai_folder=ai_files.folder(cfg, t),
                                ev_counts=ev_counts, recon_counts=recon_counts,
                                ai_answers=len(ai_files.answer_files(cfg, t)),
                                ai_prompts=len(ai_files.tests_with_scenarios(cat, t)))
+
+    @app.get("/t/<name>/owner-questions")
+    @login_required
+    def owner_questions(name: str):
+        """Questions only the system owner or developers can answer, to send in one go."""
+        t = load_target(name)
+        values = placeholder_values(t)
+        rows = ai_files.owner_questions(cat, t.type, collected(t))
+        for r in rows:
+            r["question"] = catmod.render(r["ev"].ask_owner, values)
+            r["owner"] = tmod.evidence_owner(t, r["ev"].target_type)
+        open_rows = [r for r in rows if not r["answered"]]
+        text = "\n\n".join(f"{i}. {r['question']}\n   (for {', '.join(r['used_by']) or '-'}; evidence {r['ev'].id})"
+                            for i, r in enumerate(open_rows, 1))
+        return render_template("owner_questions.html", tab="index", rows=rows, open_rows=open_rows,
+                               text=f"Questions about {t.name}\n\n{text}\n" if open_rows else "")
 
     @app.get("/t/<name>/manual")
     @login_required

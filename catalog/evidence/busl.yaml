@@ -104,3 +104,16 @@ evidence:
       scanned, size/type-checked, isolated from the web root, or executable (checked by
       requesting the stored file). Use only harmless specimens, never real malware.
     load_note: Use only harmless specimens (EICAR, benign scripts); never upload real malware. An oversized file can stress storage; keep it modest.
+
+  - id: monitoring-answer
+    title: Monitoring and alerting answer from the owner
+    target_type: fqdn
+    kind: manual
+    ask_owner: >-
+      Do you monitor and alert on abnormal use of the application (rapid repeats, bulk
+      requests, automated tools, failed logins)? Who receives the alerts, and did any fire
+      during our test window?
+    description: >-
+      The owner's answer on monitoring and alerting of misuse (what is detected, logged, and
+      alerted, who responds) and whether anything fired during the test window, with the
+      date and who answered.

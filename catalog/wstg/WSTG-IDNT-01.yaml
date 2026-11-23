@@ -22,7 +22,7 @@ steps:
       member, guest), how a user gets each role, and the functions and data each may use.
       Save the document or interview notes as role-definitions.
   - summary: Record one HAR per role while using every function the role is shown
-    evidence: [har-browse]
+    evidence: [har-browse, test-accounts]
     operation: >-
       Log in with the test account of each role in turn and record a HAR (see har-browse)
       while opening every menu item and screen the role is shown, without changing real

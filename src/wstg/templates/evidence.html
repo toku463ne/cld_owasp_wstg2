@@ -4,11 +4,15 @@
 <div class="wstg-head">
   <h2>{{ ev.title }} <code class="muted">{{ ev.id }}</code></h2>
   <span class="chip">{{ ev.kind }}{% if ev.level %} · {{ ev.level }}{% endif %}</span>
+  {% if ev.ask_owner %}<span class="chip">ask owner</span>{% endif %}
   {% if ev.mutating %}<span class="chip warn">may change target</span>{% elif ev.passive %}<span class="chip">passive</span>{% endif %}
 </div>
 {% if ev.mutating %}<div class="warnbox"><b>May change the target — needs the owner's agreement.</b>
   Running this is not read-only reconnaissance; it may change the target's state. It is left out of the Light/Full recon run.
   {% if ev.load_note %}{{ ev.load_note }}{% endif %}</div>{% endif %}
+{% if question %}<div class="okbox"><b>Ask the system owner</b> (cannot be found from outside):
+  {{ question }}<br><span class="muted small">Record the answer here (document, screenshot, or interview notes with the date and who answered).
+  <a href="{{ url_for('owner_questions', name=target.name) }}">All open questions</a></span></div>{% endif %}
 {% if capture %}<div class="{{ 'okbox' if capture[0] else 'warnbox' }}"><b>Needs a manual capture first</b> (not part of the Light/Full run):
   <code>uv run wstg capture {{ target.name }} --role {{ capture_role }}</code> on the tool's host, stored in
   <a href="{{ url_for('evidence_page', name=target.name, eid=capture_ev) }}">{{ capture_ev }}</a>. {{ capture[1] }}.</div>{% endif %}

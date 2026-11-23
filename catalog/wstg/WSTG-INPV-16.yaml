@@ -15,11 +15,12 @@ notes:
 finding_kinds: [request-parsing-weakness, unprotected-path]
 steps:
   - summary: Get the front-end configuration and internal paths to test (manual)
-    evidence: [firewall-rules, raw-request-tests]
+    evidence: [frontend-config, firewall-rules, raw-request-tests]
     operation: >-
       From the owner, get the front-end (reverse proxy, WAF, LB) configuration: which paths
       and methods are meant to be blocked, and which are internal-only. List the requests to
       try (internal paths, blocked methods) in raw-request-tests, noting the expected block.
+      Save the owner's answer as frontend-config.
   - summary: Send raw and malformed requests and observe handling (manual)
     evidence: [raw-request-tests]
     operation: >-

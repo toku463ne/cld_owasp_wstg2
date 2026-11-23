@@ -295,3 +295,30 @@ def test_wstg_index_shows_recon_progress(admin_client, db, cfg):
     tm.create(db, cfg, "www.example.com", "fqdn")
     page = admin_client.get("/t/www.example.com/").get_data(as_text=True)
     assert "Read-only recon" in page and "<th>Recon</th>" in page
+
+
+def test_owner_questions_on_the_index_and_their_page(admin_client, guest_client, db, cfg):
+    from wstg import evidence as evmod
+    t = tm.create(db, cfg, "www.example.com", "fqdn")
+    page = admin_client.get("/t/www.example.com/").get_data(as_text=True)
+    assert "Questions for the owner:" in page and ">Owner</th>" in page
+    assert "open</span> 11" in page and "List and copy the open questions" in page
+    assert "Waiting for the owner: role-definitions, test-accounts" in page       # WSTG-IDNT-01 row
+    q = admin_client.get("/t/www.example.com/owner-questions").get_data(as_text=True)
+    assert "11 open questions" in q and 'data-copy="#owner-text"' in q
+    assert "inbound firewall / security group" in q and "rules for www.example.com" in q   # {fqdn} rendered
+    assert "(for WSTG-CONF-01" in q
+    # a recorded answer counts as answered and leaves the copy text
+    evmod.Store(cfg, db).add_text(t, "firewall-rules", "port 443 from any; 22 from 198.51.100.0/24", "rules", "test")
+    q = admin_client.get("/t/www.example.com/owner-questions").get_data(as_text=True)
+    assert "10 open questions" in q
+    assert "inbound firewall" not in q.split('id="owner-text"')[1].split("</textarea>")[0]
+    assert "open</span> 10" in admin_client.get("/t/www.example.com/").get_data(as_text=True)
+    assert guest_client.get("/t/www.example.com/owner-questions").status_code == 200   # read-only page
+
+
+def test_evidence_page_shows_the_owner_question(admin_client, db, cfg):
+    tm.create(db, cfg, "www.example.com", "fqdn")
+    p = admin_client.get("/t/www.example.com/evidence/test-accounts").get_data(as_text=True)
+    assert "Ask the system owner" in p and "one dedicated test account per role" in p
+    assert "ask owner" in admin_client.get("/t/www.example.com/manual").get_data(as_text=True)

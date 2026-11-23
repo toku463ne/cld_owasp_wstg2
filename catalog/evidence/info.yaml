@@ -259,6 +259,8 @@ evidence:
     title: Architecture map
     target_type: fqdn
     kind: manual
+    ask_owner: >-
+      Please confirm or correct our drafted architecture of {fqdn} (CDN, WAF, load balancer, reverse proxy, application servers, API gateway, databases, third-party services).
     description: >-
       Diagram (image) or text of the components between the client and the data:
       CDN, WAF, load balancer, reverse proxy, application servers, API gateway,

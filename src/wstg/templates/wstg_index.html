@@ -16,6 +16,13 @@
   <span class="status s-none">pending</span> {{ recon_counts.pending }}{% endif %}
   of {{ recon_counts.total }} tests that need automatic recon evidence
   <span class="muted small">(the Light/Full run on the Automatic evidence tab; mutating tests are excluded)</span>
+  {% if owner_counts.total %}<br>Questions for the owner:
+  {% if not owner_counts.open %}<span class="status s-pass">all answered</span>
+  {% else %}<span class="status s-pass">answered</span> {{ owner_counts.answered }} ·
+  <span class="status s-none">open</span> {{ owner_counts.open }}{% endif %}
+  of {{ owner_counts.total }}
+  · <a href="{{ url_for('owner_questions', name=target.name) }}">{{ 'List and copy the open questions' if owner_counts.open else 'List the questions' }}</a>
+  <span class="muted small">(configuration, process, and design facts that cannot be seen from outside: ask them all at once)</span>{% endif %}
 </p>
 {% if can_write %}
 <details class="ai-box" id="ai-bulk">
@@ -42,7 +49,7 @@
 </details>
 {% endif %}
 <table class="index">
-  <tr><th>ID</th><th>Test</th><th>OWASP</th><th>Recon</th><th>Evidence</th><th>Status</th></tr>
+  <tr><th>ID</th><th>Test</th><th>OWASP</th><th>Recon</th><th title="Answers needed from the system owner or developers">Owner</th><th>Evidence</th><th>Status</th></tr>
   {% for r in rows %}
   <tr class="{{ 'merged' if r.test.merged_into }}">
     <td class="nowrap">
@@ -54,6 +61,9 @@
     <td class="nowrap">{% set rc = r.recon %}{% if rc and rc.total %}<span class="status s-{{ {'complete': 'pass', 'partial': 'started', 'none': 'none'}[rc.state] }}"
         title="{{ 'Recon pending: ' ~ (rc.missing | join(', ')) if rc.missing else 'All read-only recon evidence collected' }}">{{ '✓' if rc.state == 'complete' else '%d/%d' % (rc.have, rc.total) }}</span>
       {% elif rc %}<span class="muted small" title="No automatic recon evidence; judged by hand">–</span>{% endif %}</td>
+    <td class="nowrap">{% set oc = r.owner %}{% if oc and oc.total %}<a href="{{ url_for('owner_questions', name=target.name) }}"
+        class="status s-{{ {'complete': 'pass', 'partial': 'started', 'none': 'none'}[oc.state] }}"
+        title="{{ 'Waiting for the owner: ' ~ (oc.missing | join(', ')) if oc.missing else 'All owner answers recorded' }}">{{ '✓' if oc.state == 'complete' else '? %d' % (oc.total - oc.have) }}</a>{% endif %}</td>
     <td class="nowrap">{% set e = r.evidence %}{% if e and e.total %}<span class="status s-{{ {'complete': 'pass', 'partial': 'started', 'none': 'none'}[e.state] }}"
         title="{{ 'Missing: ' ~ (e.missing | join(', ')) if e.missing else 'All evidence collected' }}">{{ e.have }}/{{ e.total }}</span>
       {% elif e %}<span class="muted small">no evidence</span>{% endif %}

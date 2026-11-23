@@ -134,6 +134,9 @@ class Evidence:
     inputs: tuple[str, ...] = ()      # auto only: evidence read through {ev:ID} in argv (collected first)
     fqdn_targets: bool = False        # domain auto only: contacts its registered FQDN targets (each scope-checked)
     after_capture: str = ""           # auto only: login | logout | timeout - needs that manual capture first; not in bulk runs
+    ask_owner: str = ""               # manual only: the question for the system owner or developers whose
+                                      # answer this evidence holds (cannot be found from outside); the WSTG
+                                      # index shows which are still open, to ask them all at once
     source: str = ""                  # file it was defined in
 
 
@@ -276,7 +279,7 @@ CAPTURE_KINDS = {"login": ("har-browse", "user"), "logout": ("har-logout", "logo
 EVIDENCE_KEYS = {"id", "title", "target_type", "kind", "description", "level", "passive", "heavy",
                  "mutating", "argv", "files", "timeout", "est", "ok_exit_codes", "load_note",
                  "proxy_args", "direct", "pause_args", "incomplete_if", "inputs", "fqdn_targets",
-                 "after_capture"}
+                 "after_capture", "ask_owner"}
 
 
 def _load_evidence(dir_: Path, problems: list[str]) -> dict[str, Evidence]:
@@ -304,7 +307,8 @@ def _load_evidence(dir_: Path, problems: list[str]) -> dict[str, Evidence]:
                 proxy_args=_strs(e.get("proxy_args")), direct=bool(e.get("direct", False)),
                 pause_args=_strs(e.get("pause_args")), incomplete_if=_strs(e.get("incomplete_if")),
                 inputs=_strs(e.get("inputs")), fqdn_targets=bool(e.get("fqdn_targets", False)),
-                after_capture=_str(e.get("after_capture")), source=path.name,
+                after_capture=_str(e.get("after_capture")), ask_owner=_str(e.get("ask_owner")).strip(),
+                source=path.name,
             )
             _check_evidence(ev, problems)
             out[eid] = ev
@@ -318,6 +322,8 @@ def _check_evidence(ev: Evidence, problems: list[str]) -> None:
         return
     if ev.kind not in EVIDENCE_KINDS:
         problems.append(f"{w}: kind must be auto or manual")
+    if ev.ask_owner and ev.kind != "manual":
+        problems.append(f"{w}: ask_owner is for manual evidence (an answer from the owner)")
         return
     if ev.kind == "auto":
         if not ev.argv:

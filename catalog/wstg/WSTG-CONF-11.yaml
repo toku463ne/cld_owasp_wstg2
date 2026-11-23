@@ -38,8 +38,10 @@ steps:
       while read -r u; do b=$(echo "$u" | sed -E 's#^(https?://[^/]+)(/[^/]+)?.*#\1#'); echo "===== $b";
       curl -s -m 10 "$b/" | head -c 400; echo;
       curl -s -m 10 "$b/?restype=container&comp=list" | head -c 400; echo; done < storage-urls.txt | tee storage-anon.txt
+    evidence: [cloud-storage-ownership]
     operation: >-
-      Put the storage URLs of steps 1 to 3 that the owner confirmed as theirs in
+      Put the storage URLs of steps 1 to 3 that the owner confirmed as theirs (saved as
+      cloud-storage-ownership) in
       storage-urls.txt, one per line (for path-style URLs such as
       https://s3.amazonaws.com/BUCKET/... keep the bucket in the host part:
       https://BUCKET.s3.amazonaws.com/). Run the command and attach storage-anon.txt to the

@@ -109,6 +109,8 @@ evidence:
     title: Cryptography design review notes
     target_type: fqdn
     kind: manual
+    ask_owner: >-
+      How are passwords stored (algorithm and parameters, e.g. bcrypt cost, Argon2 settings), which encryption algorithms, modes, and key lengths are used, where are keys stored, and how are IVs/nonces and random tokens generated?
     description: >-
       Answers from the developers or design documents (or source code excerpts) on: the
       password storage algorithm and its parameters, encryption algorithms and modes,

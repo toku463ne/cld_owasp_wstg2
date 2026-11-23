@@ -45,6 +45,8 @@ evidence:
     title: Role definitions from the owner
     target_type: fqdn
     kind: manual
+    ask_owner: >-
+      Which roles does the application have (e.g. administrator, operator, member, guest), how does a user get each, and which functions and data may each use? A permission table or specification is ideal.
     description: >-
       The application's roles and what each may do, as the system owner defines them
       (specification, permission table, or interview notes with the date and who
@@ -75,6 +77,8 @@ evidence:
     title: Account provisioning and de-provisioning process
     target_type: fqdn
     kind: manual
+    ask_owner: >-
+      Who can create, change the role of, disable, and delete accounts, what approval is needed, how are leavers and role changes handled (and how fast), and are accounts reviewed periodically?
     description: >-
       Interview notes or documents from the owner (with the date and who answered): who
       can create, change, disable, and delete accounts; the approval needed; how leavers
@@ -90,3 +94,16 @@ evidence:
       same for password reset and registration), or screenshots of the messages shown for
       an existing and a non-existing user name, with the user names used (a test
       account, never a real user's).
+
+  - id: test-accounts
+    title: Test accounts from the owner
+    target_type: fqdn
+    kind: manual
+    ask_owner: >-
+      Please create one dedicated test account per role (and a second one for the
+      ordinary user role, to test access to another user's data), with test data only,
+      and tell us which accounts may be locked, changed, or deleted during the test.
+    description: >-
+      The test accounts the owner provided: user name, role, and what may be done with it
+      (lockout, password change, deletion), with the date. Do not store the passwords here;
+      keep them in the tester's password manager.

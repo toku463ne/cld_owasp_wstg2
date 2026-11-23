@@ -1,0 +1,25 @@
+{% extends "target_base.html" %}
+{% block content %}
+<h3>Questions for the system owner</h3>
+<p class="muted">These answers cannot be found from outside (configuration, processes, design, accounts).
+  Ask them all at once. Record each answer (document, screenshot, or interview notes with the date and who answered)
+  in its evidence; a recorded answer counts as answered. Write "not applicable" as text when a question does not apply.</p>
+{% if open_rows %}
+<p><b>{{ open_rows | length }} open question{{ '' if open_rows | length == 1 else 's' }}</b> ·
+  <button type="button" data-copy="#owner-text">Copy the open questions</button></p>
+<textarea id="owner-text" rows="{{ [open_rows | length * 3 + 3, 24] | min }}" readonly class="owner-text">{{ text }}</textarea>
+{% else %}
+<p><span class="status s-pass">all answered</span></p>
+{% endif %}
+<table class="index">
+  <tr><th>Question</th><th>Used by</th><th>Answer</th></tr>
+  {% for r in rows %}
+  <tr>
+    <td>{{ r.question }}<br><span class="muted small">{{ r.ev.title }} · <code>{{ r.ev.id }}</code></span></td>
+    <td class="nowrap">{% for tid in r.used_by %}<a href="{{ url_for('wstg_page', name=target.name, test_id=tid) }}">{{ tid }}</a>{{ '<br>' | safe if not loop.last }}{% endfor %}</td>
+    <td class="nowrap">{% if r.answered %}<span class="status s-pass">answered</span>{% else %}<span class="status s-none">open</span>{% endif %}<br>
+      <a href="{{ url_for('evidence_page', name=r.owner or target.name, eid=r.ev.id) }}">{{ 'view' if r.answered else 'record the answer' }}</a></td>
+  </tr>
+  {% endfor %}
+</table>
+{% endblock %}
