@@ -134,7 +134,7 @@ def _wait_for_finish() -> None:
 
 
 def _drive(start_url: str, har_path: Path, state_path: Path, *, headless: bool,
-           on_request, wait=_wait_for_finish) -> None:
+           on_request, wait=_wait_for_finish, proxy: str = "") -> None:
     """Open a headful Chromium, record to `har_path`, save storage to `state_path`.
 
     Isolated so the rest of this module (scope checks, storing the result) is
@@ -148,7 +148,8 @@ def _drive(start_url: str, har_path: Path, state_path: Path, *, headless: bool,
             "uv sync && uv run playwright install chromium") from e
     with sync_playwright() as pw:
         try:
-            browser = pw.chromium.launch(headless=headless)
+            browser = pw.chromium.launch(headless=headless,
+                                         proxy={"server": proxy} if proxy else None)
         except Exception as e:   # noqa: BLE001 - surface a clear hint for the missing browser binary
             raise CaptureError(
                 f"cannot launch Chromium ({e}). Install the browser: "
@@ -157,10 +158,13 @@ def _drive(start_url: str, har_path: Path, state_path: Path, *, headless: bool,
                                       ignore_https_errors=True)
         context.on("request", lambda req: on_request(req.url))
         page = context.new_page()
+        print(f"  opening {start_url}" + (f" through the proxy {proxy}" if proxy else " (no proxy)"), flush=True)
         try:
-            page.goto(start_url, wait_until="domcontentloaded", timeout=GOTO_TIMEOUT_MS)
+            resp = page.goto(start_url, wait_until="domcontentloaded", timeout=GOTO_TIMEOUT_MS)
+            print(f"  opened: {resp.status if resp else '-'} {page.url}", flush=True)
         except Exception as e:   # noqa: BLE001 - navigation can fail; the tester can still browse
-            print(f"  (could not open {start_url}: {e}; you can navigate manually)")
+            print(f"  (could not open {start_url}: {str(e).splitlines()[0]}; check the network or proxy "
+                  "of this host, or navigate manually)", flush=True)
         # The tester's Enter is read on a thread; meanwhile this thread keeps the DOM
         # of each open page (Playwright's sync API stays on this thread).
         dom = DomRecorder(start_url)
@@ -214,7 +218,7 @@ def record_session(cfg: Config, db: dbmod.Database, store: evmod.Store, target: 
     har_path = tmp / f"{label}-{stamp}.har"
     state_path = tmp / f"storage-state-{label}-{stamp}.json"
     try:
-        drive(url, har_path, state_path, headless=headless, on_request=on_request)
+        drive(url, har_path, state_path, headless=headless, on_request=on_request, proxy=cfg.http_proxy)
         if not har_path.is_file() or har_path.stat().st_size == 0:
             raise CaptureError("no HAR was recorded (the browser produced no traffic)")
         in_scope = sorted(h for h in contacted

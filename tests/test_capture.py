@@ -41,7 +41,7 @@ def _har(entries):
 
 def fake_drive(contacts=("https://www.example.com/", "https://cdn.other.test/a.js")):
     """Build a drive() stand-in that writes a HAR + state and reports `contacts`."""
-    def drive(url, har_path, state_path, *, headless, on_request):
+    def drive(url, har_path, state_path, *, headless, on_request, proxy=""):
         for c in contacts:
             on_request(c)
         har_path.write_text(json.dumps(_har([
@@ -100,7 +100,7 @@ def test_capture_refuses_start_url_out_of_scope(cfg, db, store, site):
 
 
 def test_capture_errors_when_no_har_recorded(cfg, db, store, site):
-    def drive(url, har_path, state_path, *, headless, on_request):
+    def drive(url, har_path, state_path, *, headless, on_request, proxy=""):
         pass   # writes nothing
     with pytest.raises(cap.CaptureError):
         cap.record_session(cfg, db, store, site, drive=drive)
@@ -118,10 +118,22 @@ def test_dedicated_roles_go_to_their_own_evidence():
 def test_capture_stores_dom_snapshots_when_recorded(cfg, db, store, site):
     base = fake_drive()
 
-    def drive(url, har_path, state_path, *, headless, on_request):
+    def drive(url, har_path, state_path, *, headless, on_request, proxy=""):
         base(url, har_path, state_path, headless=headless, on_request=on_request)
         cap.dom_path_for(har_path).write_text(json.dumps({"url": url, "html": "<!-- x -->"}) + "\n")
     res = cap.record_session(cfg, db, store, site, role="user", drive=drive)
     assert res["dom_file"] and res["dom_file"].startswith("dom-user-")
     ver = store.load("www.example.com", "har-browse")
     assert any(i.file.endswith(".jsonl") for i in ver.items)
+
+
+def test_capture_uses_the_configured_proxy(cfg, db, store, site):
+    import dataclasses
+    seen = []
+    base = fake_drive()
+
+    def drive(url, har_path, state_path, *, headless, on_request, proxy=""):
+        seen.append(proxy)
+        base(url, har_path, state_path, headless=headless, on_request=on_request)
+    cap.record_session(dataclasses.replace(cfg, http_proxy="http://127.0.0.1:8080"), db, store, site, drive=drive)
+    assert seen == ["http://127.0.0.1:8080"]

@@ -79,7 +79,7 @@ def test_wait_for_stop_file(tmp_path):
     assert stop.exists() and time.monotonic() - t0 < 5
 
 
-def _fake_drive(url, har_path, state_path, *, headless, on_request, wait):
+def _fake_drive(url, har_path, state_path, *, headless, on_request, wait, proxy=""):
     on_request(url)
     wait()
     har_path.write_text(json.dumps({"log": {"version": "1.2", "entries": [
