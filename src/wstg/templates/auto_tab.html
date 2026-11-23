@@ -10,10 +10,12 @@
 
 <section class="overview">
   <h3>Collect automatic evidence</h3>
-  <p class="muted">Runs before testing. Evidence that is already collected is skipped, so an interrupted run continues where it stopped.
+  <p class="muted">The Light/Full run is the <b>read-only reconnaissance</b> phase: every command only reads the target, so it needs no special agreement. Evidence that is already collected is skipped, so an interrupted run continues where it stopped.
   {% if target.type == 'fqdn' %}Domain evidence (DNS, WHOIS, certificate logs) is collected on the domain target{% if target.parent_name %} <a href="{{ url_for('auto_tab', name=target.parent_name) }}">{{ target.parent_name }}</a>{% endif %}.{% endif %}
   {% if after %}Evidence that needs a manual browser capture first is not part of this run; it is listed under
-  <a href="#after-capture">Collected after a manual capture</a>.{% endif %}</p>
+  <a href="#after-capture">Collected after a manual capture</a>.{% endif %}
+  {% if mutating %}Evidence that may change the target is not part of this run; it is listed under
+  <a href="#mutating">May change the target</a> and collected only with the owner's agreement.{% endif %}</p>
   {% if can_write %}
   <form method="post" class="inline" action="{{ url_for('auto_collect', name=target.name) }}">
     <input type="hidden" name="csrf" value="{{ csrf }}">
@@ -102,6 +104,36 @@
         <button {{ 'disabled' if active or scope_problems or not a.status[0] }}
           {% if e.heavy %}data-confirm="{{ e.id }} is heavy: {{ e.load_note }} Collect it now?"{% endif %}
           title="{{ a.status[1] }}">{{ 'Collect again' if have.get(e.id) else 'Collect' }}</button></form></td>{% endif %}
+  </tr>
+  {% endfor %}
+</table>
+{% endif %}
+
+{% if mutating %}
+<h3 id="mutating">May change the target (needs the owner's agreement)</h3>
+<p class="note warn">These are <b>not</b> read-only: running them may change the target's state (write a file, upload, change an
+  account, or send a destructive payload). They are left out of the Light/Full reconnaissance run. Collect each one only
+  after agreeing it with the owner / developers; the button asks you to confirm.</p>
+<table>
+  <tr><th>Evidence</th><th>Level</th><th>Command</th><th>Collected</th><th class="col-used">Used by</th>{% if can_write %}<th></th>{% endif %}</tr>
+  {% for e in mutating %}
+  <tr>
+    <td><a href="{{ url_for('evidence_page', name=target.name, eid=e.id) }}"><b>{{ e.title }}</b></a><br><code class="muted">{{ e.id }}</code>
+      <span class="chip warn">may change target</span></td>
+    <td class="nowrap">{{ e.level }}{% if e.heavy %} <span class="chip warn">heavy</span>{% endif %}</td>
+    <td><code class="small">{{ e.argv | reject('in', ['{proxy_args}', '{pause_args}']) | join(' ') }}</code>{% if e.load_note %}<div class="note">{{ e.load_note }}</div>{% endif %}</td>
+    <td class="nowrap">{% if have.get(e.id) %}{{ have[e.id].created_at }}<br><span class="muted">v{{ have[e.id].version }}</span>
+      {% elif failed.get(e.id) %}<a href="{{ url_for('evidence_page', name=target.name, eid=e.id) }}#failed-log"><span class="status s-fail">failed</span></a><br><span class="muted small">{{ failed[e.id].summary }}</span>
+      {% else %}<span class="muted">not collected</span>{% endif %}</td>
+    <td>{{ test_links(cat.tests_using(e.id), target) }}</td>
+    {% if can_write %}<td class="nowrap">
+      <form method="post" class="inline" action="{{ url_for('auto_collect_one', name=target.name, eid=e.id) }}">
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <input type="hidden" name="agree" value="1">
+        {% if have.get(e.id) %}<input type="hidden" name="force" value="1">{% endif %}
+        <button {{ 'disabled' if active or scope_problems }}
+          data-confirm="{{ e.id }} MAY CHANGE THE TARGET: {{ e.load_note }} Only collect this with the owner's agreement. Collect it now?"
+          title="Collect only with the owner's agreement (may change the target)">{{ 'Collect again' if have.get(e.id) else 'Collect' }}</button></form></td>{% endif %}
   </tr>
   {% endfor %}
 </table>

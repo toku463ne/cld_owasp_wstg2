@@ -10,6 +10,12 @@
   <br>Evidence: <span class="status s-pass">complete</span> {{ ev_counts.complete }} ·
   <span class="status s-started">partial</span> {{ ev_counts.partial }} ·
   <span class="status s-none">none</span> {{ ev_counts.none }}
+  <br>Read-only recon:
+  {% if recon_counts.done == recon_counts.total %}<span class="status s-pass">all done</span>
+  {% else %}<span class="status s-pass">done</span> {{ recon_counts.done }} ·
+  <span class="status s-none">pending</span> {{ recon_counts.pending }}{% endif %}
+  of {{ recon_counts.total }} tests that need automatic recon evidence
+  <span class="muted small">(the Light/Full run on the Automatic evidence tab; mutating tests are excluded)</span>
 </p>
 {% if can_write %}
 <details class="ai-box" id="ai-bulk">
@@ -36,7 +42,7 @@
 </details>
 {% endif %}
 <table class="index">
-  <tr><th>ID</th><th>Test</th><th>OWASP</th><th>Evidence</th><th>Status</th></tr>
+  <tr><th>ID</th><th>Test</th><th>OWASP</th><th>Recon</th><th>Evidence</th><th>Status</th></tr>
   {% for r in rows %}
   <tr class="{{ 'merged' if r.test.merged_into }}">
     <td class="nowrap">
@@ -45,6 +51,9 @@
     <td><b>{{ r.test.title }}</b>{% if not r.scenario and not r.test.merged_into %} <span class="chip">no scenario yet</span>{% endif %}<br>
       <span class="muted">{{ r.test.summary }}</span></td>
     <td><a href="{{ r.test.owasp_url }}" target="_blank" rel="noopener noreferrer">WSTG</a></td>
+    <td class="nowrap">{% set rc = r.recon %}{% if rc and rc.total %}<span class="status s-{{ {'complete': 'pass', 'partial': 'started', 'none': 'none'}[rc.state] }}"
+        title="{{ 'Recon pending: ' ~ (rc.missing | join(', ')) if rc.missing else 'All read-only recon evidence collected' }}">{{ '✓' if rc.state == 'complete' else '%d/%d' % (rc.have, rc.total) }}</span>
+      {% elif rc %}<span class="muted small" title="No automatic recon evidence; judged by hand">–</span>{% endif %}</td>
     <td class="nowrap">{% set e = r.evidence %}{% if e and e.total %}<span class="status s-{{ {'complete': 'pass', 'partial': 'started', 'none': 'none'}[e.state] }}"
         title="{{ 'Missing: ' ~ (e.missing | join(', ')) if e.missing else 'All evidence collected' }}">{{ e.have }}/{{ e.total }}</span>
       {% elif e %}<span class="muted small">no evidence</span>{% endif %}

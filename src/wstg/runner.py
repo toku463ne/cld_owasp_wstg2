@@ -115,10 +115,13 @@ def build_argv(ev: catmod.Evidence, values: dict[str, str], proxy: str,
 def plan(cat: catmod.Catalog, target: tmod.Target, mode: str) -> list[catmod.Evidence]:
     if mode not in MODES:
         raise RunError(f"mode must be one of {', '.join(MODES)}")
-    # Evidence that waits for a manual capture (after_capture) is collected on its own once
-    # the capture exists, never by a bulk run (it would only fail for lack of input).
+    # A bulk run is the read-only reconnaissance phase: it leaves out evidence that waits for
+    # a manual capture (after_capture, collected on its own once the capture exists) and
+    # evidence that may change the target (mutating, collected on its own with the owner's
+    # agreement). Both would otherwise run unattended in a plain Light/Full sweep.
     evs = [e for e in cat.evidence.values()
-           if e.kind == "auto" and e.target_type == target.type and not e.after_capture]
+           if e.kind == "auto" and e.target_type == target.type
+           and not e.after_capture and not e.mutating]
     if mode == "light":
         evs = [e for e in evs if e.level == "light"]
     # Shortest expected run first so quick evidence finishes early and the long,
@@ -228,10 +231,13 @@ def job_items(db: dbmod.Database, job_id: int) -> list[dict]:
 
 
 def enqueue(db: dbmod.Database, cat: catmod.Catalog, target: tmod.Target, mode: str, actor: str, *,
-            evidence_id: str = "", force: bool = False, cfg: Config | None = None) -> int:
-    """Queue a collection job: every automatic evidence of the mode, or with
-    `evidence_id` that one only (mode = its level). `force` collects it even when
-    a complete version exists (a new version is added; older ones are kept)."""
+            evidence_id: str = "", force: bool = False, agreed: bool = False,
+            cfg: Config | None = None) -> int:
+    """Queue a collection job: every automatic evidence of the mode (read-only reconnaissance
+    only), or with `evidence_id` that one only (mode = its level). `force` collects it even
+    when a complete version exists (a new version is added; older ones are kept). `agreed`
+    confirms the owner's agreement, required to collect a `mutating` evidence (one that may
+    change the target); mutating evidence is never part of a bulk run."""
     problems = tmod.scope_problems(tmod.get_scope(db, target))
     if problems:
         raise RunError(f"set the scope record of {target.name} first: {'; '.join(problems)}")
@@ -240,6 +246,9 @@ def enqueue(db: dbmod.Database, cat: catmod.Catalog, target: tmod.Target, mode: 
         if not ev or ev.kind != "auto" or ev.target_type != target.type:
             raise RunError(f"{evidence_id} is not automatic evidence of {target.type} targets")
         evs, mode = [ev], ev.level or "light"
+        if ev.mutating and not agreed:
+            raise RunError(f"{evidence_id} may change the target ({ev.load_note.strip() or 'mutating'}); "
+                           "collect it only with the owner's agreement")
         if ev.after_capture and cfg is not None:
             ready, note = capture_status(cfg, target, ev)
             if not ready:

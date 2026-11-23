@@ -270,3 +270,28 @@ def test_cmdtext_breaks_at_top_level_semicolons_only():
     # a ; inside quotes is not a statement separator
     safe = str(cmdtext("sed -E 's/;.*//' f; echo done"))
     assert "s/;.*//" in safe and safe.count("\n") == 1
+
+
+def test_mutating_evidence_split_and_agreement_gate(admin_client, db, cfg):
+    from wstg import runner as rmod, catalog as catmod
+    t = tm.create(db, cfg, "www.example.com", "fqdn")
+    tm.update_scope(db, t, allowed_hosts="www.example.com", allowed_ports="80,443",
+                    base_url="https://www.example.com", authorization_ref="Contract 2026-001",
+                    valid_from="2000-01-01", valid_until="2099-12-31", actor="test")
+    page = admin_client.get("/t/www.example.com/auto").get_data(as_text=True)
+    assert "May change the target" in page and "http-methods-write" in page
+    # mutating evidence is not part of a bulk run
+    assert "http-methods-write" not in [e.id for e in rmod.plan(catmod.load(), t, "full")]
+    # collecting it without agreement is refused
+    post(admin_client, "/t/www.example.com/auto/collect/http-methods-write")
+    assert rmod.last_job(db, t) is None
+    assert "may change the target" in admin_client.get("/t/www.example.com/auto").get_data(as_text=True)
+    # with agreement it queues
+    r = post(admin_client, "/t/www.example.com/auto/collect/http-methods-write", agree="1")
+    assert r.status_code == 302 and rmod.last_job(db, t)["evidence_id"] == "http-methods-write"
+
+
+def test_wstg_index_shows_recon_progress(admin_client, db, cfg):
+    tm.create(db, cfg, "www.example.com", "fqdn")
+    page = admin_client.get("/t/www.example.com/").get_data(as_text=True)
+    assert "Read-only recon" in page and "<th>Recon</th>" in page

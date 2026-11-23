@@ -61,6 +61,7 @@ evidence:
     title: Stored XSS tests
     target_type: fqdn
     kind: manual
+    mutating: true
     description: >-
       Optional (WSTG-INPV-02 step 4): display paths outside the browser capture - a
       generated PDF, CSV export, or email - and whether the stored marker is shown there as
@@ -103,6 +104,7 @@ evidence:
     title: SQL injection tests
     target_type: fqdn
     kind: manual
+    mutating: true
     description: >-
       Per parameter/header/cookie, the payloads sent (quote to raise an error, boolean
       true/false pair, time-based delay) and the error, response difference, or timing
@@ -113,6 +115,7 @@ evidence:
     title: LDAP injection tests
     target_type: fqdn
     kind: manual
+    mutating: true
     description: >-
       Per LDAP-backed input (login, user search), the payloads sent (*, )(uid=*),
       *)(|(uid=*) and whether the filter broke to return all entries or bypass
@@ -122,6 +125,7 @@ evidence:
     title: XML injection and XXE tests
     target_type: fqdn
     kind: manual
+    mutating: true
     description: >-
       Per XML input (API body, SOAP, SAML, uploaded docx/svg), the payloads sent
       (structure-breaking characters; an external-entity DOCTYPE reading a documentation
@@ -133,6 +137,7 @@ evidence:
     title: SSI injection tests
     target_type: fqdn
     kind: manual
+    mutating: true
     description: >-
       Per input reflected into an SSI-enabled page (.shtml or configured), the directives
       injected (an include of a file, an exec of a harmless command) and whether the
@@ -151,6 +156,7 @@ evidence:
     title: IMAP/SMTP injection tests
     target_type: fqdn
     kind: manual
+    mutating: true
     description: >-
       Per mail-related input (contact form subject/recipient, mailbox search), the CRLF
       and command payloads sent (%0d%0a, an added To:/Bcc:, an SMTP/IMAP command) and
@@ -161,6 +167,7 @@ evidence:
     title: Code injection tests
     target_type: fqdn
     kind: manual
+    mutating: true
     description: >-
       Per input that may be evaluated (eval, deserialization, template, file include),
       the language-specific payload sent and whether it executed, confirmed with a
@@ -171,6 +178,7 @@ evidence:
     title: OS command injection tests
     target_type: fqdn
     kind: manual
+    mutating: true
     description: >-
       Per input that builds an OS command, the separators and payloads sent (; id, | id,
       $(id), && id, & whoami) and whether a harmless command ran, confirmed by output,
@@ -181,6 +189,7 @@ evidence:
     title: Format string injection tests
     target_type: fqdn
     kind: manual
+    mutating: true
     description: >-
       Per input that may reach a native format function, the specifiers sent (%s%s%s,
       %x%x%x, %n) and whether memory contents leaked or the component crashed. Mainly for
@@ -190,6 +199,7 @@ evidence:
     title: Incubated vulnerability tests
     target_type: fqdn
     kind: manual
+    mutating: true
     description: >-
       The scenario where input that is harmless at storage fires later through another
       path (a stored value executed by a batch, report, admin screen, or external
@@ -200,6 +210,7 @@ evidence:
     title: HTTP splitting and smuggling tests
     target_type: fqdn
     kind: manual
+    mutating: true
     description: >-
       The CRLF response-splitting attempts (payload reflected into a response header) and
       the request-smuggling probes (Content-Length vs Transfer-Encoding discrepancy),
@@ -223,6 +234,7 @@ evidence:
     title: Host header injection tests
     target_type: fqdn
     kind: manual
+    mutating: true
     description: >-
       Beyond the automated probe: whether a forged Host (or X-Forwarded-Host) reaches a
       password-reset link or other generated URL so it can be pointed at an attacker
@@ -233,6 +245,7 @@ evidence:
     title: Server-side template injection tests
     target_type: fqdn
     kind: manual
+    mutating: true
     description: >-
       Per input that may reach a template, the test expressions sent ({{7*7}}, ${7*7},
       #{7*7}, <%= 7*7 %>) and whether they evaluated (returning 49), the engine identified,
@@ -243,6 +256,7 @@ evidence:
     title: Server-side request forgery tests
     target_type: fqdn
     kind: manual
+    mutating: true
     description: >-
       Per input that takes a URL or host (url, image, webhook), the targets requested
       (cloud metadata 169.254.169.254, internal 127.0.0.1/10.x, file:// and gopher://

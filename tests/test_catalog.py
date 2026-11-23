@@ -275,3 +275,31 @@ def test_proxy_args_are_checked(tmp_path):
     assert 'b-root: argv has "{proxy_args}" but no proxy_args' in p
     assert "c-root: direct and proxy_args exclude each other" in p
     assert "not {fqdn}" in p
+
+
+def test_repository_catalog_marks_the_only_mutating_auto():
+    c = catalog.load()
+    auto_mut = [e.id for e in c.evidence.values() if e.kind == "auto" and e.mutating]
+    assert auto_mut == ["http-methods-write"]
+    # a good sample of manual change-tests are flagged
+    for eid in ("xss-stored-tests", "upload-malicious-tests", "sqli-tests", "lockout-tests"):
+        assert c.evidence[eid].mutating, eid
+    # pure recon/inspection manual evidence is not flagged
+    for eid in ("page-source-review", "crypto-review", "har-browse"):
+        assert not c.evidence[eid].mutating, eid
+
+
+def test_mutating_auto_needs_note_and_not_passive(tmp_path):
+    p = problems_for(tmp_path, """\
+        evidence:
+          - id: put-test
+            title: put
+            target_type: fqdn
+            kind: auto
+            level: full
+            passive: true
+            mutating: true
+            argv: [curl, -X, PUT, "{base_url}/x"]
+        """)
+    assert "mutating and passive are contradictory" in p
+    assert "mutating evidence needs a load_note" in p

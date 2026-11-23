@@ -64,6 +64,7 @@ evidence:
     title: Registration and user name tests
     target_type: fqdn
     kind: manual
+    mutating: true
     description: >-
       One text item per check of the registration process (duplicate registration, use
       before verification, extra role parameters, bot protection, user name variants):

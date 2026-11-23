@@ -50,6 +50,7 @@ evidence:
     title: Authorization-schema bypass tests
     target_type: fqdn
     kind: manual
+    mutating: true
     description: >-
       One text item per request from the role matrix (WSTG-IDNT-01) replayed with a lower
       role's session and with no session: the request (method and path), the session used,
@@ -62,6 +63,7 @@ evidence:
     title: Privilege escalation tests
     target_type: fqdn
     kind: manual
+    mutating: true
     description: >-
       One text item per escalation attempt, grouped as horizontal (another user of the
       same role) and vertical (a higher role): the value changed (a role or group
@@ -73,6 +75,7 @@ evidence:
     title: Insecure direct object reference tests
     target_type: fqdn
     kind: manual
+    mutating: true
     description: >-
       One text item per object-reference parameter tested (for example id, order id, a
       file name, a numeric or UUID path segment): the reference changed to another test

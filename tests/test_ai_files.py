@@ -180,3 +180,15 @@ def test_save_prompts_by_evidence_and_existing_files(admin_client, cfg, db, env)
     assert prompt.read_text() != "old"
     assert admin_client.post("/t/www.example.com/ai/prompts", data={"csrf": csrf_of(admin_client),
                                                                     "evidence": "bad"}).status_code == 400
+
+
+def test_recon_state_excludes_mutating_evidence(cfg, db, env):
+    t, cat, store = env
+    # WSTG-CONF-06 uses http-methods (recon) and http-methods-write (mutating).
+    have = {}
+    rs = ai_files.recon_state(cat, "WSTG-CONF-06", have)
+    assert "http-methods-write" not in rs["missing"] and "http-methods" in rs["missing"]
+    assert rs["total"] == 1                      # only the recon auto evidence is counted
+    store.add_text(t, "http-methods", "x", "", "admin")
+    rs = ai_files.recon_state(cat, "WSTG-CONF-06", ai_files.collected(db, cat, store, t))
+    assert rs["state"] == "complete"             # recon done even though the mutating one is not collected

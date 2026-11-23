@@ -4,7 +4,11 @@
 <div class="wstg-head">
   <h2>{{ ev.title }} <code class="muted">{{ ev.id }}</code></h2>
   <span class="chip">{{ ev.kind }}{% if ev.level %} · {{ ev.level }}{% endif %}</span>
+  {% if ev.mutating %}<span class="chip warn">may change target</span>{% elif ev.passive %}<span class="chip">passive</span>{% endif %}
 </div>
+{% if ev.mutating %}<div class="warnbox"><b>May change the target — needs the owner's agreement.</b>
+  Running this is not read-only reconnaissance; it may change the target's state. It is left out of the Light/Full recon run.
+  {% if ev.load_note %}{{ ev.load_note }}{% endif %}</div>{% endif %}
 {% if capture %}<div class="{{ 'okbox' if capture[0] else 'warnbox' }}"><b>Needs a manual capture first</b> (not part of the Light/Full run):
   <code>uv run wstg capture {{ target.name }} --role {{ capture_role }}</code> on the tool's host, stored in
   <a href="{{ url_for('evidence_page', name=target.name, eid=capture_ev) }}">{{ capture_ev }}</a>. {{ capture[1] }}.</div>{% endif %}
@@ -22,7 +26,10 @@
 <form method="post" class="inline" action="{{ url_for('auto_collect_one', name=target.name, eid=ev.id) }}">
   <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="back" value="evidence">
   {% if latest_exists %}<input type="hidden" name="force" value="1">{% endif %}
-  <button {{ 'disabled' if job_active }} {% if ev.heavy %}data-confirm="{{ ev.id }} is heavy: {{ ev.load_note }}{% if ev.pause_args %} WSTG_PAUSE is {{ 'set to %d: this run adds %s.' % (pause, ev.pause_args | join(' ') | replace('{pause}', pause | string)) if pause else 'not set: this run goes at full speed.' }}{% endif %} Collect it now?"{% endif %}>{{ 'Collect again' if latest_exists else 'Collect' }}</button></form>
+  {% if ev.mutating %}<input type="hidden" name="agree" value="1">{% endif %}
+  <button {{ 'disabled' if job_active }}
+    {% if ev.mutating %}data-confirm="{{ ev.id }} MAY CHANGE THE TARGET: {{ ev.load_note }} Only collect this with the owner's agreement. Collect it now?"
+    {% elif ev.heavy %}data-confirm="{{ ev.id }} is heavy: {{ ev.load_note }}{% if ev.pause_args %} WSTG_PAUSE is {{ 'set to %d: this run adds %s.' % (pause, ev.pause_args | join(' ') | replace('{pause}', pause | string)) if pause else 'not set: this run goes at full speed.' }}{% endif %} Collect it now?"{% endif %}>{{ 'Collect again' if latest_exists else 'Collect' }}</button></form>
 {% if job_active %}<span class="muted small">A job is running for this target (<a href="{{ url_for('auto_tab', name=target.name) }}">Automatic evidence</a>).</span>{% endif %}
 {% endif %}
 <p class="muted">Used by:

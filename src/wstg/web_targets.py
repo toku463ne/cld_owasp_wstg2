@@ -209,14 +209,20 @@ def register(app: Flask, cfg: Config, db: dbmod.Database, cat: catmod.Catalog, s
                     or tmod.status(len(sc.steps) if sc else 0, vs.get(test.id, {}), has_ev)
             rows.append({"test": test, "scenario": sc, "status": st,
                          "evidence": ai_files.evidence_state(cat, test.id, have) if sc else None,
+                         "recon": ai_files.recon_state(cat, test.id, have) if sc else None,
                          "prompt": sc is not None and (prompts_dir / f"{test.id}.md").exists()})
         counts = {s: sum(1 for r in rows if r["status"] == s) for s in tmod.STATUSES}
         ev_counts = {s: sum(1 for r in rows if r["evidence"] and r["evidence"]["state"] == s)
                      for s in ("complete", "partial", "none")}
+        # Recon done = every test whose automatic recon evidence is all collected (or needs none).
+        recon_rows = [r for r in rows if r["recon"] and r["recon"]["state"] != "no evidence"]
+        recon_counts = {"done": sum(1 for r in recon_rows if r["recon"]["state"] == "complete"),
+                        "pending": sum(1 for r in recon_rows if r["recon"]["state"] != "complete"),
+                        "total": len(recon_rows)}
         scope_problems = tmod.scope_problems(tmod.get_scope(db, t))
         return render_template("wstg_index.html", tab="index", rows=rows, counts=counts,
                                scope_problems=scope_problems, ai_folder=ai_files.folder(cfg, t),
-                               ev_counts=ev_counts,
+                               ev_counts=ev_counts, recon_counts=recon_counts,
                                ai_answers=len(ai_files.answer_files(cfg, t)),
                                ai_prompts=len(ai_files.tests_with_scenarios(cat, t)))
 
@@ -243,16 +249,19 @@ def register(app: Flask, cfg: Config, db: dbmod.Database, cat: catmod.Catalog, s
         failed = {r["evidence_id"]: r for r in db.query(
             "SELECT * FROM evidence_versions WHERE target_id = ? AND status = 'failed' ORDER BY version", (t.id,))}
         evs = [e for e in cat.evidence.values()
-               if e.kind == "auto" and e.target_type == t.type and not e.after_capture]
+               if e.kind == "auto" and e.target_type == t.type and not e.after_capture and not e.mutating]
         after = [{"ev": e, "capture": catmod.CAPTURE_KINDS[e.after_capture][0],
                   "role": catmod.CAPTURE_KINDS[e.after_capture][1], "status": rmod.capture_status(cfg, t, e)}
                  for e in cat.evidence.values()
                  if e.kind == "auto" and e.target_type == t.type and e.after_capture]
+        mutating = [e for e in cat.evidence.values()
+                    if e.kind == "auto" and e.target_type == t.type and e.mutating]
         job = rmod.last_job(db, t)
         items = rmod.job_items(db, job["id"]) if job else []
         active = bool(job and job["status"] in rmod.ACTIVE)
         waiting = bool(job and job["status"] == "queued")
-        return render_template("auto_tab.html", tab="auto", evidence=evs, after=after, cat=cat, have=have, failed=failed,
+        return render_template("auto_tab.html", tab="auto", evidence=evs, after=after, mutating=mutating,
+                               cat=cat, have=have, failed=failed,
                                job=job, items=items, active=active, waiting=waiting,
                                stale=bool(job and rmod.stale(db, cfg, job)),
                                light_count=len(rmod.plan(cat, t, "light")), full_count=len(rmod.plan(cat, t, "full")),
@@ -274,8 +283,10 @@ def register(app: Flask, cfg: Config, db: dbmod.Database, cat: catmod.Catalog, s
     def auto_collect_one(name: str, eid: str):
         t = load_target(name)
         force = bool(request.form.get("force"))
+        agreed = bool(request.form.get("agree"))
         try:
-            job = rmod.enqueue(db, cat, t, "light", g.user["username"], evidence_id=eid, force=force, cfg=cfg)
+            job = rmod.enqueue(db, cat, t, "light", g.user["username"], evidence_id=eid, force=force,
+                               agreed=agreed, cfg=cfg)
             flash(f"Job {job} queued: {eid}" + (" (collect again; earlier versions are kept)." if force else "."))
         except rmod.RunError as e:
             flash(str(e))

@@ -56,6 +56,7 @@ evidence:
     title: Default and well-known credential checks
     target_type: fqdn
     kind: manual
+    mutating: true
     description: >-
       One text item per login point (application, admin interface, and each component
       found by whatweb / wappalyzer): the default or well-known user names and passwords
@@ -69,6 +70,7 @@ evidence:
     title: Account lockout and brute-force throttling checks
     target_type: fqdn
     kind: manual
+    mutating: true
     description: >-
       Notes and screenshots of the lockout test on a dedicated test account: how many
       wrong passwords trigger a lockout, step-up delay, or CAPTCHA; the response
@@ -81,6 +83,7 @@ evidence:
     title: Authentication-schema bypass checks
     target_type: fqdn
     kind: manual
+    mutating: true
     description: >-
       One text item or screenshot per attempt to reach protected functions without a
       valid session: direct access to protected URLs (force browsing), tampering with a
@@ -124,6 +127,7 @@ evidence:
     title: Security-question checks
     target_type: fqdn
     kind: manual
+    mutating: true
     description: >-
       Notes on the security-question feature: the questions offered (whether answerable
       from public or social-media information), whether a free-text question can be set,
@@ -135,6 +139,7 @@ evidence:
     title: Password change and reset checks
     target_type: fqdn
     kind: manual
+    mutating: true
     description: >-
       One text item or screenshot per check of the change and reset flows with a test
       account: whether a change requires the current password; whether the reset token is

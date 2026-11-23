@@ -189,6 +189,17 @@ def evidence_state(cat: catmod.Catalog, test_id: str, have: dict) -> dict:
     return {"have": n, "total": len(evs), "missing": missing, "state": state}
 
 
+def recon_state(cat: catmod.Catalog, test_id: str, have: dict) -> dict:
+    """Read-only reconnaissance progress of a test: the automatic, non-mutating evidence it
+    uses (what the Light/Full recon run collects), with the same shape as evidence_state.
+    "no evidence" means the test needs no automatic recon evidence (it is judged by hand)."""
+    evs = [e for e in cat.evidence_for(test_id) if e.kind == "auto" and not e.mutating]
+    missing = [e.id for e in evs if e.id not in have]
+    n = len(evs) - len(missing)
+    state = ("no evidence" if not evs else "complete" if not missing else "partial" if n else "none")
+    return {"have": n, "total": len(evs), "missing": missing, "state": state}
+
+
 def _wanted(state: dict, evidence: str) -> bool:
     if evidence == "complete":
         return state["state"] in ("complete", "no evidence")

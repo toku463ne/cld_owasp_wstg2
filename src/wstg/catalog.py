@@ -118,6 +118,9 @@ class Evidence:
     level: str | None = None          # auto only: light | full
     passive: bool = False             # auto only: no traffic to the target itself
     heavy: bool = False               # slow, noisy, or lockout-prone (full only)
+    mutating: bool = False            # running it may change the target's state (write/upload/
+                                      # account/destructive payload/side-effect): needs the owner's
+                                      # agreement, so it is kept out of the read-only recon run
     argv: tuple[str, ...] = ()        # auto only; no shell
     files: tuple[str, ...] = ()       # extra files the command writes under {out}
     timeout: int = 120
@@ -271,7 +274,7 @@ CAPTURE_KINDS = {"login": ("har-browse", "user"), "logout": ("har-logout", "logo
                  "timeout": ("har-timeout", "timeout")}
 
 EVIDENCE_KEYS = {"id", "title", "target_type", "kind", "description", "level", "passive", "heavy",
-                 "argv", "files", "timeout", "est", "ok_exit_codes", "load_note",
+                 "mutating", "argv", "files", "timeout", "est", "ok_exit_codes", "load_note",
                  "proxy_args", "direct", "pause_args", "incomplete_if", "inputs", "fqdn_targets",
                  "after_capture"}
 
@@ -294,6 +297,7 @@ def _load_evidence(dir_: Path, problems: list[str]) -> dict[str, Evidence]:
                 id=eid, title=_str(e["title"]), target_type=_str(e["target_type"]), kind=_str(e["kind"]),
                 description=_str(e.get("description")), level=_str(e.get("level")) or None,
                 passive=bool(e.get("passive", False)), heavy=bool(e.get("heavy", False)),
+                mutating=bool(e.get("mutating", False)),
                 argv=_strs(e.get("argv")), files=_strs(e.get("files")),
                 timeout=int(e.get("timeout", 120)), est=int(e.get("est", 0)),
                 ok_exit_codes=tuple(int(x) for x in e.get("ok_exit_codes", [0])), load_note=_str(e.get("load_note")),
@@ -339,6 +343,10 @@ def _check_evidence(ev: Evidence, problems: list[str]) -> None:
                             "evidence (har-browse, har-logout, har-timeout) as an input")
         if ev.heavy and not ev.load_note:
             problems.append(f"{w}: heavy evidence needs a load_note")
+        if ev.mutating and ev.passive:
+            problems.append(f"{w}: mutating and passive are contradictory (passive sends no target traffic)")
+        if ev.mutating and not ev.load_note:
+            problems.append(f"{w}: mutating evidence needs a load_note explaining what it changes")
         if not 1 <= ev.timeout <= MAX_TIMEOUT:
             problems.append(f"{w}: timeout must be 1..{MAX_TIMEOUT} seconds")
         if ev.est < 0:

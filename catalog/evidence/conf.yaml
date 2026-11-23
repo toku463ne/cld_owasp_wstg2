@@ -173,6 +173,7 @@ evidence:
     kind: auto
     level: full
     heavy: true
+    mutating: true
     description: >-
       PUT {base_url}/wstg-put-test.txt with the body "wstg put test", GET it, DELETE it,
       and GET it again. stdout.txt has "method code URL" per request; get-after-put.txt

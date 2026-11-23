@@ -79,6 +79,7 @@ Implementation plan and milestones: [`docs/PLAN.md`](docs/PLAN.md).
 - A missing or failed collection is never a `pass`.
 - Automatic collection is resumable and idempotent: completed evidence is skipped, partial output is never treated as complete (write to a temp path, then rename).
 - Heavy, noisy, or lockout-prone steps (scanners, brute force, rate-limit tests) are marked and excluded from light mode.
+- Evidence that may change the target's state (`mutating: true`: write methods, uploads, account changes, destructive payloads, side-effects) is kept out of the read-only reconnaissance run and collected only with the owner's agreement (`collect --agree`, or the confirmed button). Read-only scans and active probes are reconnaissance, not mutating.
 - Severity is computed from the CVSS vector; it is not stored or chosen by hand.
 
 ## Safety rules for development
@@ -113,10 +114,12 @@ uv run wstg user-disable NAME [--enable]
 uv run wstg user-list
 uv run wstg serve [--dev]                 # web app on 127.0.0.1:$WSTG_APP_PORT (default 5083), behind nginx :8083
 uv run wstg catalog-check [-v]            # validate catalog/ (index, evidence, scenarios); needs no config
+uv run wstg evidence-classify [-v]        # split evidence into read-only recon and may-change-the-target; needs no config
 uv run wstg tools-check [--strict]        # which tools of catalog/tools.yaml are installed; needs no config
 uv run wstg tools-check --remote          # tools on the jump host (WSTG_DIRECT_SSH)
 uv run wstg worker [--once]               # run queued automatic evidence jobs
-uv run wstg collect TARGET [--mode light|full] [--evidence ID [--force]] [--run]
+uv run wstg collect TARGET [--mode light|full] [--evidence ID [--force]] [--agree] [--run]
+                                          # bulk run is read-only recon; --agree is required to collect a mutating evidence
 uv run wstg capture TARGET [--role NAME] [--url URL] [--headless]
                                           # record a browsing session as a HAR (headful Chromium, Playwright)
 uv run wstg ai-prompts TARGET [--test WSTG-..] [--evidence complete|any|all] [--existing skip|overwrite]

@@ -350,3 +350,25 @@ def test_after_capture_evidence_waits_for_its_capture(cfg, db, site):
     assert r.claim() == job
     r.run_job(job)
     assert rmod.job_items(db, job)[0]["status"] == "complete"
+
+
+def test_mutating_evidence_is_excluded_from_bulk_runs(cfg, db, site):
+    recon = ev("recon-get", [PY, "-c", "print('ok')"], level="full")
+    change = ev("change-put", [PY, "-c", "print('ok')"], level="full",
+                mutating=True, load_note="PUT creates a file.")
+    cat = catmod.Catalog(wstg_version="4.2", tests={}, evidence={e.id: e for e in (recon, change)})
+    ids_light = [e.id for e in rmod.plan(cat, site, "light")]
+    ids_full = [e.id for e in rmod.plan(cat, site, "full")]
+    assert "change-put" not in ids_full and "change-put" not in ids_light
+    assert "recon-get" in ids_full
+
+
+def test_mutating_single_collection_needs_agreement(cfg, db, site):
+    change = ev("change-put", [PY, "-c", "print('ok')"], level="full",
+                mutating=True, load_note="PUT creates a file.")
+    r, _ = make(cfg, db, change)
+    with pytest.raises(rmod.RunError, match="may change the target"):
+        rmod.enqueue(r.db, r.cat, site, "full", "test", evidence_id="change-put")
+    # With the owner's agreement it is queued.
+    job = rmod.enqueue(r.db, r.cat, site, "full", "test", evidence_id="change-put", agreed=True)
+    assert job

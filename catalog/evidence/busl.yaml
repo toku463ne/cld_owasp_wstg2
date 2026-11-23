@@ -9,6 +9,7 @@ evidence:
     title: Business-logic data validation tests
     target_type: fqdn
     kind: manual
+    mutating: true
     description: >-
       Per business value (amount, quantity, date, state), the out-of-range values sent
       with client validation bypassed (negative, zero, excessive, past date, inconsistent
@@ -18,6 +19,7 @@ evidence:
     title: Request-forging tests
     target_type: fqdn
     kind: manual
+    mutating: true
     description: >-
       Per hidden or undisclosed field/parameter (price, status, userId, discount, role)
       added or changed in a crafted request: whether the server used the client value
@@ -27,6 +29,7 @@ evidence:
     title: Integrity-check tests
     target_type: fqdn
     kind: manual
+    mutating: true
     description: >-
       Per piece of data that should be integrity-checked (signed token, amount, quantity,
       hidden field, JWT): the tampering done (unsigned, altered, signature stripped) and
@@ -37,6 +40,7 @@ evidence:
     title: Process-timing tests
     target_type: fqdn
     kind: manual
+    mutating: true
     description: >-
       Response-time measurements where timing may leak information (success/failure,
       exists/absent) and attempts to abuse a timing window or race in a time-dependent
@@ -47,6 +51,7 @@ evidence:
     title: Use-count limit tests
     target_type: fqdn
     kind: manual
+    mutating: true
     description: >-
       Per limited function (coupon, vote, withdrawal, OTP attempts), the repeated and
       parallel attempts made and whether the limit was exceeded, including bypasses such
@@ -58,6 +63,7 @@ evidence:
     title: Workflow-circumvention tests
     target_type: fqdn
     kind: manual
+    mutating: true
     description: >-
       Per multi-step flow (apply/approve/confirm, cart/checkout), the attempts to skip,
       reorder, or revisit steps (direct URL, back button, parallel tabs) and whether an
@@ -68,6 +74,7 @@ evidence:
     title: Application-misuse defence tests
     target_type: fqdn
     kind: manual
+    mutating: true
     description: >-
       The abnormal usage attempted (rapid repeats, out-of-order actions, bulk requests,
       automated tooling) and whether the application detected, logged, rate-limited, or
@@ -79,6 +86,7 @@ evidence:
     title: Unexpected file-type upload tests
     target_type: fqdn
     kind: manual
+    mutating: true
     description: >-
       Per upload feature, the unexpected types and bypasses tried (.php/.jsp/.svg/.html,
       extension spoofing like shell.php.jpg, Content-Type spoofing, case and double
@@ -89,6 +97,7 @@ evidence:
     title: Malicious-file upload tests
     target_type: fqdn
     kind: manual
+    mutating: true
     description: >-
       The harmless test specimens uploaded (EICAR test string, a benign web shell, an
       oversized file, a docx/svg with an XXE payload) and whether they were stored,

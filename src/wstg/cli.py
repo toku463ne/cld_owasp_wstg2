@@ -94,6 +94,40 @@ def cmd_catalog_check(args) -> int:
     return 0
 
 
+def cmd_evidence_classify(args) -> int:
+    """Split every evidence into read-only reconnaissance and may-change-the-target
+    (needs the owner's agreement), so the classification can be reviewed."""
+    c = catalog.load()
+    evs = sorted(c.evidence.values(), key=lambda e: (e.kind, e.id))
+    mutating = [e for e in evs if e.mutating]
+    recon = [e for e in evs if not e.mutating]
+
+    def line(e):
+        tags = []
+        if e.kind == "auto":
+            tags.append(e.level or "?")
+            if e.passive:
+                tags.append("passive")
+            if e.heavy:
+                tags.append("heavy")
+            if e.after_capture:
+                tags.append("after-capture")
+        return f"  {e.id:28} [{e.kind}{', ' + ', '.join(tags) if tags else ''}] {e.title}"
+
+    print(f"MAY CHANGE THE TARGET - needs the owner's agreement ({len(mutating)}): "
+          f"{sum(e.kind == 'auto' for e in mutating)} auto, {sum(e.kind == 'manual' for e in mutating)} manual")
+    for e in mutating:
+        print(line(e))
+    print(f"\nREAD-ONLY RECONNAISSANCE - no agreement needed ({len(recon)}): "
+          f"{sum(e.kind == 'auto' for e in recon)} auto, {sum(e.kind == 'manual' for e in recon)} manual")
+    if args.verbose:
+        for e in recon:
+            print(line(e))
+    else:
+        print("  (use -v to list them)")
+    return 0
+
+
 def cmd_tools_check(args) -> int:
     import os
     import shutil
@@ -190,7 +224,7 @@ def cmd_collect(args) -> int:
         raise config.ConfigError(f"no such target: {args.target}")
     try:
         job = rmod.enqueue(r.db, r.cat, t, args.mode, actor="cli", evidence_id=args.evidence or "",
-                           force=args.force, cfg=r.cfg)
+                           force=args.force, agreed=args.agree, cfg=r.cfg)
     except rmod.RunError as e:
         raise config.ConfigError(str(e)) from None
     print(f"queued job {job} ({args.evidence or args.mode}) for {t.name}")
@@ -350,6 +384,11 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("-v", "--verbose", action="store_true", help="list tests without a scenario")
     s.set_defaults(func=cmd_catalog_check)
 
+    s = sub.add_parser("evidence-classify",
+                       help="list evidence split into read-only recon and may-change-the-target; needs no config")
+    s.add_argument("-v", "--verbose", action="store_true", help="also list the read-only recon evidence")
+    s.set_defaults(func=cmd_evidence_classify)
+
     s = sub.add_parser("tools-check", help="show which tools of catalog/tools.yaml are installed; needs no config")
     s.add_argument("--packages", choices=catalog.TOOL_INSTALLS[:2],
                    help="only print the package names installed with apt or npm (for setup-kali.sh)")
@@ -368,6 +407,8 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--run", action="store_true", help="run it now in this process (no worker needed)")
     s.add_argument("--evidence", help="collect only this evidence ID")
     s.add_argument("--force", action="store_true", help="with --evidence: collect again even if collected")
+    s.add_argument("--agree", action="store_true",
+                   help="confirm the owner's agreement; required for a mutating evidence (may change the target)")
     s.set_defaults(func=cmd_collect)
 
     s = sub.add_parser("capture", help="record a browsing session as a HAR with a headful browser (M9)")
