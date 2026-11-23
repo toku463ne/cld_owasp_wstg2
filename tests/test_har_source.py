@@ -78,3 +78,36 @@ def test_dom_recorder_keeps_target_pages_newest_per_url(tmp_path):
     assert rows == [{"url": "https://www.example.com/a", "html": "<p>2</p>"}]
     assert not cap.DomRecorder("https://www.example.com").write(tmp_path / "none.jsonl")
     assert cap.dom_path_for(tmp_path / "user-1.har").name == "dom-user-1.jsonl"
+
+
+def test_code_comments_skip_strings():
+    js = 'var u = "https://x.example.com/a"; // TODO drop the test server\n' \
+         "var t = `line // not a comment`; /* FIXME: hard-coded key */ x = 'it''s'; //plain note"
+    assert [c.strip() for c in har._code_comments(js)] == [
+        "TODO drop the test server", "FIXME: hard-coded key", "plain note"]
+    assert [c.strip() for c in har._code_comments('a { b: url("//cdn/x"); } /* temp fix */', css=True)] == ["temp fix"]
+
+
+def test_script_and_style_comments_listed_when_they_read_like_notes(tmp_path, capsys):
+    h = tmp_path / "user.har"
+    h.write_text(json.dumps({"log": {"entries": [
+        entry("https://www.example.com/js/app.js",
+              "/*! app v1 | (c) 2026 */\n// TODO remove the debug login bypass\n"
+              "function f() { return 1; } // returns one\n/* @license MIT TODO */",
+              "application/javascript"),
+        entry("https://www.example.com/js/vendor/jquery.min.js", "// TODO in a library", "application/javascript"),
+        entry("https://www.example.com/css/site.css", "/* temporary: staging banner */ a { color: red }", "text/css"),
+        entry("https://www.example.com/page",
+              "<html><script>var x = 1; // FIXME password check disabled</script>"
+              "<script type='text/template'>// TODO template</script></html>"),
+    ]}}))
+    har.main(["source", str(h)])
+    out = capsys.readouterr().out
+    sec = out.split("## Script and style comments")[1].split("\n## ")[0]
+    assert "TODO remove the debug login bypass  @ /js/app.js" in sec
+    assert "temporary: staging banner  @ /css/site.css" in sec
+    assert "FIXME password check disabled  @ /page" in sec
+    assert "returns one" not in sec and "library" not in sec.split("(")[0] and "@license" not in sec
+    assert "TODO template" not in sec
+    assert "library files skipped: 1" in sec
+    assert "3 script-comment" in out

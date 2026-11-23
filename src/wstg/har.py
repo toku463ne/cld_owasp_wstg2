@@ -1242,7 +1242,7 @@ def view_stored(files: list[Path], host: str = "") -> None:
 
 # ---- source: comments, secrets, internal hosts in the captured bodies (WSTG-INFO-05) ----
 
-_SRC_TYPES = ("html", "javascript", "ecmascript", "json", "xml")
+_SRC_TYPES = ("html", "javascript", "ecmascript", "json", "xml", "css")
 _COMMENT_RE = re.compile(r"<!--(.*?)-->", re.S)
 _SECRET_RES = [
     ("aws-access-key", re.compile(r"\b(?:AKIA|ASIA)[0-9A-Z]{16}\b")),
@@ -1272,6 +1272,69 @@ def _env_host(host: str) -> bool:
 _NOTE_RE = re.compile(r"\b(todo|fixme|xxx|hack|bug|debug|temporary|remove (?:this|before)|password|"
                       r"internal|staging|test (?:account|user)|do not)\b", re.I)
 _SRC_MAX = 120          # lines per section
+
+# Script / style comments: only those that read like a developer note are listed
+# (library code is full of comments). Stricter than _NOTE_RE: no bare "bug"/"debug".
+_CODE_NOTE_RE = re.compile(
+    r"\b(todo|fixme|xxx|hack|kludge|workaround|temporary|temp fix|remove (?:this|before|later|me)|"
+    r"do not (?:commit|deploy|release|ship|use)|dev only|debug only|for testing|test (?:account|user|server)|"
+    r"password|passwd|credential|secret|internal|staging|backdoor|bypass|hard-?coded)\b", re.I)
+# Files and comments of third-party libraries, skipped to keep the list readable.
+_LIB_PATH_RE = re.compile(
+    r"(?i)(^|/)(vendor|vendors|node_modules|lib|libs|third[-_]?party|polyfills?|chunk-vendors)[/.-]|"
+    r"(jquery|bootstrap|react|vue|angular|lodash|underscore|moment|popper|swiper|slick|select2|"
+    r"fontawesome|font-awesome|gtag|gtm|analytics|recaptcha|core-js|zone|tinymce|ckeditor|"
+    r"datatables|chart|d3|three|leaflet|mapbox)[\w.-]*\.(js|css)$")
+_LIB_COMMENT_RE = re.compile(r"(?i)^[!*]|@license|@preserve|copyright|\(c\) \d{4}|licensed under|"
+                             r"sourceMappingURL|eslint|jshint|istanbul|prettier|webpack|#__PURE__|@ts-")
+
+
+def _code_comments(text: str, css: bool = False):
+    """Yield the // and /* */ comments of a script (only /* */ for CSS), skipping
+    string and template literals so that "https://..." is not read as a comment.
+    Regular-expression literals are not parsed (a rare false comment is harmless)."""
+    i, n = 0, len(text)
+    while i < n:
+        c = text[i]
+        if c in "\"'`" and not css or (css and c in "\"'"):
+            j = i + 1
+            while j < n and text[j] != c:
+                if text[j] == "\\":
+                    j += 1
+                elif text[j] == "\n" and c != "`":
+                    break
+                j += 1
+            i = j + 1
+        elif c == "/" and i + 1 < n and text[i + 1] == "*":
+            j = text.find("*/", i + 2)
+            j = n if j < 0 else j
+            yield text[i + 2:j]
+            i = j + 2
+        elif c == "/" and not css and i + 1 < n and text[i + 1] == "/":
+            j = text.find("\n", i + 2)
+            j = n if j < 0 else j
+            yield text[i + 2:j]
+            i = j
+        else:
+            i += 1
+
+
+_INLINE_RE = re.compile(r"(?is)<(script|style)\b([^>]*)>(.*?)</\1\s*>")
+
+
+def _script_parts(text: str, ctype: str, url: str) -> list[tuple[str, bool]]:
+    """(code, is_css) pieces of a body: the whole body for a script or style sheet,
+    the inline <script> and <style> blocks for an HTML page; [] for library files."""
+    if _LIB_PATH_RE.search(_url_parts(url)[2] or ""):
+        return []
+    if "css" in ctype:
+        return [(text, True)]
+    if "javascript" in ctype or "ecmascript" in ctype:
+        return [(text, False)]
+    if "html" in ctype:
+        return [(m.group(3), m.group(1).lower() == "style") for m in _INLINE_RE.finditer(text)
+                if not re.search(r"(?i)\btype\s*=\s*[\"']?(text/template|text/x-|application/ld\+json)", m.group(2))]
+    return []
 
 
 def _dom_snapshots(p: Path) -> list[tuple[str, str]] | None:
@@ -1307,12 +1370,13 @@ def _clean(text: str, secrets: set, width: int = 200) -> str:
 
 
 def view_source(files: list[Path], host: str = "") -> None:
-    """Comments, secret-like values, internal hosts, and developer notes in the response
-    bodies of the captures (HTML, scripts, JSON of the logged-in screens) and in the DOM
+    """HTML comments, script and style comments that read like developer notes (// and
+    /* */, library files and license comments skipped), secret-like values, internal
+    hosts, and developer notes in the response bodies of the captures (HTML, scripts, JSON of the logged-in screens) and in the DOM
     snapshots of `wstg capture` (the page after JavaScript ran), for WSTG-INFO-05. Session
     values and every secret-like value are masked, so the output can go to the AI review.
     No request is sent."""
-    docs: list[tuple[str, str, str]] = []      # (source, url, text)
+    docs: list[tuple[str, str, str, str]] = []      # (source, url, text, content type)
     entries_all: list = []
     dom_pages = 0
     for p in files:
@@ -1332,14 +1396,15 @@ def view_source(files: list[Path], host: str = "") -> None:
                     continue
                 text = _body_text(resp)
                 if text:
-                    docs.append(("har", str((e.get("request") or {}).get("url", "")), text))
+                    docs.append(("har", str((e.get("request") or {}).get("url", "")), text,
+                                 _content_type(resp)))
             continue
         snaps = _dom_snapshots(p)
         if snaps is None:
             print(f"== {p.name}: not a readable HAR or DOM snapshot file")
             continue
         dom_pages += len(snaps)
-        docs += [("dom", u, h) for u, h in snaps]
+        docs += [("dom", u, h, "text/html") for u, h in snaps]
     base = _base_host(entries_all, host)
     secrets = _session_values(entries_all)
     own = [d for d in docs if _same_site(_url_parts(d[1])[1], base)]
@@ -1356,7 +1421,7 @@ def view_source(files: list[Path], host: str = "") -> None:
         print("NOTE: no DOM snapshots; content built by JavaScript is checked only through the scripts "
               "and JSON above (a new `wstg capture` records the snapshots)")
     har_comments = set()
-    for src, _, text in own:
+    for src, _, text, _ in own:
         if src == "har":
             har_comments.update(re.sub(r"\s+", " ", c).strip() for c in _COMMENT_RE.findall(text))
 
@@ -1364,15 +1429,33 @@ def view_source(files: list[Path], host: str = "") -> None:
         _, _, pth, _ = _url_parts(url)
         return pth or "/"
 
-    sections: dict[str, dict[str, list[str]]] = {k: {} for k in ("comments", "notes", "secrets", "internal")}
+    sections: dict[str, dict[str, list[str]]] = {k: {} for k in ("comments", "notes", "secrets", "internal",
+                                                                  "code")}
+    code_seen = code_lib = 0
+    code_done: set[str] = set()       # a script body seen in the HAR and again in the DOM: scan once
 
     def add(sec: str, key: str, where: str) -> None:
         sections[sec].setdefault(key, [])
         if where not in sections[sec][key]:
             sections[sec][key].append(where)
 
-    for src, url, text in own:
+    for src, url, text, ctype in own:
         where = path_of(url) + (" (DOM)" if src == "dom" else "")
+        parts = _script_parts(text, ctype, url)
+        if not parts and _LIB_PATH_RE.search(_url_parts(url)[2] or ""):
+            code_lib += 1
+        for code, css in parts:
+            if not code.strip() or code in code_done:
+                continue
+            code_done.add(code)
+            for c in _code_comments(code, css):
+                raw = re.sub(r"\s+", " ", c.strip(" *\t\r\n")).strip()
+                if not raw:
+                    continue
+                code_seen += 1
+                if _LIB_COMMENT_RE.search(raw) or not _CODE_NOTE_RE.search(raw):
+                    continue
+                add("code", _clean(raw, secrets), where)
         for c in _COMMENT_RE.findall(text):
             raw = re.sub(r"\s+", " ", c).strip()
             if not raw or raw.startswith(("[if", "<![endif]", "[endif]")) or re.fullmatch(r"[-=#*\s/]*", raw):
@@ -1397,8 +1480,9 @@ def view_source(files: list[Path], host: str = "") -> None:
 
     titles = {"comments": "HTML comments", "notes": "Comments that read like developer notes",
               "secrets": "Secret-like values (masked)",
-              "internal": "Internal hosts, private addresses, and dev/staging/test hosts"}
-    for sec in ("secrets", "internal", "notes", "comments"):
+              "internal": "Internal hosts, private addresses, and dev/staging/test hosts",
+              "code": "Script and style comments (// and /* */) that read like developer notes"}
+    for sec in ("secrets", "internal", "notes", "code", "comments"):
         items = sections[sec]
         print(f"\n## {titles[sec]}: {len(items)}")
         for i, (k, wheres) in enumerate(sorted(items.items(), key=lambda kv: (-len(kv[1]), kv[0]))):
@@ -1407,8 +1491,12 @@ def view_source(files: list[Path], host: str = "") -> None:
                 break
             more = f" (+{len(wheres) - 3} more)" if len(wheres) > 3 else ""
             print(f"- {k}  @ {', '.join(wheres[:3])}{more}")
+        if sec == "code":
+            print(f"({code_seen} script/style comments read; library files skipped: {code_lib};"
+                  " license, tool, and other comments without a note word left out)")
     print(f"\n# verdict: {len(sections['secrets'])} secret-like, {len(sections['internal'])} internal host, "
-          f"{len(sections['notes'])} developer-note, {len(sections['comments'])} comment hit(s); "
+          f"{len(sections['notes'])} developer-note, {len(sections['code'])} script-comment, "
+          f"{len(sections['comments'])} HTML comment hit(s); "
           "judge each (the values are masked: open the evidence file to see one)")
 
 
