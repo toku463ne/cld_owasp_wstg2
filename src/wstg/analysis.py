@@ -41,6 +41,7 @@ LOCAL_TOOLS = {
     "openssl",   # x509 only, see below
     "gitleaks",  # detect --no-git / dir only (scans files), see below
     "wstg-har",  # this project's HAR analyser (reads *.har, prints value-free facts)
+    "wstg-ffuf", # this project's ffuf JSON judge (reads the JSON, sends nothing)
 }
 SHELL_WORDS = {"{", "}", "!"}
 PUNCT = set("|&;()<>")

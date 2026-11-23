@@ -23,6 +23,7 @@ wstg-sess = "wstg.sessionscan:main"
 wstg-reflect = "wstg.reflect:main"
 wstg-cryp = "wstg.cryp:main"
 wstg-timing = "wstg.timing:main"
+wstg-ffuf = "wstg.ffufcheck:main"
 
 [build-system]
 requires = ["uv_build>=0.11.8,<0.12.0"]

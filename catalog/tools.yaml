@@ -47,6 +47,9 @@ tools:
   - name: wstg-timing
     install: none
     note: this project's console script (uv sync installs it); response-timing side-channel measurement (WSTG-BUSL-04)
+  - name: wstg-ffuf
+    install: none
+    note: this project's console script (uv sync installs it); judges ffuf JSON, leaving out catch-all answers (WSTG-CONF-04)
   - name: seclists
     path: /usr/share/seclists/Discovery/DNS/subdomains-top1million-5000.txt
     note: word lists for vhost-ffuf

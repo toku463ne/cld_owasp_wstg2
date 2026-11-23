@@ -111,7 +111,8 @@ def test_conf04_05_read_ffuf_and_admin_titles(admin_client, common, site):
     put(common, site, "admin-paths", {"stdout.txt": f"200 800 text/html {BASE}/phpmyadmin/\n",
                                       "paths/phpmyadmin.html": '<title>phpMyAdmin</title><input type="password" name="pma_password">'})
     p = page(admin_client, "WSTG-CONF-04")
-    assert f"200\t512\t{BASE}/old/" in p
+    assert f"STRONG  200       512  -                         {BASE}/old/" in p
+    assert "verdict: CANDIDATES 2 (STRONG 1)" in p
     p = page(admin_client, "WSTG-CONF-05")
     assert "phpmyadmin.html:&lt;title&gt;phpMyAdmin" in p
     assert f"302\t0\t{BASE}/admin" in p and "8443/tcp open" in p

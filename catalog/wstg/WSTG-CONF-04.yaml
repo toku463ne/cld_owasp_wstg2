@@ -11,6 +11,7 @@ fail: >-
 notes:
   - A readable .git/HEAD or .git/config usually means the whole repository (source and its history, often with credentials) can be rebuilt. Rate it high; do not download the repository unless the owner agrees.
   - Compare 200 answers with the default 404 response before treating them as found; ffuf's -ac already drops answers that look like the default response.
+  - "Steps 3 and 4 run wstg-ffuf: it leaves out catch-all answers (one response for many names: a soft 404, a redirect of everything to the login page, a proxy or WAF page), names that answer like the default 404, and backup names that answer like their base name. STRONG = status 200 (a backup name with a non-HTML type); CHECK = look at it by hand. Raw list: jq -r '.results[] | [.status, .length, .url] | @tsv' on the JSON."
   - "Archived URLs (Wayback Machine) show files that existed in the past; check whether they are still served."
 finding_kinds: [sensitive-file-exposed, hidden-function, directory-listing]
 steps:
@@ -28,14 +29,12 @@ steps:
       echo "-- zip archives:"; grep -l '^PK' backup.zip site.zip www.zip fqdn.zip 2>/dev/null || echo "none"
   - summary: Brute force common file and folder names (unlinked pages, admin areas, old versions)
     auto_run: true
-    evidence: [content-ffuf]
-    command: jq -r '.results[] | [.status, .length, .url] | @tsv' {ev:content-ffuf}/ffuf-content.json
+    evidence: [content-ffuf, http-404]
+    command: wstg-ffuf --baseline {ev:http-404} {ev:content-ffuf}/ffuf-content.json
   - summary: Brute force backup copies of common names (.bak, .old, .orig, .zip, .tar.gz, ~)
     auto_run: true
-    evidence: [backup-ffuf]
-    command: >-
-      jq -r '.results[] | [.status, .length, .url] | @tsv' {ev:backup-ffuf}/ffuf-backup.json
-      | grep -E '\.(bak|old|orig|zip|tar\.gz)$|~$' || echo "no backup copy found"
+    evidence: [backup-ffuf, http-404]
+    command: wstg-ffuf --backup --baseline {ev:http-404} {ev:backup-ffuf}/ffuf-backup.json
   - summary: Find backup and old files the web archive knows for this host
     auto_run: true
     evidence: [wayback-urls]
@@ -55,7 +54,8 @@ steps:
   - summary: Judge what was found
     evidence: [backup-files, content-ffuf, backup-ffuf, http-404]
     ai_task: >-
-      From steps 1 to 5, list each path that serves a backup copy, archive, dump,
+      From steps 1 to 5 (steps 3 and 4 already leave out catch-all answers; judge
+      their STRONG and CHECK candidates), list each path that serves a backup copy, archive, dump,
       repository metadata, or an old, test, or unlinked page that should not be public
       (path, code, size, why it matters). Leave out normal public pages and paths that
       need a login (401, or a redirect to the login page). Verdict: fail when such a file
