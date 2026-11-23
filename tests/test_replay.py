@@ -1,4 +1,5 @@
 import base64
+import re
 import http.server
 import json
 import threading
@@ -187,18 +188,30 @@ def test_send_from_an_evidence_page_adds_request_and_response(admin_client, db, 
     page = admin_client.get("/t/www.example.com/evidence/hijacking-tests").get_data(as_text=True)
     assert "/t/www.example.com/tools/replay?ev=hijacking-tests" in page
     page = admin_client.get("/t/www.example.com/tools/replay?ev=hijacking-tests").get_data(as_text=True)
-    assert 'name="ev" value="hijacking-tests"' in page and "Add the request and response" in page
-    r = post(admin_client, "/t/www.example.com/tools/replay", raw="GET /me HTTP/1.1\nHost: www.example.com\nCookie: sid=s1\n\n",
-             action="send", ev="hijacking-tests", save="1", caption="token in a second browser")
-    assert r.status_code == 200 and "Added to" in r.get_data(as_text=True)
+    assert 'name="ev" value="hijacking-tests"' in page and ">Add to hijacking-tests</button>" not in page
     store = app.extensions["wstg.store"]
+    raw = "GET /me HTTP/1.1\nHost: www.example.com\nCookie: sid=s1\n\n"
+    r = post(admin_client, "/t/www.example.com/tools/replay", raw=raw, action="send", ev="hijacking-tests")
+    page = r.get_data(as_text=True)
+    assert r.status_code == 200 and ">Add to hijacking-tests</button>" in page and "302 Found" in page
+    assert store.load(t.name, "hijacking-tests") is None                 # nothing added by sending
+    token = re.search(r'name="pending" value="([0-9a-f]{32})"', page).group(1)
+    pending = cfg.evidence_root / "www.example.com" / "_replay" / f"{token}.json"
+    assert pending.exists() and oct(pending.stat().st_mode & 0o777) == "0o600"
+    # adding does not send again
+    monkeypatch.setattr(rp, "send", lambda *a, **k: pytest.fail("sent again"))
+    r = post(admin_client, "/t/www.example.com/tools/replay", raw=raw, action="save", ev="hijacking-tests",
+             pending=token, caption="token in a second browser")
+    assert r.status_code == 200 and "Added to" in r.get_data(as_text=True) and not pending.exists()
     v = store.load(t.name, "hijacking-tests")
     assert v.items[-1].caption == "token in a second browser"
     text = store.file_path(v, v.items[-1].file).read_text()
     assert "GET /me HTTP/1.1" in text and "Cookie: sid=s1" in text and "HTTP/1.1 302 Found" in text and "moved" in text
-    # not ticked: nothing added
-    post(admin_client, "/t/www.example.com/tools/replay", raw="GET / HTTP/1.1\nHost: www.example.com\n\n",
-         action="send", ev="hijacking-tests")
+    # the same result cannot be added twice; a bad token or another evidence is refused
+    r = post(admin_client, "/t/www.example.com/tools/replay", raw=raw, action="save", ev="hijacking-tests", pending=token)
+    assert r.status_code == 400 and "is gone" in r.get_data(as_text=True)
+    assert post(admin_client, "/t/www.example.com/tools/replay", raw=raw, action="save", ev="hijacking-tests",
+                pending="../x").status_code == 400
     assert store.load(t.name, "hijacking-tests").version == v.version
     # auto evidence or unknown ID is refused
     assert admin_client.get("/t/www.example.com/tools/replay?ev=http-root-https").status_code == 404

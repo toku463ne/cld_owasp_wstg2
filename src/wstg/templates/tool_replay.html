@@ -2,14 +2,14 @@
 {% block content %}
 <h3><a href="{{ url_for('tools_tab', name=target.name) }}">Tools</a> › Request replay</h3>
 {% if ev %}<div class="okbox">For evidence <a href="{{ url_for('evidence_page', name=target.name, eid=ev.id) }}"><b>{{ ev.title }}</b></a>
-  <code class="muted">{{ ev.id }}</code>: <i>Send once</i> adds the request as sent and the response to it as a new text item
-  (untick below to only look).</div>{% endif %}
+  <code class="muted">{{ ev.id }}</code>: after <i>Send once</i>, look at the result and choose
+  <i>Add to {{ ev.id }}</i> to keep the request as sent and the response there (it is not sent again).</div>{% endif %}
 <p class="muted">Paste a request from Burp: in Proxy history or Repeater, select the request and use
   <i>Copy to file</i> or select all and copy (a <i>Save items</i> XML export works too).
   A raw request has no scheme: https is assumed unless the Host header names port 80.
   Connection headers are dropped and Content-Length is recomputed.
   The same is done on the command line by <code>wstg-replay</code>.</p>
-<form method="post" class="stack replay">
+<form method="post" class="stack replay" id="replay-form">
   <input type="hidden" name="csrf" value="{{ csrf }}">
   {% if ev %}<input type="hidden" name="ev" value="{{ ev.id }}">{% endif %}
   <label>Request <textarea name="raw" rows="14" class="mono" required placeholder="POST /path HTTP/1.1
@@ -39,8 +39,6 @@ name=value">{{ form.raw }}</textarea></label>
   <div><button name="action" value="convert">Show commands</button>
     {% if can_write %}
     <label><input type="checkbox" name="agree" value="1"> The owner agreed to requests that may change the target (needed for POST, PUT, DELETE, ...)</label>
-    {% if ev %}<div><label><input type="checkbox" name="save" value="1" {{ 'checked' if form.save or not req }}> Add the request and response to {{ ev.id }}</label>
-      <input name="caption" size="50" value="{{ form.caption }}" placeholder="Caption (default: method, URL, and status)"></div>{% endif %}
     <button name="action" value="send">Send once</button>
     {% endif %}</div>
 </form>
@@ -55,6 +53,13 @@ name=value">{{ form.raw }}</textarea></label>
 <div class="okbox"><b>{{ resp.summary() }}</b></div>
 <pre class="replay-out">{{ resp.raw_head() }}
 {{ resp_body }}</pre>
+{% endif %}
+{% if pending %}
+<div class="okbox"><input type="hidden" name="pending" value="{{ pending }}" form="replay-form">
+  Keep this {{ 'result' if resp else 'attempt' }} in <b>{{ ev.id }}</b>?
+  <input name="caption" size="60" value="{{ caption }}" form="replay-form" aria-label="Caption">
+  <button name="action" value="save" form="replay-form">Add to {{ ev.id }}</button>
+  <span class="muted small">Not added unless you press the button.</span></div>
 {% endif %}
 <details open><summary>Request as sent</summary>
 <pre class="replay-out">{{ raw_out }}</pre></details>

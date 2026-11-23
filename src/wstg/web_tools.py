@@ -11,13 +11,22 @@ TRACE) needs the owner's agreement ticked. Each send is written to the audit
 log (method, URL, status; not the headers or body).
 
 Opened from a manual evidence page (`?ev=<evidence id>`), the page keeps that
-evidence and *Send once* also adds the request as sent and the response (or the
-error) to it as a new text item, so the replay is kept with the test.
+evidence. After *Send once* the result is shown first; *Add to <evidence>* then
+adds the request as sent and the response (or the error) to it as a new text
+item, without sending again. Until then the result waits in
+`<evidence root>/<target>/_replay/<random>.json` (owner-only; removed when added,
+or after a day).
 """
 from __future__ import annotations
 
 import http.client
+import json
+import os
+import re
+import secrets
 import shlex
+import time
+from pathlib import Path
 
 from flask import Flask, abort, g, render_template, request, session
 
@@ -32,6 +41,9 @@ from .web import login_required
 
 MAX_RAW = 2 * 1024 * 1024
 SHOW_BODY = 64 * 1024
+PENDING = "_replay"
+PENDING_TTL = 86400
+_TOKEN_RE = re.compile(r"[0-9a-f]{32}")
 
 TOOLS = [
     {"endpoint": "tool_replay", "title": "Request replay",
@@ -79,7 +91,8 @@ def register(app: Flask, cfg: Config, db: dbmod.Database, cat: catmod.Catalog, s
         f = request.form
         ev = target_evidence(t, (f.get("ev") or request.args.get("ev", "")).strip())
         ctx = {"tab": "tools", "form": f, "req": None, "error": "", "resp": None, "send_error": "",
-               "scope_error": "", "proxy": cfg.http_proxy, "ev": ev, "saved": None}
+               "scope_error": "", "proxy": cfg.http_proxy, "ev": ev, "saved": None, "pending": "",
+               "caption": ""}
         if request.method == "GET":
             return render_template("tool_replay.html", **ctx)
         raw = f.get("raw", "")
@@ -104,6 +117,21 @@ def register(app: Flask, cfg: Config, db: dbmod.Database, cat: catmod.Catalog, s
             tmod.check_command(t, tmod.get_scope(db, t), [f"{req.scheme}://{_hostport(req)}/"], passive=False)
         except (tmod.ScopeError, tmod.TargetError) as e:
             ctx["scope_error"] = str(e)
+        if f.get("action") == "save":
+            if not users.can_write(g.user):
+                abort(403)
+            if not ev:
+                abort(400, "no evidence to add to")
+            try:
+                item, path = read_pending(cfg, t, f.get("pending", ""), ev.id)
+                v = store.add_text(t, ev.id, item["text"], f.get("caption", "").strip() or item["caption"],
+                                   g.user["username"])
+                path.unlink(missing_ok=True)
+                ctx["saved"] = v.version
+            except (evmod.EvidenceError, ValueError) as e:
+                ctx["send_error"] = f"not added: {e}"
+                return render_template("tool_replay.html", **ctx), 400
+            return render_template("tool_replay.html", **ctx)
         if f.get("action") != "send":
             return render_template("tool_replay.html", **ctx)
         if not users.can_write(g.user):
@@ -125,17 +153,50 @@ def register(app: Flask, cfg: Config, db: dbmod.Database, cat: catmod.Catalog, s
             status = None
         with db.tx() as conn:
             db.audit(conn, g.user["username"], "tool.replay", target=t.name, method=req.method, url=req.url,
-                     status=status, evidence=ev.id if ev and f.get("save") == "1" else None)
-        if ev and f.get("save") == "1":
+                     status=status)
+        if ev:
             result = f"{status} {ctx['resp'].reason}" if status else "no answer"
-            caption = f.get("caption", "").strip() or f"Replay: {req.method} {req.url} -> {result}"
-            try:
-                v = store.add_text(t, ev.id, evidence_text(req, ctx["resp"], ctx["send_error"], g.user["username"],
-                                                           cfg.http_proxy), caption, g.user["username"])
-                ctx["saved"] = v.version
-            except evmod.EvidenceError as e:
-                ctx["send_error"] = (ctx["send_error"] + "; " if ctx["send_error"] else "") + f"not added: {e}"
+            ctx["caption"] = f"Replay: {req.method} {req.url} -> {result}"
+            text = evidence_text(req, ctx["resp"], ctx["send_error"], g.user["username"], cfg.http_proxy)
+            ctx["pending"] = put_pending(cfg, t, ev.id, text, ctx["caption"])
         return render_template("tool_replay.html", **ctx)
+
+
+def _pending_dir(cfg: Config, t: tmod.Target) -> Path:
+    return tmod.evidence_dir(cfg, t) / PENDING
+
+
+def put_pending(cfg: Config, t: tmod.Target, eid: str, text: str, caption: str) -> str:
+    """Keep a replay result until the tester adds it (or not); returns its token.
+    Results older than a day are removed on the way."""
+    d = _pending_dir(cfg, t)
+    d.mkdir(mode=0o700, parents=True, exist_ok=True)
+    now = time.time()
+    for old in d.glob("*.json"):
+        try:
+            if now - old.stat().st_mtime > PENDING_TTL:
+                old.unlink()
+        except OSError:
+            pass
+    token = secrets.token_hex(16)
+    fd = os.open(d / f"{token}.json", os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(fd, "w") as fh:
+        json.dump({"ev": eid, "text": text, "caption": caption}, fh)
+    return token
+
+
+def read_pending(cfg: Config, t: tmod.Target, token: str, eid: str) -> tuple[dict, Path]:
+    """The kept result for this evidence and its file (ValueError when gone)."""
+    if not _TOKEN_RE.fullmatch(token or ""):
+        raise ValueError("no replay result to add; send the request first")
+    p = _pending_dir(cfg, t) / f"{token}.json"
+    try:
+        item = json.loads(p.read_text())
+    except (OSError, ValueError):
+        raise ValueError("the replay result is gone (already added, or older than a day); send it again") from None
+    if item.get("ev") != eid:
+        raise ValueError("the replay result was made for another evidence")
+    return item, p
 
 
 def evidence_text(req: rp.Request, resp: rp.Response | None, error: str, actor: str, proxy: str) -> str:
