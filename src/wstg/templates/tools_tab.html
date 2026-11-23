@@ -1,0 +1,11 @@
+{% extends "target_base.html" %}
+{% block content %}
+<p class="muted">Helpers for the manual steps. Nothing here is sent to the target unless you press a Send button.</p>
+<table class="index">
+  <tr><th>Tool</th><th>What it does</th></tr>
+  {% for t in tools %}
+  <tr><td class="nowrap"><a href="{{ url_for(t.endpoint, name=target.name) }}"><b>{{ t.title }}</b></a></td>
+    <td>{{ t.summary }}</td></tr>
+  {% endfor %}
+</table>
+{% endblock %}

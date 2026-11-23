@@ -245,6 +245,7 @@ uv run wstg tools-check --remote          # tools on the jump host of WSTG_DIREC
 uv run wstg worker [--once]               # run queued automatic evidence jobs (systemd: wstg2-worker)
 uv run wstg collect TARGET [--mode light|full] [--evidence ID [--force]] [--run]   # queue (or with --run, run now) a collection
 uv run wstg capture TARGET [--role NAME] [--url URL]     # record a browsing session as a HAR + the pages after JavaScript (opens a Chromium window on this host)
+uv run wstg-replay request.txt [-p name=value] [-H 'Name: value'] [--curl|--python]   # replay a request copied from Burp (also on the Tools tab)
 uv run wstg backup [--dest DIR] [--keep 14]              # copy the database; rsync the evidence folder yourself
 ```
 

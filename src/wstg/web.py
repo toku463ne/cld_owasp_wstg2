@@ -168,12 +168,13 @@ def create_app(cfg: Config, db: dbmod.Database | None = None, cat: catmod.Catalo
         return redirect(url_for("admin_users"))
 
     from . import evidence as evmod
-    from . import web_evidence, web_findings, web_targets
+    from . import web_evidence, web_findings, web_targets, web_tools
     store = evmod.Store(cfg, db)
     app.extensions["wstg.store"] = store
     web_targets.register(app, cfg, db, cat, store)
     web_evidence.register(app, store, cat)
     web_findings.register(app, db, cat)
+    web_tools.register(app, cfg, db)
 
     @app.errorhandler(400)
     @app.errorhandler(403)

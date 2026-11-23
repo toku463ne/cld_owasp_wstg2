@@ -12,6 +12,7 @@
   <a href="{{ url_for('findings_tab', name=target.name) }}" class="{{ 'on' if tab == 'findings' }}">Findings</a>
   <a href="{{ url_for('manual_tab', name=target.name) }}" class="{{ 'on' if tab == 'manual' }}">Manual evidence</a>
   <a href="{{ url_for('auto_tab', name=target.name) }}" class="{{ 'on' if tab == 'auto' }}">Automatic evidence</a>
+  <a href="{{ url_for('tools_tab', name=target.name) }}" class="{{ 'on' if tab == 'tools' }}">Tools</a>
 </nav>
 {% block content %}{% endblock %}
 {% endblock %}

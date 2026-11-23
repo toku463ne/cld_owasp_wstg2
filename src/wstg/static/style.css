@@ -114,3 +114,8 @@ td code { overflow-wrap: anywhere; }
 .step-comment textarea { width: 100%; }
 .step-input textarea { width: 100%; max-width: 40em; font-family: ui-monospace, monospace; }
 .step-input .bad { color: var(--bad); }
+textarea.mono, pre.replay-out { font-family: ui-monospace, monospace; font-size: 12px; }
+form.replay textarea, textarea.out { max-width: 1000px; }
+form.replay details label { display: block; margin: 4px 0; }
+pre.replay-out { max-width: 1000px; max-height: 480px; overflow: auto; white-space: pre-wrap; word-break: break-all;
+  border: 1px solid var(--line); border-radius: 4px; padding: 6px; }
