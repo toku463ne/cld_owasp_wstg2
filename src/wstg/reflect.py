@@ -10,9 +10,16 @@ the tool notes the output context (HTML text, inside a tag/attribute, inside a s
 block, an HTML comment) and which of the four characters came back raw, encoded, or
 removed:
 
-- UNENCODED: a character that matters in that context came back raw (in HTML text `<`;
-  in an attribute a quote; in a script block a quote or `<`) on an HTML response. This
-  is where reflected XSS is likely; confirm it by hand if needed.
+- UNENCODED: a character that matters in that context came back raw on an HTML
+  response: in HTML text `<`; in an attribute the quote around its value (`"` for a
+  "-quoted value, `'` for a '-quoted one, `>` for an unquoted one; a raw `'` inside a
+  "-quoted value is harmless); in a script string its own quote or `<` (</script>); in
+  script code (outside a string) the value already runs as code. This is where
+  reflected XSS is likely. The exact url sent and the response around the marker are
+  printed under the line, so it can be shown in a browser (view source).
+
+Each parameter is sent once per path template, in the first URL that has it (its other
+parameters keep their recorded values).
 - encoded: every occurrence came back encoded (or removed) - the basic defence holds.
 - not reflected.
 
@@ -79,25 +86,110 @@ def context_at(body: str, pos: int) -> str:
     return "html"
 
 
-def classify(body: str, word: str) -> list[tuple[str, dict[str, str]]]:
-    """[(context, {char: raw|encoded|removed})] per occurrence of the marker word."""
+def attr_delim(body: str, pos: int) -> str:
+    """Inside a tag: the quote of the attribute value at `pos` ('"' or "'"), "u" for an
+    unquoted value, "" when `pos` is not inside an attribute value."""
+    seg = body[body.rfind("<", 0, pos):pos]
+    state, i = "", 0
+    while i < len(seg):
+        c = seg[i]
+        if state in ('"', "'"):
+            if c == state:
+                state = ""
+        elif state == "u":
+            if c.isspace():
+                state = ""
+        elif c == "=":
+            i += 1
+            while i < len(seg) and seg[i].isspace():
+                i += 1
+            if i < len(seg):
+                state = seg[i] if seg[i] in ('"', "'") else "u"
+            else:
+                state = "u"
+            if state == "u":
+                continue
+        i += 1
+    return state
+
+
+def js_delim(body: str, pos: int) -> str:
+    """Inside a script block: the quote of the JavaScript string at `pos` (', ", `),
+    or "" when `pos` is in code (outside a string)."""
+    low = body.lower()
+    start = low.rfind("<script", 0, pos)
+    start = body.find(">", start, pos) + 1 if start >= 0 else 0
+    state, esc = "", False
+    for c in body[start:pos]:
+        if esc:
+            esc = False
+        elif c == "\\":
+            esc = bool(state)
+        elif state:
+            if c == state:
+                state = ""
+        elif c in ('"', "'", "`"):
+            state = c
+    return state
+
+
+def classify(body: str, word: str) -> list[tuple[str, dict[str, str], str]]:
+    """[(context, {char: raw|encoded|removed}, delimiter)] per occurrence of the marker word.
+    The delimiter is the attribute quote (", ', u = unquoted) or the script string quote
+    ("" = script code)."""
     out = []
     for m in re.finditer(re.escape(word), body):
-        out.append((context_at(body, m.start()), chars_after(body, m.end())))
+        ctx = context_at(body, m.start())
+        delim = attr_delim(body, m.start()) if ctx == "attribute" else \
+            js_delim(body, m.start()) if ctx == "script" else ""
+        out.append((ctx, chars_after(body, m.end()), delim))
     return out
 
 
-def risky(context: str, ch: dict[str, str]) -> list[str]:
-    """The raw characters that matter in this context."""
+def risky(context: str, ch: dict[str, str], delim: str | None = None) -> list[str]:
+    """The raw characters that let the value break out of where it is. In an attribute
+    only the quote around the value matters (a raw ' inside "..." is harmless); in a
+    script string its own quote and < (for </script>); in script code the value already
+    runs as code ("code")."""
     if context == "html":
         keys = ["<"]
     elif context == "attribute":
-        keys = ['"', "'"]
+        keys = {'"': ['"'], "'": ["'"], "u": [">"], "": ['"', "'", ">"]}.get(delim, ['"', "'"]) \
+            if delim is not None else ['"', "'"]
     elif context == "script":
-        keys = ['"', "'", "<"]
+        if delim == "":
+            return ["code"] + [k for k in ('"', "'", "<") if ch.get(k) == "raw"]
+        keys = ([delim] if delim in ('"', "'") else []) + ["<"] if delim is not None else ['"', "'", "<"]
     else:
         keys = []
     return [k for k in keys if ch.get(k) == "raw"]
+
+
+def where(context: str, delim: str) -> str:
+    """A label such as 'attribute ("-quoted)' or 'script (in a '-string)'."""
+    if context == "attribute":
+        return {'"': 'attribute ("-quoted)', "'": "attribute ('-quoted)", "u": "attribute (unquoted)"}.get(
+            delim, "attribute (tag)")
+    if context == "script":
+        return f"script (in a {delim}-string)" if delim else "script (code)"
+    return context
+
+
+def judge(occ: list) -> tuple[str, str]:
+    """(detail of the risky occurrences or "", the contexts seen) for classify() output."""
+    bad = list(dict.fromkeys((where(c, d), tuple(risky(c, ch, d))) for c, ch, d in occ if risky(c, ch, d)))
+    detail = "; ".join(f"{w}: " + ("runs as code" + (", raw " if len(r) > 1 else "") if r[0] == "code" else "raw ")
+                       + " ".join(x for x in r if x != "code") for w, r in bad)
+    return detail, ", ".join(sorted({where(c, d) for c, _, d in occ}))
+
+
+def excerpt(body: str, word: str, width: int = 70) -> str:
+    """The response around the first occurrence of the marker, on one line."""
+    at = body.find(word)
+    if at < 0:
+        return ""
+    seg = body[max(0, at - width):at + len(word) + 12 + width]
+    return " ".join(seg.split())
 
 
 def candidates(base: str, katana: Path | None, har: Path | None) -> tuple[list[tuple[str, list]], list]:
@@ -139,6 +231,20 @@ def candidates(base: str, katana: Path | None, har: Path | None) -> tuple[list[t
     return out, states
 
 
+def probes_of(cands: list[tuple[str, list]]) -> list[tuple[str, list, int]]:
+    """(path, pairs, index) to send: each parameter once per path template, in the first
+    URL that has it (its other parameters keep their recorded values, so the page is a
+    valid screen)."""
+    seen, out = set(), []
+    for path, pairs in cands:
+        for i, (name, _) in enumerate(pairs):
+            key = (harmod._template(path), name)
+            if key not in seen:
+                seen.add(key)
+                out.append((path, pairs, i))
+    return out
+
+
 def _cookie_for(states: list, scheme: str, host: str) -> tuple[str, str]:
     """The first logged-in session cookie among the HAR storage states, if any."""
     for r, st in states:
@@ -159,7 +265,7 @@ def run(args) -> int:
     print(f"# output-encoding check of reflected GET parameters on {host}; a harmless marker "
           "(a random word followed by < \" ' >), no attack payload; GET only, only this host contacted")
     print(f"# cookies: {'logged-in session ' + role + ' (from har-browse)' if cookie else 'none (anonymous)'}")
-    probes = [(path, pairs, i) for path, pairs in cands for i in range(len(pairs))]
+    probes = probes_of(cands)
     over = max(0, len(probes) - args.max)
     probes = probes[:args.max]
     print(f"# {len(cands)} URL(s) with a query, {len(probes)} parameter(s) checked"
@@ -175,7 +281,8 @@ def run(args) -> int:
         q = urlencode([(n, value if j == i else v) for j, (n, v) in enumerate(pairs)], quote_via=quote)
         if sent and args.pause:
             time.sleep(args.pause)
-        a = ep.fetch(f"{origin}{path}?{q}", cookie)
+        url = f"{origin}{path}?{q}"
+        a = ep.fetch(url, cookie)
         sent += 1
         label = f"{harmod._template(path)} ?{pairs[i][0]}"
         if a.status is None:
@@ -196,25 +303,32 @@ def run(args) -> int:
                 absent.append(label)
             continue
         html = "html" in (a.ctype or "")
-        bad = [(ctx, risky(ctx, ch)) for ctx, ch in occ if risky(ctx, ch)]
-        ctxs = ", ".join(sorted({c for c, _ in occ}))
+        detail, ctxs = judge(occ)
+        bad = bool(detail)
         tail = "; also HEADER-REFLECTED into Location (try CRLF/redirect by hand)" if hdr else ""
         if bad and html:
             unencoded.append(label)
-            detail = "; ".join(f"{ctx}: raw {' '.join(r)}" for ctx, r in bad)
             print(f"- {label}: REFLECTED-UNENCODED (HTTP {a.status} {a.ctype}; {detail}){tail}")
+            print(f"    url: {url}")
+            print(f"    response: ...{excerpt(a.body, word)}...")
         elif bad:
             encoded.append(label)
             print(f"- {label}: reflected raw in a non-HTML response (HTTP {a.status} {a.ctype or '-'}; "
                   f"contexts {ctxs}); not rendered as HTML by itself{tail}")
         else:
             encoded.append(label)
-            print(f"- {label}: reflected, encoded (HTTP {a.status} {a.ctype or '-'}; contexts {ctxs}){tail}")
+            print(f"- {label}: reflected, encoded where it matters (HTTP {a.status} {a.ctype or '-'}; "
+                  f"contexts {ctxs}){tail}")
     if sent and not answered:
         print(f"no request to {host} got an answer; collect again", file=sys.stderr)
         return 4
     if absent:
         print(f"- not reflected: {len(absent)} parameter(s)")
+    if unencoded:
+        print("\n# To show one in the browser: open its url above in the browser where you are logged in"
+              + (f" as {role}" if cookie else "") + " (the other parameters are the recorded ones, so it is "
+              "the real screen), then view the source (Ctrl+U) and search for the wstg word: the url and "
+              "the response line above are the evidence; a screenshot of the source is optional.")
     print(f"\n# verdict: {len(unencoded)} parameter(s) REFLECTED-UNENCODED, {len(encoded)} reflected but "
           f"encoded, {len(absent)} not reflected; {len(in_header)} reflected into the Location header")
     return 0
@@ -234,7 +348,7 @@ def run_hpp(args) -> int:
     print(f"# HTTP parameter pollution check on {host}; each GET parameter sent twice with two "
           "harmless markers, no attack payload; GET only, only this host contacted")
     print(f"# cookies: {'logged-in session ' + role + ' (from har-browse)' if cookie else 'none (anonymous)'}")
-    probes = [(path, pairs, i) for path, pairs in cands for i in range(len(pairs))]
+    probes = probes_of(cands)
     over = max(0, len(probes) - args.max)
     probes = probes[:args.max]
     print(f"# {len(cands)} URL(s) with a query, {len(probes)} parameter(s) checked"

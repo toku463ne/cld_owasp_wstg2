@@ -54,8 +54,10 @@ evidence:
     kind: manual
     description: >-
       Optional: for a parameter that reflection-check marks REFLECTED-UNENCODED, a
-      screenshot or note from confirming it by hand in the browser. Leave it empty when
-      the basic check is enough for the engagement.
+      screenshot of the page source (Ctrl+U) at the marker after opening the url that
+      reflection-check prints under it, logged in as the role it names. Leave it empty
+      when the basic check is enough for the engagement: reflection-check already holds
+      the url and the response line.
 
   - id: xss-stored-tests
     title: Stored XSS tests

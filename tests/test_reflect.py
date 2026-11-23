@@ -63,8 +63,10 @@ def test_marker_check_tells_unencoded_from_encoded(tmp_path, app, capsys):
     out = capsys.readouterr().out
     assert "/search ?q: REFLECTED-UNENCODED" in out and "html: raw <" in out
     assert "/safe ?q: reflected, encoded" in out
-    assert "/attr ?q: REFLECTED-UNENCODED" in out and "attribute: raw" in out
-    assert "/js ?q: REFLECTED-UNENCODED" in out and "script: raw" in out
+    assert '/attr ?q: REFLECTED-UNENCODED' in out and 'attribute ("-quoted): raw "' in out
+    assert "/js ?q: REFLECTED-UNENCODED" in out and "script (in a '-string): raw ' <" in out
+    assert f"    url: {app}/search?q=wstg" in out and "    response: ...<p>Results for wstg" in out
+    assert "To show one in the browser" in out
     assert "/api ?q: reflected raw in a non-HTML response" in out
     assert "not reflected: 1 parameter(s)" in out
     assert "verdict: 3 parameter(s) REFLECTED-UNENCODED" in out
@@ -82,8 +84,14 @@ def test_no_parameter_found(tmp_path, app, capsys):
     ("<p>WORD<\"'></p>", "html", ["<"]),
     ("<p>WORD&lt;&quot;&#39;&gt;</p>", "html", []),
     ('<a title="WORD&lt;&quot;&#39;&gt;">', "attribute", []),
-    ('<a title="WORD&lt;"\'&gt;">', "attribute", ['"', "'"]),
+    ('<a title="WORD&lt;"\'&gt;">', "attribute", ['"']),
+    ('<a title="WORD&lt;&quot;\'&gt;">', "attribute", []),            # raw ' inside "..." is harmless
+    ("<a title='WORD&lt;&quot;'&gt;'>", "attribute", ["'"]),
+    ('<a href=/x?a=WORD&lt;&quot;&#39;>', "attribute", [">"]),         # unquoted: > (or a space) ends it
+    ('<a href="/x?a=1&b=WORD&lt;&quot;\'&gt;">', "attribute", []),
     ("<script>x='WORD<\\\"\\'>'</script>", "script", ["<"]),
+    ('<script>x="a\'b", y="WORD<\\"\'>"</script>', "script", ["<"]),   # ' raw inside "..." is harmless
+    ("<script>f(WORD&lt;)</script>", "script", ["code"]),               # outside a string: runs as code
 ])
 def test_classify_contexts(body, ctx, raw):
     occ = reflect.classify(body, "WORD")
@@ -138,7 +146,7 @@ def test_stored_view_finds_where_markers_are_shown(tmp_path, capsys):
     out = capsys.readouterr().out
     assert "wstg01, wstg02, wstg03" in out
     assert "[wstg01] saved by user: POST /profile" in out
-    assert "GET /profile -> 200: encoded (attribute)" in out
+    assert 'GET /profile -> 200: encoded (attribute ("-quoted))' in out
     assert "GET /admin/users -> 200 (shown to admin): STORED-UNENCODED (html: raw <)" in out
     assert "GET /posts/<id> -> 200: STORED-UNENCODED" in out
     assert "[wstg03]" in out and "not displayed in any captured response" in out
@@ -219,3 +227,12 @@ def test_hpp_reports_precedence_rule(tmp_path, capsys):
     assert "/both ?id: both values used" in out
     assert "/none ?id: neither reflected" in out
     assert "1 first value wins" in out and "1 last value wins" in out
+
+
+def test_each_parameter_is_probed_once_per_path():
+    cands = [("/m.aspx", [("xslFile", "a"), ("id", "1")]), ("/m.aspx", [("xslFile", "b")]),
+             ("/m.aspx", [("xslFile", "c"), ("redAct", "x")]), ("/other", [("xslFile", "a")])]
+    got = [(p, pairs[i][0], pairs) for p, pairs, i in reflect.probes_of(cands)]
+    assert [(p, n) for p, n, _ in got] == [("/m.aspx", "xslFile"), ("/m.aspx", "id"), ("/m.aspx", "redAct"),
+                                           ("/other", "xslFile")]
+    assert got[2][2] == [("xslFile", "c"), ("redAct", "x")]          # sent in the URL that has it

@@ -1220,12 +1220,11 @@ def view_stored(files: list[Path], host: str = "") -> None:
                 ct = _header(resp.get("headers"), "content-type").lower()
                 real = re.search(re.escape(w), body, re.I).group(0)
                 occ = reflect.classify(body, real)
-                bad = [(c, reflect.risky(c, ch)) for c, ch in occ if reflect.risky(c, ch)]
-                ctxs = ", ".join(sorted({c for c, _ in occ}))
+                detail, ctxs = reflect.judge(occ)
+                bad = bool(detail)
                 who = "" if r == role else f" (shown to {r})"
                 if bad and "html" in ct:
                     unencoded += 1
-                    detail = "; ".join(f"{c}: raw {' '.join(k)}" for c, k in bad)
                     print(f"  - {str(req.get('method', '')).upper()} {_template(p)} -> {resp.get('status')}"
                           f"{who}: STORED-UNENCODED ({detail})")
                 elif bad:
