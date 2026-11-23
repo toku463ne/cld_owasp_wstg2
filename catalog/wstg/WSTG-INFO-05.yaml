@@ -4,7 +4,8 @@ overview: >-
   over from development: credentials, API keys, internal host names or addresses,
   hidden endpoints, and debug notes. Machines read every collected page and script
   (top page, crawled pages, and the logged-in pages in the HAR files); the AI review
-  sorts the hits; the browser review covers only what those cannot see.
+  sorts the hits, including those from the logged-in screens and the pages after
+  JavaScript ran (DOM snapshots of `wstg capture`).
 pass: >-
   The top page, the crawl, and the HAR files were collected and scanned, and no comment,
   script, or source map contains credentials, keys, internal hosts or addresses,
@@ -17,7 +18,7 @@ notes:
   - gitleaks prints matches with the secret replaced by REDACTED. Open the file in the evidence folder to see the value; record real secrets by evidence path and line, do not copy them into the finding.
   - Keyword hits are often only variable names or labels (for example `password` in a form label). The AI review sorts them; check each hit it calls real.
   - Public keys meant for browsers (map or analytics keys restricted by referrer) are low risk; check the restriction before reporting.
-  - Outputs that read HAR files stay out of the AI prompt (they hold cookies and tokens); judge those hits on this page.
+  - Outputs that read HAR files stay out of the AI prompt (they hold cookies and tokens); judge those hits on this page. Step 9 (`wstg-har source`) masks every value, so its output does go to the AI review.
   - The crawl (katana-crawl) is collected in full mode only; until then steps 4 and 5 wait.
 finding_kinds: [client-code-information-leak, secret-in-client-code, public-source-map]
 steps:
@@ -110,10 +111,27 @@ steps:
     auto_run: true
     evidence: [http-root-https]
     command: grep -oiE '<meta[^>]+>|window\.[A-Za-z_]*(config|env|settings)[A-Za-z_]*\s*=' {ev:http-root-https}/body.html
-  - summary: Review in the browser only what the scans cannot see
+  - summary: Review the logged-in screens and the pages after JavaScript ran (from the capture)
+    auto_run: true
+    evidence: [har-browse, page-source-review]
+    command: wstg-har source {ev:har-browse}/items/*.har {ev:har-browse}/items/*.jsonl
+    ai_task: >-
+      The output lists, from every target response body in the browser captures (HTML,
+      scripts, JSON of the logged-in screens) and from the DOM snapshots `wstg capture`
+      takes of each screen after JavaScript ran: secret-like values (masked), internal
+      hosts or private addresses and dev/staging/test hosts, comments that read like
+      developer notes, and all HTML comments (with where they were seen; "only in the DOM"
+      means a script added it). Sort each hit into real (a credential or key, an internal
+      host or address, a non-public environment, a note that reveals internals) or noise
+      (library code, a public CDN or analytics key, a label, a build marker), with a
+      one-line reason, and list the real ones with the page path. Fail when any real one
+      is present; pass when every hit is noise; "-" when the output says the capture holds
+      no response bodies.
     operation: >-
-      Screens missing from the HAR files, and content that JavaScript builds after the
-      page loads: open the screen, press F12 > Elements, and search (Ctrl+F) for `<!--`,
-      `key`, `internal`, `debug`. Capture any hit with the URL visible, or write "nothing
-      found" with the list of screens checked.
-    evidence: [page-source-review]
+      Only when the output notes a gap: "no DOM snapshots" (the capture is older than
+      this feature) or a screen you know of is not in the capture - run
+      `uv run wstg capture <target>` again, open those screens, wait a few seconds on
+      each, press Enter, and refresh this page. A screen the capture cannot reach: note
+      it in page-source-review. Record a real hit in the finding by
+      evidence path and page, not by value (open the HAR or the dom-*.jsonl in the
+      evidence folder to see the value).

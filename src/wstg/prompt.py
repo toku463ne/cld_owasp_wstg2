@@ -121,6 +121,10 @@ def _excerpt(version: evmod.Version, budget: list[int]) -> list[str]:
                        " and parameter values removed):")
             out += ["     " + ln for ln in har_summary(version.path / it.file, budget)]
             continue
+        if it.file.lower().endswith(".jsonl") and (it.name or it.file).split("/")[-1].lstrip("0123456789-").startswith("dom-"):
+            out.append(f"   - rendered pages {it.name or it.file} (DOM snapshots of the capture): not included"
+                       " (page content and tokens); the `wstg-har source` output summarizes them with values masked")
+            continue
         if it.file.lower().endswith(".json"):
             state = harmod._storage_state(version.path / it.file)
             if state is not None:

@@ -3,8 +3,9 @@
 `wstg capture TARGET` launches a real Chromium window on the Kali host through
 Playwright. The tester logs in and walks the application by hand (no login
 automation); the browser records every request to a HAR, and the context's
-storage state (cookies, localStorage, sessionStorage) is saved too. On finish
-both are stored as a new version of the target's `har-browse` evidence, which
+storage state (cookies, localStorage, sessionStorage) is saved too, and every
+few seconds the rendered DOM of each open page of the target (the page after
+JavaScript ran) is kept, newest per URL. On finish all are stored as a new version of the target's `har-browse` evidence, which
 the existing `wstg-har` analysis and the WSTG steps already read. The dedicated
 captures go to their own evidence: `--role logout` to `har-logout` (WSTG-SESS-06)
 and `--role timeout` / `timeout-active` to `har-timeout` (WSTG-SESS-07).
@@ -21,7 +22,10 @@ prints no values).
 
 from __future__ import annotations
 
+import json
 import tempfile
+import threading
+import time
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -46,6 +50,58 @@ GOTO_TIMEOUT_MS = 60_000
 
 class CaptureError(Exception):
     pass
+
+
+DOM_EVERY_S = 3                     # seconds between DOM snapshots of the open pages
+DOM_MAX_PAGE = 2 * 1024 * 1024      # characters kept per page
+DOM_MAX_TOTAL = 40 * 1024 * 1024    # all snapshots (the evidence file limit is 45 MB)
+DOM_MAX_PAGES = 400
+
+
+def dom_path_for(har_path: Path) -> Path:
+    """Where `_drive` writes the DOM snapshots that go with `har_path`."""
+    return har_path.with_name(f"dom-{har_path.stem}.jsonl")
+
+
+class DomRecorder:
+    """The rendered page (DOM after JavaScript) of every screen the tester opens,
+    newest snapshot per URL, target host only (WSTG-INFO-05: content that scripts
+    build after the page loads, which the HAR holds only as scripts and JSON)."""
+
+    def __init__(self, start_url: str):
+        self.host = (urlsplit(start_url).hostname or "").lower()
+        self.pages: dict[str, str] = {}
+
+    def _ours(self, url: str) -> bool:
+        u = urlsplit(url)
+        h = (u.hostname or "").lower()
+        return u.scheme in ("http", "https") and bool(h) and (
+            h == self.host or h.endswith("." + self.host) or self.host.endswith("." + h))
+
+    def add(self, url: str, html: str) -> None:
+        url = url.split("#", 1)[0]
+        if not self._ours(url):
+            return
+        if url not in self.pages and len(self.pages) >= DOM_MAX_PAGES:
+            return
+        html = html[:DOM_MAX_PAGE]
+        used = sum(len(v) for k, v in self.pages.items() if k != url)
+        if used + len(html) <= DOM_MAX_TOTAL:
+            self.pages[url] = html
+
+    def snap(self, page) -> None:
+        try:
+            self.add(page.url, page.content())
+        except Exception:   # noqa: BLE001 - the page may be navigating or closed
+            pass
+
+    def write(self, path: Path) -> bool:
+        if not self.pages:
+            return False
+        with open(path, "w", encoding="utf-8") as f:
+            for url, html in self.pages.items():
+                f.write(json.dumps({"url": url, "html": html}, ensure_ascii=False) + "\n")
+        return True
 
 
 def _stamp() -> str:
@@ -105,7 +161,22 @@ def _drive(start_url: str, har_path: Path, state_path: Path, *, headless: bool,
             page.goto(start_url, wait_until="domcontentloaded", timeout=GOTO_TIMEOUT_MS)
         except Exception as e:   # noqa: BLE001 - navigation can fail; the tester can still browse
             print(f"  (could not open {start_url}: {e}; you can navigate manually)")
-        wait()
+        # The tester's Enter is read on a thread; meanwhile this thread keeps the DOM
+        # of each open page (Playwright's sync API stays on this thread).
+        dom = DomRecorder(start_url)
+        done = threading.Event()
+        threading.Thread(target=lambda: (wait(), done.set()), daemon=True).start()
+        while not done.is_set():
+            pages = list(context.pages)
+            for pg in pages:
+                dom.snap(pg)
+            try:
+                pages[0].wait_for_timeout(DOM_EVERY_S * 1000)
+            except Exception:   # noqa: BLE001 - no page open, or it is closing
+                time.sleep(DOM_EVERY_S)
+        for pg in list(context.pages):
+            dom.snap(pg)
+        dom.write(dom_path_for(har_path))
         try:
             context.storage_state(path=str(state_path))
         except Exception as e:   # noqa: BLE001
@@ -159,6 +230,11 @@ def record_session(cfg: Config, db: dbmod.Database, store: evmod.Store, target: 
         if state_path.is_file() and state_path.stat().st_size:
             state_ver = store.add_file(target, eid, state_path.read_bytes(), state_path.name,
                                        f"browser storage state ({role or 'session'})", actor)
+        dom_path = dom_path_for(har_path)
+        dom_ver = None
+        if dom_path.is_file() and dom_path.stat().st_size:
+            dom_ver = store.add_file(target, eid, dom_path.read_bytes(), dom_path.name,
+                                     f"rendered pages after JavaScript ({role or 'session'})", actor)
     finally:
         import shutil
         shutil.rmtree(tmp, ignore_errors=True)
@@ -167,7 +243,8 @@ def record_session(cfg: Config, db: dbmod.Database, store: evmod.Store, target: 
         "har_file": har_path.name,
         "har_version": har_ver.version,
         "state_file": state_path.name if state_ver else None,
-        "version": (state_ver or har_ver).version,
+        "dom_file": dom_path.name if dom_ver else None,
+        "version": (dom_ver or state_ver or har_ver).version,
         "in_scope_hosts": [h[0] for h in in_scope],
         "out_of_scope_hosts": [h[0] for h in out_scope],
     }

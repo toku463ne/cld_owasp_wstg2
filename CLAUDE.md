@@ -121,7 +121,7 @@ uv run wstg worker [--once] [--busy]      # run queued automatic evidence jobs; 
 uv run wstg collect TARGET [--mode light|full] [--evidence ID [--force]] [--agree] [--run]
                                           # bulk run is read-only recon; --agree is required to collect a mutating evidence
 uv run wstg capture TARGET [--role NAME] [--url URL] [--headless]
-                                          # record a browsing session as a HAR (headful Chromium, Playwright)
+                                          # record a browsing session as a HAR + DOM snapshots after JavaScript (headful Chromium, Playwright)
 uv run wstg ai-prompts TARGET [--test WSTG-..] [--evidence complete|any|all] [--existing skip|overwrite]
                                           # save AI prompts to <evidence>/TARGET/_ai/prompts
 uv run wstg ai-import TARGET [--overwrite] [--findings]  # import _ai/answers/WSTG-*.json

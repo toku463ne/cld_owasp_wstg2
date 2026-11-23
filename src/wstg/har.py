@@ -13,8 +13,9 @@ holds here, and auto-run steps that call this tool are still excluded from the p
 (their command names a `.har` file).
 
 Run as `wstg-har <view> [--host HOST] FILE...` where view is cookies | urls | cleartext |
-forms | xssi | entry-points | expose | cache | frame | storage | csrf | flows | xss-headers | stored
-(`--host` is used by entry-points, expose, csrf, flows, xss-headers, and stored).
+forms | xssi | entry-points | expose | cache | frame | storage | csrf | flows | xss-headers | stored |
+source (`--host` is used by entry-points, expose, csrf, flows, xss-headers, stored, and source).
+`source` also reads the DOM snapshot files (`dom-*.jsonl`) that `wstg capture` writes.
 Exit code is always 0 (a WSTG step reads the text output); unreadable files are noted.
 """
 import json
@@ -1239,11 +1240,183 @@ def view_stored(files: list[Path], host: str = "") -> None:
     print(f"\n# verdict: {unencoded} display(s) STORED-UNENCODED; read from the capture only, no request sent")
 
 
+# ---- source: comments, secrets, internal hosts in the captured bodies (WSTG-INFO-05) ----
+
+_SRC_TYPES = ("html", "javascript", "ecmascript", "json", "xml")
+_COMMENT_RE = re.compile(r"<!--(.*?)-->", re.S)
+_SECRET_RES = [
+    ("aws-access-key", re.compile(r"\b(?:AKIA|ASIA)[0-9A-Z]{16}\b")),
+    ("private-key", re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----")),
+    ("google-api-key", re.compile(r"\bAIza[0-9A-Za-z_-]{35}\b")),
+    ("slack-token", re.compile(r"\bxox[abprs]-[0-9A-Za-z-]{10,}")),
+    ("github-token", re.compile(r"\bgh[pousr]_[A-Za-z0-9]{36,}\b")),
+    ("stripe-key", re.compile(r"\b[sr]k_live_[0-9A-Za-z]{16,}\b")),
+    ("jwt", re.compile(r"\beyJ[A-Za-z0-9_-]{8,}\.eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}")),
+    ("assigned-secret", re.compile(
+        r"""(?i)\b((?:api[_-]?key|apikey|secret|client[_-]?secret|password|passwd|pwd|access[_-]?token|"""
+        r"""auth[_-]?token|private[_-]?key)["']?\s*[:=]\s*["'])([^"'\s]{6,})["']""")),
+]
+_INTERNAL_RE = re.compile(
+    r"(?<![\w.])((?:10|127)\.\d{1,3}\.\d{1,3}\.\d{1,3}|172\.(?:1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}|"
+    r"192\.168\.\d{1,3}\.\d{1,3}|localhost(?::\d+)?|"
+    r"[a-z0-9-]+(?:\.[a-z0-9-]+)*\.(?:local|internal|corp|lan|intra|intranet))(?![\w.-])", re.I)
+_URL_HOST_RE = re.compile(r"(?i)\b(?:https?:)?//([a-z0-9][a-z0-9.-]*\.[a-z]{2,})(?::\d+)?[/\"'\s?#]")
+_ENV_LABEL_RE = re.compile(r"^(?:dev|develop|development|stg|stage|staging|uat|test|testing|qa|sandbox|preprod)\d*$")
+
+
+def _env_host(host: str) -> bool:
+    """A host whose name says it is a development / staging / test environment."""
+    return any(_ENV_LABEL_RE.match(part) for label in host.lower().split(".")[:-1] for part in label.split("-"))
+
+
+_NOTE_RE = re.compile(r"\b(todo|fixme|xxx|hack|bug|debug|temporary|remove (?:this|before)|password|"
+                      r"internal|staging|test (?:account|user)|do not)\b", re.I)
+_SRC_MAX = 120          # lines per section
+
+
+def _dom_snapshots(p: Path) -> list[tuple[str, str]] | None:
+    """(url, html) from a DOM snapshot file of `wstg capture` (JSON lines), or None."""
+    try:
+        lines = p.read_text(errors="replace").splitlines()
+    except OSError:
+        return None
+    out = []
+    for ln in lines:
+        try:
+            o = json.loads(ln)
+        except ValueError:
+            return None
+        if not isinstance(o, dict) or "html" not in o:
+            return None
+        out.append((str(o.get("url", "")), str(o["html"])))
+    return out
+
+
+def _clean(text: str, secrets: set, width: int = 200) -> str:
+    """One line, cut to `width`, with session values and secret-like values masked."""
+    t = re.sub(r"\s+", " ", text).strip()
+    for v in secrets:
+        if v in t:
+            t = t.replace(v, _mask(v))
+    for kind, rx in _SECRET_RES:
+        if kind == "assigned-secret":
+            t = rx.sub(lambda m: m.group(1) + _mask(m.group(2)) + m.group(0)[-1], t)
+        else:
+            t = rx.sub(lambda m: _mask(m.group(0)), t)
+    return t if len(t) <= width else t[:width] + "…"
+
+
+def view_source(files: list[Path], host: str = "") -> None:
+    """Comments, secret-like values, internal hosts, and developer notes in the response
+    bodies of the captures (HTML, scripts, JSON of the logged-in screens) and in the DOM
+    snapshots of `wstg capture` (the page after JavaScript ran), for WSTG-INFO-05. Session
+    values and every secret-like value are masked, so the output can go to the AI review.
+    No request is sent."""
+    docs: list[tuple[str, str, str]] = []      # (source, url, text)
+    entries_all: list = []
+    dom_pages = 0
+    for p in files:
+        if not p.exists():
+            if p.suffix == ".jsonl" or "*" in p.name:
+                continue                        # optional DOM snapshots (glob without a match)
+            print(f"== {p.name}: missing")
+            continue
+        if _storage_state(p) is not None:
+            continue
+        ents = _load(p)
+        if ents is not None:
+            entries_all += ents
+            for e in ents:
+                resp = e.get("response") or {}
+                if not any(t in _content_type(resp) for t in _SRC_TYPES):
+                    continue
+                text = _body_text(resp)
+                if text:
+                    docs.append(("har", str((e.get("request") or {}).get("url", "")), text))
+            continue
+        snaps = _dom_snapshots(p)
+        if snaps is None:
+            print(f"== {p.name}: not a readable HAR or DOM snapshot file")
+            continue
+        dom_pages += len(snaps)
+        docs += [("dom", u, h) for u, h in snaps]
+    base = _base_host(entries_all, host)
+    secrets = _session_values(entries_all)
+    own = [d for d in docs if _same_site(_url_parts(d[1])[1], base)]
+    third = len(docs) - len(own)
+    n_har = sum(1 for d in own if d[0] == "har")
+    print(f"# page source review of {base or '-'} from the captures (values masked; no request sent)")
+    print(f"scanned: {n_har} response bodies (HTML/JS/JSON/XML) of {base or 'the target'}, "
+          f"{sum(1 for d in own if d[0] == 'dom')} DOM snapshots after JavaScript"
+          f" ({third} third-party bodies skipped)")
+    if not n_har:
+        print("NOTE: the HAR holds no response bodies of the target; record with `wstg capture` "
+              "(it keeps the bodies) or export the HAR with content")
+    if not dom_pages:
+        print("NOTE: no DOM snapshots; content built by JavaScript is checked only through the scripts "
+              "and JSON above (a new `wstg capture` records the snapshots)")
+    har_comments = set()
+    for src, _, text in own:
+        if src == "har":
+            har_comments.update(re.sub(r"\s+", " ", c).strip() for c in _COMMENT_RE.findall(text))
+
+    def path_of(url: str) -> str:
+        _, _, pth, _ = _url_parts(url)
+        return pth or "/"
+
+    sections: dict[str, dict[str, list[str]]] = {k: {} for k in ("comments", "notes", "secrets", "internal")}
+
+    def add(sec: str, key: str, where: str) -> None:
+        sections[sec].setdefault(key, [])
+        if where not in sections[sec][key]:
+            sections[sec][key].append(where)
+
+    for src, url, text in own:
+        where = path_of(url) + (" (DOM)" if src == "dom" else "")
+        for c in _COMMENT_RE.findall(text):
+            raw = re.sub(r"\s+", " ", c).strip()
+            if not raw or raw.startswith(("[if", "<![endif]", "[endif]")) or re.fullmatch(r"[-=#*\s/]*", raw):
+                continue
+            label = _clean(raw, secrets)
+            if src == "dom" and raw not in har_comments:
+                label += "  [only in the DOM: added by JavaScript]"
+            add("comments", label, where)
+            if _NOTE_RE.search(raw):
+                add("notes", label, where)
+        for kind, rx in _SECRET_RES:
+            for m in rx.finditer(text):
+                a, b = max(0, m.start() - 40), min(len(text), m.end() + 40)
+                value = m.group(2) if kind == "assigned-secret" else m.group(0)
+                add("secrets", f"{kind}: {_clean(text[a:b], secrets | {value}, 160)}", where)
+        for m in _INTERNAL_RE.finditer(text):
+            add("internal", m.group(1).lower(), where)
+        for m in _URL_HOST_RE.finditer(text):
+            h = m.group(1).lower()
+            if _env_host(h) and not _same_site(h, base):
+                add("internal", f"{h} (dev/staging/test host)", where)
+
+    titles = {"comments": "HTML comments", "notes": "Comments that read like developer notes",
+              "secrets": "Secret-like values (masked)",
+              "internal": "Internal hosts, private addresses, and dev/staging/test hosts"}
+    for sec in ("secrets", "internal", "notes", "comments"):
+        items = sections[sec]
+        print(f"\n## {titles[sec]}: {len(items)}")
+        for i, (k, wheres) in enumerate(sorted(items.items(), key=lambda kv: (-len(kv[1]), kv[0]))):
+            if i >= _SRC_MAX:
+                print(f"... {len(items) - _SRC_MAX} more")
+                break
+            more = f" (+{len(wheres) - 3} more)" if len(wheres) > 3 else ""
+            print(f"- {k}  @ {', '.join(wheres[:3])}{more}")
+    print(f"\n# verdict: {len(sections['secrets'])} secret-like, {len(sections['internal'])} internal host, "
+          f"{len(sections['notes'])} developer-note, {len(sections['comments'])} comment hit(s); "
+          "judge each (the values are masked: open the evidence file to see one)")
+
+
 _VIEWS = {"cookies": view_cookies, "urls": view_urls, "cleartext": view_cleartext,
           "forms": view_forms, "xssi": view_xssi, "entry-points": view_entry_points,
           "expose": view_expose, "cache": view_cache, "frame": view_frame,
           "storage": view_storage, "csrf": view_csrf, "flows": view_flows,
-          "xss-headers": view_xss_headers, "stored": view_stored}
+          "xss-headers": view_xss_headers, "stored": view_stored, "source": view_source}
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -1258,7 +1431,7 @@ def main(argv: list[str] | None = None) -> int:
             return 2
         host, rest = rest[1], rest[2:]
     files = [Path(a) for a in rest]
-    if view in ("entry-points", "expose", "csrf", "flows", "xss-headers", "stored"):
+    if view in ("entry-points", "expose", "csrf", "flows", "xss-headers", "stored", "source"):
         _VIEWS[view](files, host)
     else:
         _VIEWS[view](files)

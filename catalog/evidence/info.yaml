@@ -179,10 +179,11 @@ evidence:
     target_type: fqdn
     kind: manual
     description: >-
-      For the login page and each main screen: the URL, and a screenshot of any comment,
-      script, or hidden field that holds a developer note, internal path or host name,
-      credential, or key (view-source with Ctrl+U for server pages, F12 Elements for
-      pages rendered by JavaScript). Write "nothing found" as text for screens without
+      Only for screens `wstg capture` cannot reach (WSTG-INFO-05 step 9 reads the
+      captured screens and their DOM after JavaScript automatically): the URL, and a
+      screenshot of any comment, script, or hidden field that holds a developer note,
+      internal path or host name, credential, or key (F12 > Elements, Ctrl+F for `<!--`,
+      `key`, `internal`, `debug`). Write "nothing found" as text for screens without
       findings.
 
   - id: wappalyzer
