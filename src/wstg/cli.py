@@ -249,9 +249,20 @@ def cmd_capture(args) -> int:
     from . import capture as capmod, targets as tmod
     r = _runner(_cfg())
     t = _target(r, args.target)
+    drive = capmod._drive
+    actor = "cli"
+    if args.stop_file:
+        from . import capture_run
+        stop = Path(args.stop_file)
+        actor = args.actor or "web"
+
+        def drive(*a, **kw):
+            capmod._drive(*a, wait=capture_run.wait_for_stop_file(stop), **kw)
+            if stop.read_text().strip() == "discard":
+                raise capmod.CaptureError("discarded by the tester: nothing was stored")
     try:
-        res = capmod.record_session(r.cfg, r.db, r.store, t, role=args.role or "", actor="cli",
-                                    headless=args.headless, start_url=args.url)
+        res = capmod.record_session(r.cfg, r.db, r.store, t, role=args.role or "", actor=actor,
+                                    headless=args.headless, start_url=args.url, drive=drive)
     except (capmod.CaptureError, tmod.TargetError) as e:
         raise config.ConfigError(str(e)) from None
     print(f"saved HAR {res['har_file']} as {res['evidence']} v{res['har_version']} for {t.name}")
@@ -427,6 +438,9 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--role", default="", help="a label for this session (for example anon, user, admin)")
     s.add_argument("--url", default=None, help="start URL (default: the scope base URL)")
     s.add_argument("--headless", action="store_true", help="run the browser headless (for automation/testing)")
+    s.add_argument("--stop-file", default=None,
+                   help="finish when this file appears (instead of Enter); content 'discard' stores nothing")
+    s.add_argument("--actor", default="", help=argparse.SUPPRESS)
     s.set_defaults(func=cmd_capture)
 
     s = sub.add_parser("ai-prompts", help="save AI prompts to <evidence>/<target>/_ai/prompts for an AI agent")

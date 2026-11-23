@@ -25,6 +25,8 @@ repository. Explicit environment variables win over the file.
                             full speed. Use 2 for weak targets (3 to 5 if they still fail)
     WSTG_JOB_STALE_SECONDS  a running job without a heartbeat for this long is marked
                             interrupted (default 120)
+    WSTG_CAPTURE_DISPLAY    X display the browser of a capture started from the web opens
+                            on (the Kali desktop); default the app's DISPLAY, else :0
     WSTG_WEB_PORT           nginx port (default 8083); read by scripts/setup-kali.sh,
                             not by the app
 """
@@ -104,6 +106,7 @@ class Config:
     direct_ssh: str = ""
     pause: int = 0
     job_stale_seconds: int = 120
+    capture_display: str = ""
 
     def guarded_paths(self) -> dict[str, Path]:
         return {"evidence root": self.evidence_root, "database": self.db_path}
@@ -195,6 +198,7 @@ def load(env: dict[str, str] | None = None, check_repo: bool = True) -> Config:
         direct_ssh=_ssh_dest(env.get("WSTG_DIRECT_SSH", "").strip()),
         pause=_int(env, "WSTG_PAUSE", 0),
         job_stale_seconds=_int(env, "WSTG_JOB_STALE_SECONDS", 120),
+        capture_display=env.get("WSTG_CAPTURE_DISPLAY", "").strip(),
     )
     if not 0 <= cfg.pause <= 60:
         raise ConfigError("WSTG_PAUSE must be 0..60 seconds")

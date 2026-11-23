@@ -1,0 +1,54 @@
+{% extends "target_base.html" %}
+{% block head_extra %}{% if st and st.running %}<meta http-equiv="refresh" content="5">{% endif %}{% endblock %}
+{% block content %}
+<h3><a href="{{ url_for('tools_tab', name=target.name) }}">Tools</a> › Browser capture</h3>
+<p class="muted">Records a browsing session: every request and response (HAR), the browser storage state, and the pages
+  after JavaScript ran. The Chromium window opens on the <b>tool's host desktop</b> (display <code>{{ display }}</code>;
+  work there or over VNC). Log in and walk the target by hand, do not close the window, then press <i>Stop and save</i> here.
+  The same as <code>uv run wstg capture {{ target.name }} --role ROLE</code> in a terminal.</p>
+
+{% if st and st.running %}
+<div class="okbox"><b>Capture running</b> · role <code>{{ st.role or 'session' }}</code> · started {{ st.started }} by {{ st.actor }}
+  ({{ st.elapsed // 60 }} min {{ st.elapsed % 60 }} s) · display {{ st.display }} · this page refreshes every 5 s
+  {% if st.stop_request %}<br><b>Stop requested ({{ st.stop_request }})</b>: the browser is closing and the capture is being
+    {{ 'stored' if st.stop_request == 'save' else 'discarded' }}.{% endif %}</div>
+{% if can_write %}
+<form method="post" class="inline" action="{{ url_for('tool_capture_stop', name=target.name) }}">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  {% if not st.stop_request %}
+  <button name="how" value="save">Stop and save</button>
+  <button name="how" value="discard" data-confirm="Discard this capture? Nothing will be stored.">Discard</button>
+  {% elif st.can_kill %}
+  <button name="how" value="kill" data-confirm="Kill the capture process and its browser? Nothing will be stored.">Kill (not ending after {{ kill_after }} s)</button>
+  {% endif %}
+</form>
+{% endif %}
+{% else %}
+{% if problem %}<div class="warnbox">Cannot start: {{ problem }}.
+  {% if target.type == 'fqdn' %}<a href="{{ url_for('target_settings', name=target.name) }}">Edit the scope</a>{% endif %}</div>
+{% elif can_write %}
+<form method="post" class="stack" action="{{ url_for('tool_capture_start', name=target.name) }}">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <table>
+    <tr><th></th><th>Role</th><th>Stored in</th><th>What to do in the browser</th></tr>
+    {% for r, ev, what in roles %}
+    <tr><td><input type="radio" name="role" value="{{ r }}" id="role-{{ r }}" {{ 'checked' if r == role }}></td>
+      <td><label for="role-{{ r }}"><code>{{ r }}</code></label></td>
+      <td><a href="{{ url_for('evidence_page', name=target.name, eid=ev) }}">{{ ev }}</a></td><td class="small">{{ what }}</td></tr>
+    {% endfor %}
+  </table>
+  <label>Start URL <input name="url" size="60" placeholder="{{ base_url }}"></label>
+  <p class="muted small">Another role name (for example <code>manager</code>) is stored in har-browse: start from the
+    command line for it, or use the closest role above. One capture per role of the main walk.</p>
+  <div><button>Start capture</button></div>
+</form>
+{% endif %}
+{% endif %}
+
+{% if st %}
+<h4>{{ 'Output' if st.running else 'Last capture' }}{% if not st.running %} <span class="muted small">· role {{ st.role or 'session' }} · started {{ st.started }} by {{ st.actor }}</span>{% endif %}</h4>
+<pre class="replay-out">{{ st.log }}</pre>
+{% if not st.running %}<p class="muted small">Then collect what the capture makes ready:
+  <a href="{{ url_for('auto_tab', name=target.name) }}#after-capture">Automatic evidence › Collected after a manual capture</a>.</p>{% endif %}
+{% endif %}
+{% endblock %}

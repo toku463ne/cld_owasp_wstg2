@@ -1,6 +1,8 @@
 """Tools tab: helpers the tester uses by hand while testing.
 
-URLs: /t/<target>/tools (list), /t/<target>/tools/replay (request replay).
+URLs: /t/<target>/tools (list), /t/<target>/tools/replay (request replay),
+/t/<target>/tools/capture (browser capture: start `wstg capture` from the web; see
+capture_run.py).
 
 Request replay reads a request copied from Burp (raw text or a 'Save items' XML
 export), applies the changes asked for, and shows an equivalent curl command,
@@ -28,8 +30,10 @@ import shlex
 import time
 from pathlib import Path
 
-from flask import Flask, abort, g, render_template, request, session
+from flask import Flask, abort, flash, g, redirect, render_template, request, session, url_for
 
+from . import capture as capmod
+from . import capture_run as crun
 from . import catalog as catmod
 from . import db as dbmod
 from . import evidence as evmod
@@ -37,7 +41,7 @@ from . import replay as rp
 from . import targets as tmod
 from . import users
 from .config import Config
-from .web import login_required
+from .web import admin_required, login_required
 
 MAX_RAW = 2 * 1024 * 1024
 SHOW_BODY = 64 * 1024
@@ -46,6 +50,11 @@ PENDING_TTL = 86400
 _TOKEN_RE = re.compile(r"[0-9a-f]{32}")
 
 TOOLS = [
+    {"endpoint": "tool_capture", "title": "Browser capture",
+     "summary": "Record a browsing session (HAR, storage state, and the pages after JavaScript) into har-browse, "
+                "har-logout, or har-timeout: start it here, walk the target in the Chromium window that opens on "
+                "the tool's host desktop, then press Stop and save here. Replaces running `wstg capture` "
+                "in a terminal."},
     {"endpoint": "tool_replay", "title": "Request replay",
      "summary": "Paste a request from Burp (Proxy history or Repeater: Copy to file, or select all and copy), "
                 "change headers, cookies, or parameters, and get a curl command, a wstg-replay command line, "
@@ -83,6 +92,65 @@ def register(app: Flask, cfg: Config, db: dbmod.Database, cat: catmod.Catalog, s
     def tools_tab(name: str):
         load_target(name)
         return render_template("tools_tab.html", tab="tools", tools=TOOLS)
+
+    @app.get("/t/<name>/tools/capture")
+    @login_required
+    def tool_capture(name: str):
+        t = load_target(name)
+        st = crun.status(cfg, t)
+        problem, base_url = "", ""
+        if t.type != "fqdn":
+            problem = "a browser capture needs an FQDN target"
+        else:
+            try:
+                scope = tmod.get_scope(db, t)
+                base_url = scope.base_url or f"https://{t.name}"
+                probs = tmod.scope_problems(scope)
+                if probs:
+                    problem = "the scope record does not allow it yet: " + "; ".join(probs)
+            except tmod.TargetError as e:
+                problem = str(e)
+        role = request.args.get("role", "user")
+        return render_template("tool_capture.html", tab="tools", st=st, problem=problem, base_url=base_url,
+                               roles=crun.ROLES, role=role, display=crun.display_env(cfg)["DISPLAY"],
+                               kill_after=crun.KILL_AFTER)
+
+    @app.post("/t/<name>/tools/capture/start")
+    @admin_required
+    def tool_capture_start(name: str):
+        t = load_target(name)
+        role = request.form.get("role", "").strip()
+        url = request.form.get("url", "").strip()
+        try:
+            if role and not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,39}", role):
+                raise crun.CaptureRunError("a role is letters, digits, '-' and '_' (for example user, admin, logout)")
+            if t.type != "fqdn":
+                raise crun.CaptureRunError("a browser capture needs an FQDN target")
+            scope = tmod.get_scope(db, t)
+            probs = tmod.scope_problems(scope)
+            if probs:
+                raise crun.CaptureRunError("the scope record does not allow it: " + "; ".join(probs))
+            capmod._start_url(t, scope, url or None)
+            crun.start(cfg, t, role=role, url=url, actor=g.user["username"])
+            with db.tx() as conn:
+                db.audit(conn, g.user["username"], "tool.capture.start", target=t.name, role=role, url=url or None)
+            flash("Capture started: the browser opens on the tool's host. Walk the target, then press Stop and save.")
+        except (crun.CaptureRunError, capmod.CaptureError, tmod.TargetError, tmod.ScopeError, OSError) as e:
+            flash(f"Not started: {e}")
+        return redirect(url_for("tool_capture", name=t.name))
+
+    @app.post("/t/<name>/tools/capture/stop")
+    @admin_required
+    def tool_capture_stop(name: str):
+        t = load_target(name)
+        try:
+            if request.form.get("how") == "kill":
+                crun.kill(cfg, t)
+            else:
+                crun.request_stop(cfg, t, request.form.get("how", "save"))
+        except (crun.CaptureRunError, OSError) as e:
+            flash(str(e))
+        return redirect(url_for("tool_capture", name=t.name))
 
     @app.route("/t/<name>/tools/replay", methods=["GET", "POST"])
     @login_required
