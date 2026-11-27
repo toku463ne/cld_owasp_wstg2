@@ -23,6 +23,8 @@
 #                {proxy_url} (http://host:port) and {proxy_hostport} (host:port)
 #   pause_args   auto only: delay arguments added when WSTG_PAUSE is set ("{pause_args}"
 #                in argv; {pause} = seconds), for example nikto -Pause, ffuf -p
+#   requests     auto only, with pause_args: rough number of requests. With WSTG_PAUSE
+#                the time limit becomes at least requests x (pause + 1) seconds
 #   incomplete_if  auto only: regexes; stdout/stderr matching one means the tool stopped
 #                early (for example nikto -maxtime), so the collection is failed
 #   direct       auto only: the tool cannot use a proxy and needs direct connections

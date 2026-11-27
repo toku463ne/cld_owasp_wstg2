@@ -23,7 +23,7 @@
 <p>{{ description | desctext }}</p>
 {% if ev.kind == 'auto' %}<p><code>{{ ev.argv | reject('in', ['{proxy_args}', '{pause_args}']) | join(' ') }}</code></p>
 {% if ev.proxy_args %}<p class="muted small">With WSTG_HTTP_PROXY set, adds <code>{{ ev.proxy_args | join(' ') }}</code>.</p>{% endif %}
-{% if ev.pause_args %}<p class="muted small">With WSTG_PAUSE set, adds <code>{{ ev.pause_args | join(' ') }}</code> (seconds between requests). WSTG_PAUSE is {{ pause if pause else 'not set' }}.</p>{% endif %}
+{% if ev.pause_args %}<p class="muted small">With WSTG_PAUSE set, adds <code>{{ ev.pause_args | join(' ') }}</code> (seconds between requests). WSTG_PAUSE is {{ pause if pause else 'not set' }}.{% if ev.requests %} Time limit: {{ time_limit(ev) }} s (about {{ ev.requests }} requests; with WSTG_PAUSE at least requests &times; (pause + 1)).{% endif %}</p>{% endif %}
 {% if shell.run %}<p class="small">Run it by hand on the tool's host, from the project directory (prints to the terminal, stores nothing):</p>
 <pre class="text-item">{{ shell.run }}</pre>{% endif %}
 {% if shell.collect and ev.target_type == target.type %}<p class="small">Collect it from the shell (stores a new version, like the Collect button):</p>

@@ -83,6 +83,17 @@ PAUSE_PLACEHOLDERS = {"pause"}
 FQDN_TARGET_URLS = "{fqdn_target_urls}"
 OPTIONAL_ARGS = {PROXY_ARGS: ("proxy_args", PROXY_PLACEHOLDERS), PAUSE_ARGS: ("pause_args", PAUSE_PLACEHOLDERS)}
 MAX_TIMEOUT = 12 * 3600
+MAX_PAUSED_TIMEOUT = 48 * 3600   # ceiling of paused_timeout
+
+
+def paused_timeout(ev: "Evidence", pause: int) -> int:
+    """The time limit of one run of ev. With WSTG_PAUSE set, a command that takes
+    pause_args sends one request at a time with `pause` seconds between them, so an
+    evidence that declares `requests` gets at least requests x (pause + 1) seconds
+    (one extra second per request for the response and a proxy)."""
+    if pause and ev.pause_args and ev.requests:
+        return max(ev.timeout, min(MAX_PAUSED_TIMEOUT, ev.requests * (pause + 1)))
+    return ev.timeout
 TOOL_INSTALLS = ("apt", "npm", "none")
 
 
@@ -125,6 +136,7 @@ class Evidence:
     files: tuple[str, ...] = ()       # extra files the command writes under {out}
     timeout: int = 120
     est: int = 0                      # auto only: rough expected seconds (0 = unknown); orders a run shortest-first. The timeout is the hard ceiling and must be >= est.
+    requests: int = 0                 # auto only: rough number of requests sent one at a time when WSTG_PAUSE is set; the timeout then grows to fit them (paused_timeout)
     ok_exit_codes: tuple[int, ...] = (0,)  # exit codes that mean "finished"
     proxy_args: tuple[str, ...] = ()  # replace "{proxy_args}" in argv when a proxy is set
     direct: bool = False              # the tool cannot use a proxy (needs direct connections)
@@ -277,7 +289,7 @@ CAPTURE_KINDS = {"login": ("har-browse", "user"), "logout": ("har-logout", "logo
                  "timeout": ("har-timeout", "timeout")}
 
 EVIDENCE_KEYS = {"id", "title", "target_type", "kind", "description", "level", "passive", "heavy",
-                 "mutating", "argv", "files", "timeout", "est", "ok_exit_codes", "load_note",
+                 "mutating", "argv", "files", "timeout", "est", "requests", "ok_exit_codes", "load_note",
                  "proxy_args", "direct", "pause_args", "incomplete_if", "inputs", "fqdn_targets",
                  "after_capture", "ask_owner"}
 
@@ -302,7 +314,7 @@ def _load_evidence(dir_: Path, problems: list[str]) -> dict[str, Evidence]:
                 passive=bool(e.get("passive", False)), heavy=bool(e.get("heavy", False)),
                 mutating=bool(e.get("mutating", False)),
                 argv=_strs(e.get("argv")), files=_strs(e.get("files")),
-                timeout=int(e.get("timeout", 120)), est=int(e.get("est", 0)),
+                timeout=int(e.get("timeout", 120)), est=int(e.get("est", 0)), requests=int(e.get("requests", 0)),
                 ok_exit_codes=tuple(int(x) for x in e.get("ok_exit_codes", [0])), load_note=_str(e.get("load_note")),
                 proxy_args=_strs(e.get("proxy_args")), direct=bool(e.get("direct", False)),
                 pause_args=_strs(e.get("pause_args")), incomplete_if=_strs(e.get("incomplete_if")),
@@ -357,6 +369,10 @@ def _check_evidence(ev: Evidence, problems: list[str]) -> None:
             problems.append(f"{w}: timeout must be 1..{MAX_TIMEOUT} seconds")
         if ev.est < 0:
             problems.append(f"{w}: est must be >= 0 seconds")
+        if ev.requests < 0:
+            problems.append(f"{w}: requests must be >= 0")
+        if ev.requests and not ev.pause_args:
+            problems.append(f"{w}: requests only changes the timeout under WSTG_PAUSE; it needs pause_args")
         if ev.est > ev.timeout:
             problems.append(f"{w}: est ({ev.est} s) is longer than timeout ({ev.timeout} s); raise the timeout to match the expected time")
         for token, (key, names) in OPTIONAL_ARGS.items():
@@ -378,7 +394,7 @@ def _check_evidence(ev: Evidence, problems: list[str]) -> None:
             except re.error as e:
                 problems.append(f"{w}: incomplete_if {rx!r}: {e}")
     else:
-        for k, v in (("argv", ev.argv), ("level", ev.level), ("files", ev.files),
+        for k, v in (("argv", ev.argv), ("level", ev.level), ("files", ev.files), ("requests", ev.requests),
                      ("proxy_args", ev.proxy_args), ("direct", ev.direct),
                      ("pause_args", ev.pause_args), ("incomplete_if", ev.incomplete_if), ("inputs", ev.inputs),
                      ("fqdn_targets", ev.fqdn_targets),

@@ -212,6 +212,7 @@ evidence:
     pause_args: [-p, "{pause}", -t, "1"]
     files: [ffuf-content.json]
     est: 4800
+    requests: 4750
     timeout: 14400
     load_note: >-
       About 4,700 requests at up to 50 per second (about 2 minutes; with WSTG_PAUSE, one
@@ -236,10 +237,13 @@ evidence:
     pause_args: [-p, "{pause}", -t, "1"]
     files: [ffuf-backup.json]
     est: 33000
+    requests: 33250
     timeout: 36000
     load_note: >-
       About 33,000 requests at up to 50 per second (about 11 minutes). With WSTG_PAUSE at 1
-      second it is one request at a time and takes about nine hours; the timeout allows ten.
+      second it is one request at a time and takes 10 hours or more (each request also
+      waits for the response); the time limit then grows to requests x (pause + 1), about
+      18 hours at 1 second.
       Being the slowest collection it runs last, so it keeps going in the background while
       the rest of the run and your other work continue. Needs the seclists package.
 

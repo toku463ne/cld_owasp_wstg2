@@ -348,6 +348,7 @@ class Runner:
         values = tmod.placeholder_values(self.cfg, target, scope)
         tmp = self.store.begin(target, ev.id)
         values["out"] = str(tmp)
+        limit = catmod.paused_timeout(ev, self.cfg.pause)
         via = self.cfg.direct_ssh if ev.direct else ""
         proxy = "" if via else self.cfg.http_proxy   # the jump host connects directly
         ev_paths = input_paths(self.cfg, target, ev, self.cat)
@@ -386,7 +387,7 @@ class Runner:
                 return Outcome("failed", str(e))
             values["out"] = rdir
             _, run_argv, rec_argv = build_argv(ev, values, "", self.cfg.pause, ev_paths)
-            popen_argv = remote.command(rdir, run_argv, ev.timeout)
+            popen_argv = remote.command(rdir, run_argv, limit)
             tool = f"{via}:{argv[0]}"
         else:
             tool = shutil.which(argv[0], path=self.env()["PATH"])
@@ -422,8 +423,8 @@ class Runner:
                         cancelled, message = True, "cancelled while running"
                     elif state == "stop":
                         stopped, message = True, "stopped by a tester; the job went on with the next item"
-                if elapsed > ev.timeout:
-                    message = f"timed out after {ev.timeout} s"
+                if elapsed > limit:
+                    message = f"timed out after {limit} s"
                 if cancelled or message or (tmp / "stdout.txt").stat().st_size > MAX_STDOUT_BYTES:
                     message = message or "stdout larger than 200 MB"
                     if remote:
@@ -435,7 +436,7 @@ class Runner:
             if not message and exit_code == 255:
                 message = f"ssh to {via} failed (exit 255; see stderr.txt)"
             elif not message and exit_code == 124:
-                message = f"timed out after {ev.timeout} s on {via}"
+                message = f"timed out after {limit} s on {via}"
             try:
                 remote.fetch(rdir, tmp)
             except RunError as e:

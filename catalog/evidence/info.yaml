@@ -127,6 +127,7 @@ evidence:
     pause_args: [-p, "{pause}", -t, "1"]
     files: [ffuf-vhost.json]
     est: 5400
+    requests: 5000
     timeout: 14400
     load_note: >-
       About 5000 requests, at up to 50 per second (ffuf's 40 threads otherwise). With

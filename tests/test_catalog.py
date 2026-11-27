@@ -163,6 +163,33 @@ def test_est_longer_than_timeout_is_refused(tmp_path):
     assert "est (36000 s) is longer than timeout" in p
 
 
+def test_requests_without_pause_args_is_refused(tmp_path):
+    p = problems_for(tmp_path, """\
+        evidence:
+          - id: slow-scan
+            title: s
+            target_type: fqdn
+            kind: auto
+            level: full
+            heavy: true
+            requests: 100
+            argv: [nikto, -h, "{base_url}"]
+            load_note: n
+        """)
+    assert "requests only changes the timeout" in p
+
+
+def test_paused_timeout_grows_with_requests():
+    ev = catalog.Evidence(id="x", title="x", target_type="fqdn", kind="auto", timeout=36000,
+                          requests=33250, pause_args=("-p", "{pause}"))
+    assert catalog.paused_timeout(ev, 0) == 36000          # no pause: the catalog timeout
+    assert catalog.paused_timeout(ev, 1) == 66500          # 33250 x (1 + 1)
+    assert catalog.paused_timeout(ev, 60) == catalog.MAX_PAUSED_TIMEOUT
+    small = catalog.Evidence(id="y", title="y", target_type="fqdn", kind="auto", timeout=14400,
+                             requests=4750, pause_args=("-p", "{pause}"))
+    assert catalog.paused_timeout(small, 1) == 14400       # the catalog timeout already fits
+
+
 def test_placeholders_are_checked(tmp_path):
     p = problems_for(tmp_path, """\
         evidence:
