@@ -66,8 +66,8 @@ TARGET_TYPES = ("domain", "fqdn")
 EVIDENCE_KINDS = ("auto", "manual")
 LEVELS = ("light", "full")
 PLACEHOLDERS = {
-    "domain": {"domain", "out"},
-    "fqdn": {"domain", "fqdn", "base_url", "port", "out"},
+    "domain": {"domain", "out", "resume"},
+    "fqdn": {"domain", "fqdn", "base_url", "port", "out", "resume"},
 }
 ID_RE = re.compile(r"WSTG-[A-Z]{4}-\d{2}")
 EVIDENCE_ID_RE = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
@@ -386,6 +386,8 @@ def _check_evidence(ev: Evidence, problems: list[str]) -> None:
                     if name not in names:
                         problems.append(f"{w}: {key} may only use {', '.join('{%s}' % x for x in sorted(names))},"
                                         f" not {{{name}}}")
+        if ev.direct and any("{resume}" in a for a in ev.argv):
+            problems.append(f"{w}: {{resume}} is a local folder; it cannot be used on the jump host (direct)")
         if ev.proxy_args and ev.direct:
             problems.append(f"{w}: direct and proxy_args exclude each other")
         for rx in ev.incomplete_if:

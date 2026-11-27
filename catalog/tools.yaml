@@ -50,6 +50,9 @@ tools:
   - name: wstg-ffuf
     install: none
     note: this project's console script (uv sync installs it); judges ffuf JSON, leaving out catch-all answers (WSTG-CONF-04)
+  - name: wstg-ffuf-run
+    install: none
+    note: this project's console script (uv sync installs it); runs ffuf in resumable word-list chunks (content-ffuf, backup-ffuf, vhost-ffuf)
   - name: seclists
     path: /usr/share/seclists/Discovery/DNS/subdomains-top1million-5000.txt
     note: word lists for vhost-ffuf

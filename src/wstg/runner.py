@@ -84,6 +84,9 @@ def proxy_values(proxy: str) -> tuple[dict[str, str], dict[str, str]]:
     return real, masked
 
 
+RESUME_FOLDER = ".resume"
+
+
 def build_argv(ev: catmod.Evidence, values: dict[str, str], proxy: str,
                pause: int = 0, ev_paths: dict[str, str] | None = None) -> tuple[list[str], list[str], list[str]]:
     """(argv to check against the scope, argv to run, argv to record).
@@ -348,6 +351,12 @@ class Runner:
         values = tmod.placeholder_values(self.cfg, target, scope)
         tmp = self.store.begin(target, ev.id)
         values["out"] = str(tmp)
+        # {resume}: kept between runs (not a version, not a .tmp- folder), so a resumable
+        # tool (wstg-ffuf-run) goes on from where a stopped run left off; removed once complete.
+        resume = self.store.folder(target.name, ev.id) / RESUME_FOLDER
+        if any("{resume}" in a for a in ev.argv):
+            resume.mkdir(mode=0o700, exist_ok=True)
+            values["resume"] = str(resume)
         limit = catmod.paused_timeout(ev, self.cfg.pause)
         via = self.cfg.direct_ssh if ev.direct else ""
         proxy = "" if via else self.cfg.http_proxy   # the jump host connects directly
@@ -481,6 +490,8 @@ class Runner:
                         "tool": tool, "job_id": job_id, "proxy": bool(proxy), "via": via,
                         "pause": self.cfg.pause if ev.pause_args else 0,
                         "message": message, "files": {"command.txt": {}}})
+        if status == "complete" and "resume" in values:
+            shutil.rmtree(resume, ignore_errors=True)
         if cancelled:
             return Outcome("cancelled", message, v.version, exit_code)
         if stopped:

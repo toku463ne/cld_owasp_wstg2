@@ -204,7 +204,7 @@ evidence:
       Paths under {base_url}/ that answer differently from the default response, from
       SecLists Web-Content/common.txt (about 4,700 names): admin areas, old pages,
       configuration and backup files that nothing links to.
-    argv: [ffuf, -s, -noninteractive, -ac, -rate, "50",
+    argv: [wstg-ffuf-run, --resume, "{resume}", --, ffuf, -s, -noninteractive, -ac, -rate, "50",
            -w, "/usr/share/seclists/Discovery/Web-Content/common.txt:FUZZ",
            -u, "{base_url}/FUZZ", -o, "{out}/ffuf-content.json", -of, json,
            "{proxy_args}", "{pause_args}"]
@@ -228,7 +228,7 @@ evidence:
     description: >-
       Like content-ffuf, with each name also tried with .bak, .old, .orig, .zip, .tar.gz,
       and ~ (about 33,000 requests): old versions and backups left in the web root.
-    argv: [ffuf, -s, -noninteractive, -ac, -rate, "50",
+    argv: [wstg-ffuf-run, --resume, "{resume}", --, ffuf, -s, -noninteractive, -ac, -rate, "50",
            -w, "/usr/share/seclists/Discovery/Web-Content/common.txt:FUZZ",
            -e, ".bak,.old,.orig,.zip,.tar.gz,~",
            -u, "{base_url}/FUZZ", -o, "{out}/ffuf-backup.json", -of, json,
@@ -243,7 +243,8 @@ evidence:
       About 33,000 requests at up to 50 per second (about 11 minutes). With WSTG_PAUSE at 1
       second it is one request at a time and takes 10 hours or more (each request also
       waits for the response); the time limit then grows to requests x (pause + 1), about
-      18 hours at 1 second.
+      18 hours at 1 second. It runs in chunks of 100 names (wstg-ffuf-run): a run that
+      stops part way keeps the finished chunks and the next collection goes on from there.
       Being the slowest collection it runs last, so it keeps going in the background while
       the rest of the run and your other work continue. Needs the seclists package.
 

@@ -14,6 +14,9 @@
 #                stdout.txt and stderr as stderr.txt in the evidence version folder
 #   files        extra files the command writes under {out}
 #   timeout      seconds (default 120)
+#                argv may use {resume}: a folder kept between runs of this evidence (not
+#                with direct), removed once a collection is stored complete; a resumable
+#                tool keeps its finished parts there (wstg-ffuf-run --resume "{resume}")
 #   ok_exit_codes  exit codes that mean the collection finished (default [0]); anything
 #                else marks the collection failed, never complete
 #   load_note    load, rate-limit, or lockout warning shown with the evidence

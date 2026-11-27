@@ -119,7 +119,7 @@ evidence:
     description: >-
       Host names under {domain} that the server at {base_url} answers differently from
       its default response (Host header brute force, SecLists top 5000 subdomains).
-    argv: [ffuf, -s, -noninteractive, -ac, -rate, "50",
+    argv: [wstg-ffuf-run, --resume, "{resume}", --, ffuf, -s, -noninteractive, -ac, -rate, "50",
            -w, "/usr/share/seclists/Discovery/DNS/subdomains-top1million-5000.txt:FUZZ",
            -u, "{base_url}/", -H, "Host: FUZZ.{domain}",
            -o, "{out}/ffuf-vhost.json", -of, json, "{proxy_args}", "{pause_args}"]
