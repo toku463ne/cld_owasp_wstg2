@@ -60,6 +60,15 @@ def test_command_includes_inputs_and_candidate(cfg, site):
     assert "padding-decrypt" in argv and argv[argv.index("--candidate") + 1] == "2"
     assert "--stop-file" in argv and "http-root-https" in argv[argv.index("--http-root") + 1]
     assert "--har" not in argv                                   # har-browse not collected
+    assert "--pause" not in argv                                 # WSTG_PAUSE not set
+
+
+def test_command_passes_wstg_pause(cfg, site):
+    import dataclasses
+    paced = dataclasses.replace(cfg, pause=2)
+    _put_http_root(cfg, site)
+    argv = drun.command(paced, site, "https://www.example.com", 1, drun.folder(cfg, site) / "stop")
+    assert argv[argv.index("--pause") + 1] == "2"                # WSTG_PAUSE -> --pause
 
 
 def test_start_status_stop_kill(cfg, site, sleeper):

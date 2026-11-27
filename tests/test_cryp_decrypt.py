@@ -148,3 +148,17 @@ def test_stop_file_halts_the_attack(tmp_path, serve, capsys):
                     "--candidate", "1", "--stop-file", str(stop)])
     assert rc == 3
     assert "stopped before the block was finished" in capsys.readouterr().out
+
+
+def test_pause_applies_to_every_query(tmp_path, serve, monkeypatch):
+    """--pause sleeps between individual oracle queries, not only between repeats
+    (decrypt uses repeat=1, so a per-repeat-only pause would never fire)."""
+    base = serve()
+    root, _ = _http_root(tmp_path)
+    naps = []
+    monkeypatch.setattr(cryp.time, "sleep", lambda s: naps.append(s))
+    rc = cryp.main(["padding-decrypt", "--base", base + "/", "--http-root", str(root),
+                    "--candidate", "1", "--pause", "0.5"])
+    assert rc == 0
+    # one block = 16 bytes; many queries, each paced by ~0.5s (all but the first)
+    assert len(naps) > 16 and all(abs(s - 0.5) < 1e-9 for s in naps)

