@@ -101,9 +101,11 @@ evidence:
     kind: manual
     description: >-
       Only when padding-oracle-responses flags a SUSPECTED-ORACLE candidate and the
-      engagement agrees to run padbuster: the padbuster command used, the parameter, and the
-      first decrypted block (stop after one block). Heavy and noisy; may lock the session or
-      trigger a WAF. Keep the proof to the minimum.
+      engagement agrees: the one recovered plaintext block with the parameter and the
+      oracle signal. Collect it from Tools > Padding oracle decrypt (the in-house padbuster
+      equivalent, wstg-cryp padding-decrypt: one block, only the target host, the session
+      reused, paced by WSTG_PAUSE), which adds its result here, or run padbuster by hand and
+      paste it. Heavy and noisy; may lock the session or trigger a WAF. Keep the proof to the minimum.
 
   - id: crypto-review
     title: Cryptography design review notes

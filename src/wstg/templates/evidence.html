@@ -16,6 +16,9 @@
 {% if ev.id in ('har-browse', 'har-logout', 'har-timeout') and target.type == 'fqdn' %}<div class="okbox"><b>Record it from the web</b>:
   <a href="{{ url_for('tool_capture', name=target.name, role={'har-logout': 'logout', 'har-timeout': 'timeout'}.get(ev.id, 'user')) }}">Tools › Browser capture</a>
   starts the browser on the tool's host and stores the capture here when you press Stop and save.</div>{% endif %}
+{% if ev.id == 'padding-oracle-confirm' and target.type == 'fqdn' %}<div class="okbox"><b>Confirm it from the web</b>:
+  <a href="{{ url_for('tool_decrypt', name=target.name) }}">Tools › Padding oracle decrypt</a>
+  decrypts one block of a flagged value (the in-house padbuster equivalent) and adds the result here.</div>{% endif %}
 {% if capture %}<div class="{{ 'okbox' if capture[0] else 'warnbox' }}"><b>Needs a manual capture first</b> (not part of the Light/Full run):
   <a href="{{ url_for('tool_capture', name=target.name, role=capture_role) }}">Start capture ({{ capture_role }})</a>
   or <code>uv run wstg capture {{ target.name }} --role {{ capture_role }}</code> on the tool's host, stored in

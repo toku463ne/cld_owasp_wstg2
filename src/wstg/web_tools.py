@@ -34,6 +34,7 @@ from flask import Flask, abort, flash, g, redirect, render_template, request, se
 
 from . import capture as capmod
 from . import capture_run as crun
+from . import cryp_run as drun
 from . import catalog as catmod
 from . import db as dbmod
 from . import evidence as evmod
@@ -61,6 +62,11 @@ TOOLS = [
                 "or a Python script for repeated requests. An admin can send it once from here "
                 "(scope-checked). Opened from a manual evidence page, it adds the request and response "
                 "to that evidence."},
+    {"endpoint": "tool_decrypt", "title": "Padding oracle decrypt",
+     "summary": "Confirm a suspected CBC padding oracle (WSTG-CRYP-02 step 4): decrypt one block of a "
+                "value the step-3 probe flagged, without the key. The in-house padbuster equivalent "
+                "(Python HTTP client, only the target host, keeps the session). Run the step-3 probe "
+                "first, pick a SUSPECTED-ORACLE candidate, and run it by agreement - thousands of requests."},
 ]
 
 
@@ -151,6 +157,92 @@ def register(app: Flask, cfg: Config, db: dbmod.Database, cat: catmod.Catalog, s
         except (crun.CaptureRunError, OSError) as e:
             flash(str(e))
         return redirect(url_for("tool_capture", name=t.name))
+
+    def decrypt_context(t: tmod.Target) -> dict:
+        """Scope check, base URL, candidate list, and the current/last decrypt."""
+        problem, base_url = "", ""
+        if t.type != "fqdn":
+            problem = "a padding-oracle decrypt needs an FQDN target"
+        else:
+            try:
+                scope = tmod.get_scope(db, t)
+                base_url = scope.base_url or f"https://{t.name}"
+                probs = tmod.scope_problems(scope)
+                if probs:
+                    problem = "the scope record does not allow it yet: " + "; ".join(probs)
+                else:
+                    tmod.check_command(t, scope, [base_url + "/"], passive=False)
+            except (tmod.TargetError, tmod.ScopeError) as e:
+                problem = str(e)
+        cands, list_error = [], ""
+        if not problem:
+            try:
+                cands = drun.candidates(cfg, t, base_url)
+            except drun.DecryptRunError as e:
+                list_error = str(e)
+        return {"tab": "tools", "problem": problem, "base_url": base_url, "cands": cands,
+                "list_error": list_error, "st": drun.status(cfg, t), "pause": cfg.pause,
+                "confirm_ev": cat.evidence.get("padding-oracle-confirm"), "kill_after": drun.KILL_AFTER}
+
+    @app.get("/t/<name>/tools/decrypt")
+    @login_required
+    def tool_decrypt(name: str):
+        t = load_target(name)
+        return render_template("tool_decrypt.html", **decrypt_context(t))
+
+    @app.post("/t/<name>/tools/decrypt/start")
+    @admin_required
+    def tool_decrypt_start(name: str):
+        t = load_target(name)
+        ctx = decrypt_context(t)
+        try:
+            if ctx["problem"]:
+                raise drun.DecryptRunError(ctx["problem"])
+            if request.form.get("agree") != "1":
+                raise drun.DecryptRunError("tick the box to confirm the owner agreed to this request volume")
+            n = int(request.form.get("candidate") or 0)
+            label = next((c["label"] for c in ctx["cands"] if c["n"] == n), "")
+            if not label:
+                raise drun.DecryptRunError("pick a candidate from the list")
+            drun.start(cfg, t, base_url=ctx["base_url"], candidate=n, label=label, actor=g.user["username"])
+            with db.tx() as conn:
+                db.audit(conn, g.user["username"], "tool.decrypt.start", target=t.name, candidate=n)
+            flash(f"Decrypt started for candidate {n}. It may take a long time; the page refreshes while it runs.")
+        except (drun.DecryptRunError, ValueError) as e:
+            flash(f"Not started: {e}")
+        return redirect(url_for("tool_decrypt", name=t.name))
+
+    @app.post("/t/<name>/tools/decrypt/stop")
+    @admin_required
+    def tool_decrypt_stop(name: str):
+        t = load_target(name)
+        try:
+            if request.form.get("how") == "kill":
+                drun.kill(cfg, t)
+            else:
+                drun.request_stop(cfg, t)
+        except (drun.DecryptRunError, OSError) as e:
+            flash(str(e))
+        return redirect(url_for("tool_decrypt", name=t.name))
+
+    @app.post("/t/<name>/tools/decrypt/add")
+    @login_required
+    def tool_decrypt_add(name: str):
+        t = load_target(name)
+        if not users.can_write(g.user):
+            abort(403)
+        ev = target_evidence(t, "padding-oracle-confirm")
+        st = drun.status(cfg, t)
+        if not st or st.get("running") or not st.get("finished"):
+            flash("No finished decrypt result to add.")
+            return redirect(url_for("tool_decrypt", name=t.name))
+        try:
+            caption = request.form.get("caption", "").strip() or f"Padding-oracle decrypt: candidate {st.get('candidate')}"
+            v = store.add_text(t, ev.id, drun.result_text(cfg, t), caption, g.user["username"])
+            flash(f"Added to {ev.id} (version {v.version}).")
+        except evmod.EvidenceError as e:
+            flash(f"Not added: {e}")
+        return redirect(url_for("evidence_page", name=t.name, eid=ev.id))
 
     @app.route("/t/<name>/tools/replay", methods=["GET", "POST"])
     @login_required

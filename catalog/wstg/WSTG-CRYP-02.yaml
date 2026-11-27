@@ -68,13 +68,19 @@ steps:
       case, flagging SUSPECTED-ORACLE when the last two differ. If a candidate it could not
       reach matters (for example a value only submitted deep in a logged-in flow), decode
       and send the three versions by hand and record the status, size, and time here.
-  - summary: Confirm a suspected oracle with padbuster, limited to one block
-    command: padbuster {base_url}/PATH ENCRYPTED_VALUE 16 -cookies "NAME=ENCRYPTED_VALUE" -encoding 0 -noiv
-    load_note: >-
-      Up to 256 requests per byte (about 4000 per block). Heavy and noisy; may lock the
-      session or trigger a WAF. Run only with agreement and only for a value the previous
-      step flagged SUSPECTED-ORACLE, stop after the first decrypted block, and use
-      -encoding 1/2 for hex or 3 for .NET UrlToken values.
+  - summary: Confirm a suspected oracle by decrypting one block (Tools › Padding oracle decrypt, or padbuster)
+    operation: >-
+      For a value the previous step flagged SUSPECTED-ORACLE, open Tools › Padding oracle
+      decrypt, pick that candidate, and run it (by agreement): it recovers one plaintext
+      block without the key, the in-house equivalent of padbuster (Python HTTP client,
+      only the target host, the logged-in session reused, limited to one block), paced by
+      WSTG_PAUSE, and adds the result to padding-oracle-confirm. Decrypt one, look at the
+      result, then another if needed. The same by hand:
+      `wstg-cryp padding-decrypt --base {base_url}/ --http-root <http-root-https> --har
+      <har-browse> --list` then `--candidate N`. Or the original tool:
+      `padbuster {base_url}/PATH ENCRYPTED_VALUE 16 -cookies "NAME=ENCRYPTED_VALUE"
+      -encoding 0 -noiv` (-encoding 1/2 for hex, 3 for .NET UrlToken). Up to about 4000
+      requests per block; stop after the first decrypted block.
     evidence: [padding-oracle-confirm]
   - summary: Record each oracle with the parameter, the response difference, and the recovered block as a finding
     operation: >-

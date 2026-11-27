@@ -1,0 +1,62 @@
+{% extends "target_base.html" %}
+{% block head_extra %}{% if st and st.running %}<meta http-equiv="refresh" content="5">{% endif %}{% endblock %}
+{% block content %}
+<h3><a href="{{ url_for('tools_tab', name=target.name) }}">Tools</a> › Padding oracle decrypt</h3>
+<p class="muted">WSTG-CRYP-02 step 4. Recovers one plaintext block of a CBC-encrypted client value <b>without the key</b>,
+  by asking the server whether crafted padding is valid. The in-house equivalent of <code>padbuster</code>
+  (Python HTTP client, only this host contacted, the logged-in session reused, limited to one block, token values
+  never printed). Run the <a href="{{ url_for('evidence_page', name=target.name, eid='padding-oracle-responses') }}">step-3
+  probe</a> first to see which values are <code>SUSPECTED-ORACLE</code>; it takes thousands of requests, so run it by agreement.</p>
+
+{% if problem %}
+<div class="warnbox">Cannot run: {{ problem }}.
+  {% if target.type == 'fqdn' %} <a href="{{ url_for('target_settings', name=target.name) }}">Edit the scope</a>{% endif %}</div>
+{% endif %}
+
+{% if st and st.running %}
+<div class="okbox"><b>Decrypt running</b> · candidate {{ st.candidate }} <code>{{ st.label }}</code> · started {{ st.started }}
+  by {{ st.actor }} ({{ st.elapsed // 60 }} min {{ st.elapsed % 60 }} s) · this page refreshes every 5 s
+  {% if st.stop_request %}<br><b>Stop requested</b>: it stops after the current byte.{% endif %}</div>
+{% if can_write %}
+<form method="post" class="inline" action="{{ url_for('tool_decrypt_stop', name=target.name) }}">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  {% if not st.stop_request %}<button name="how" value="stop" data-confirm="Stop the decrypt? The block will be left unfinished.">Stop</button>
+  {% elif st.can_kill %}<button name="how" value="kill" data-confirm="Kill the decrypt process?">Kill (not ending after {{ kill_after }} s)</button>{% endif %}
+</form>
+{% endif %}
+
+{% elif not problem and can_write %}
+<form method="post" class="stack" action="{{ url_for('tool_decrypt_start', name=target.name) }}">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  {% if list_error %}<div class="warnbox">Cannot list candidates: {{ list_error }}</div>{% endif %}
+  {% if cands %}
+  <table>
+    <tr><th></th><th>#</th><th>Candidate value (name, codec, decoded length)</th></tr>
+    {% for c in cands %}
+    <tr><td><input type="radio" name="candidate" value="{{ c.n }}" id="c-{{ c.n }}" {{ 'checked' if loop.first }}></td>
+      <td>{{ c.n }}</td><td><label for="c-{{ c.n }}" class="small">{{ c.label }}</label></td></tr>
+    {% endfor %}
+  </table>
+  <p class="muted small">Pick a value the step-3 probe flagged <code>SUSPECTED-ORACLE</code>. Decrypt one, look at the
+    result, then come back and decrypt another. WSTG_PAUSE is {{ 'set to %d s between requests' % pause if pause else 'not set (full speed)' }}.</p>
+  <label><input type="checkbox" name="agree" value="1"> The owner agreed to run this (up to a few thousand requests; may lock the session or trigger a WAF).</label>
+  <div><button>Decrypt one block</button></div>
+  {% else %}
+  <p class="muted">No encrypted-looking value was found. Collect <code>http-root-https</code>, <code>har-browse</code>,
+    and <code>session-token-samples</code>, then run the step-3 probe.</p>
+  {% endif %}
+</form>
+{% endif %}
+
+{% if st %}
+<h4>{{ 'Output' if st.running else 'Last decrypt' }}{% if not st.running %} <span class="muted small">· candidate {{ st.candidate }} · started {{ st.started }} by {{ st.actor }}</span>{% endif %}</h4>
+<pre class="replay-out">{{ st.log }}</pre>
+{% if not st.running and st.finished and can_write and confirm_ev %}
+<form method="post" class="stack" action="{{ url_for('tool_decrypt_add', name=target.name) }}">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <label>Caption <input name="caption" size="60" placeholder="Padding-oracle decrypt: candidate {{ st.candidate }}"></label>
+  <div><button>Add the result to {{ confirm_ev.id }}</button></div>
+</form>
+{% endif %}
+{% endif %}
+{% endblock %}
