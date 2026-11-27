@@ -161,7 +161,7 @@ def test_every_catalog_command_passes_a_standard_scope(db, cfg, tmp_path):
     tm.create(db, cfg, "example.com", "domain")
     f = tm.create(db, cfg, "www.example.com", "fqdn", parent="example.com")
     s = make_scope(db, f)
-    values = dict(tm.placeholder_values(cfg, f, s), out=str(tmp_path))
+    values = dict(tm.placeholder_values(cfg, f, s), out=str(tmp_path), resume=str(tmp_path / ".resume"))
     for e in cat.evidence.values():
         if e.kind != "auto" or e.target_type != "fqdn":
             continue
