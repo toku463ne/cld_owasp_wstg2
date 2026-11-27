@@ -135,3 +135,6 @@ def test_add_finished_result_to_evidence(admin_client, cfg, db, site):
 def test_links_to_the_decrypt_tool(admin_client, site):
     page = admin_client.get("/t/www.example.com/evidence/padding-oracle-confirm").get_data(as_text=True)
     assert "/t/www.example.com/tools/decrypt" in page
+    # the generic Request replay link is not offered here (the decrypt tool is the path)
+    assert "tools/replay?ev=padding-oracle-confirm" not in page
+    assert "You do not fetch the request yourself" in page

@@ -146,7 +146,14 @@
     <p><textarea name="text" rows="4" required></textarea></p>
     <p><button>Add text</button></p>
   </form>
-  {% if target.type == 'fqdn' %}
+  {% if ev.id == 'padding-oracle-confirm' and target.type == 'fqdn' %}
+  <div class="stack">
+    <h4>Decrypt a block</h4>
+    <p class="muted small">You do not fetch the request yourself: <a href="{{ url_for('tool_decrypt', name=target.name) }}">Tools
+      › Padding oracle decrypt</a> gathers the flagged value from the step-3 evidence, decrypts one block, and adds the
+      result here.</p>
+  </div>
+  {% elif target.type == 'fqdn' %}
   <div class="stack">
     <h4>Replay a request</h4>
     <p class="muted small">Paste a request from Burp, change it, send it once (scope-checked), and add the request
