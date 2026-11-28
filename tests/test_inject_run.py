@@ -184,6 +184,13 @@ def test_fmt_crash_tool_page_shows_risk(admin_client, web_site):
     assert "Availability risk" in page and "can crash" in page.lower()
 
 
+def test_incubated_evidence_links_to_capture_and_wstg(admin_client, web_site):
+    page = admin_client.get("/t/www.example.com/evidence/incubated-tests").get_data(as_text=True)
+    assert "Checked from the capture" in page
+    assert "/t/www.example.com/wstg/WSTG-INPV-14" in page
+    assert "/t/www.example.com/tools/capture" in page
+
+
 def test_pack_selector_lists_all(admin_client, cfg, web_site):
     _put_katana(cfg, web_site)
     page = admin_client.get("/t/www.example.com/tools/inject").get_data(as_text=True)
