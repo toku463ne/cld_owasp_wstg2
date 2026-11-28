@@ -475,13 +475,21 @@ def confirm_url(item: dict, token: str) -> str:
     return f"{sp.scheme}://{sp.netloc}{sp.path}?{urlencode(pairs, quote_via=quote)}"
 
 
-def _render(url: str, state: dict | None, out_png: Path | None, proxy: str, timeout_ms: int = 15000):
-    """Load `url` in headless Chromium (reusing `state` for the session), return
-    (sentinel value or "", status, [console errors], error). Injected in tests."""
+def _redirected(requested: str, final: str) -> bool:
+    """True when the browser ended up at a different page (scheme, host, or path)."""
+    a, b = urlsplit(requested), urlsplit(final)
+    return (a.scheme, a.netloc, a.path.rstrip("/")) != (b.scheme, b.netloc, b.path.rstrip("/"))
+
+
+def _render(url: str, state: dict | None, out_png: Path | None, proxy: str, timeout_ms: int = 15000) -> dict:
+    """Load `url` in headless Chromium (reusing `state` for the session). Returns a dict:
+    value (sentinel value or ""), status, errors, error, final_url, redirected. Injected
+    in tests."""
     try:
         from playwright.sync_api import sync_playwright
     except ImportError as e:
-        return "", None, [], f"Playwright not installed ({e})"
+        return {"value": "", "status": None, "errors": [], "error": f"Playwright not installed ({e})",
+                "final_url": "", "redirected": False}
     errors: list[str] = []
     try:
         with sync_playwright() as pw:
@@ -490,20 +498,23 @@ def _render(url: str, state: dict | None, out_png: Path | None, proxy: str, time
             page = context.new_page()
             page.on("console", lambda m: errors.append(m.text) if m.type in ("error", "warning") else None)
             page.on("dialog", lambda d: d.dismiss())
-            status = None
+            status, final = None, url
             try:
                 resp = page.goto(url, wait_until="load", timeout=timeout_ms)
                 status = resp.status if resp else None
                 page.wait_for_timeout(1200)
                 value = page.evaluate(f"window.{SENTINEL_VAR} || ''")
+                final = page.url or url
                 if out_png:
                     page.screenshot(path=str(out_png))
             finally:
                 context.close()
                 browser.close()
-            return value, status, errors, ""
+            return {"value": value, "status": status, "errors": errors, "error": "",
+                    "final_url": final, "redirected": _redirected(url, final)}
     except Exception as e:   # noqa: BLE001 - surface any render/launch failure as text
-        return "", None, errors, str(e).splitlines()[0]
+        return {"value": "", "status": None, "errors": errors, "error": str(e).splitlines()[0],
+                "final_url": "", "redirected": False}
 
 
 def run_confirm(args, render=_render) -> int:
@@ -556,7 +567,9 @@ def run_confirm(args, render=_render) -> int:
         png = (out / f"xss-{it['param']}-{pos}.png") if out else None
         if pos > 1 and args.pause:
             time.sleep(args.pause)
-        value, status, errors, err = render(url, state, png, proxy)
+        res = render(url, state, png, proxy)
+        value, status, errors, err = res["value"], res["status"], res["errors"], res["error"]
+        final_url, redirected = res.get("final_url", ""), res.get("redirected", False)
         executed = value == token
         print(f"\n[{pos}/{len(chosen)}] #{n} {it['param']} ({it['where']})", flush=True)
         print(f"    payload url: {url}", flush=True)
@@ -570,6 +583,8 @@ def run_confirm(args, render=_render) -> int:
             csp = next((e for e in errors if "content security policy" in e.lower() or "csp" in e.lower()), "")
             print(f"    => NOT EXECUTED (HTTP {status}); reflected but did not run"
                   + (f" - blocked: {csp}" if csp else " (encoded, filtered, WAF, or CSP)"), flush=True)
+        if not err and final_url:
+            print(f"    final url: {final_url}  [{'redirected' if redirected else 'no redirect'}]", flush=True)
     print(f"\n# verdict: {confirmed}/{len(chosen)} executed. Record the confirmed ones in xss-reflected-tests.")
     return 0
 

@@ -67,7 +67,8 @@ def _fake_render(url, state, out_png, proxy, timeout_ms=15000):
     m = _re.search(r"<script>window\.__WSTG_XSS=('|\")(WSTGXSS[0-9a-f]+)\1</script>", a.body or "")
     if out_png:
         out_png.write_bytes(b"\x89PNG\r\n\x1a\n")
-    return (m.group(2) if m else ""), a.status, [], ""
+    return {"value": m.group(2) if m else "", "status": a.status, "errors": [], "error": "",
+            "final_url": url, "redirected": False}
 
 
 # ---- unit: payloads, parsing, url building -----------------------------------------
@@ -151,3 +152,18 @@ def test_stop_file_halts(tmp_path, app, capsys):
     assert reflect.run_confirm(_args(rd, app, all=True, agree=True, stop_file=str(stop)),
                                render=_fake_render) == 0
     assert "stopped: 0/" in capsys.readouterr().out
+
+
+def test_log_shows_final_url_and_redirect(tmp_path, app, capsys):
+    rd = tmp_path / "rc"
+    rd.mkdir()
+    (rd / "stdout.txt").write_text(_reflect_stdout(tmp_path, app, capsys))
+
+    def redir_render(url, state, out_png, proxy, timeout_ms=15000):
+        return {"value": "", "status": 302, "errors": [], "error": "",
+                "final_url": "http://err.example.test/?aspxerrorpath=/x", "redirected": True}
+
+    assert reflect.run_confirm(_args(rd, app, all=True, agree=True), render=redir_render) == 0
+    out = capsys.readouterr().out
+    assert "final url: http://err.example.test/?aspxerrorpath=/x  [redirected]" in out
+    assert "NOT EXECUTED (HTTP 302)" in out
