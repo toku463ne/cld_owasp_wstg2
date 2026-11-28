@@ -45,6 +45,8 @@
   <h4>Parameters to confirm</h4>
   <p class="muted small">Tick the parameters to confirm, or leave all unticked to confirm every one. One headless render
     each. WSTG_PAUSE is {{ 'set to %d s between renders' % pause if pause else 'not set (full speed)' }}.</p>
+  <p><button type="button" onclick="this.closest('form').querySelectorAll('input[name=candidate]').forEach(c=>c.checked=true)">Check all</button>
+    <button type="button" onclick="this.closest('form').querySelectorAll('input[name=candidate]').forEach(c=>c.checked=false)">Uncheck all</button></p>
   <table>
     <tr><th></th><th>#</th><th>Parameter</th><th>Context</th><th>URL</th></tr>
     {% for c in cands %}
