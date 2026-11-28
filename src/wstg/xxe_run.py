@@ -49,7 +49,10 @@ def _ev_latest(cfg: Config, t: tmod.Target, eid: str) -> str | None:
 
 def _base_args(cfg: Config, t: tmod.Target, base_url: str) -> list[str]:
     argv = _exe() + ["--base", base_url.rstrip("/") + "/"]
+    katana = _ev_latest(cfg, t, "katana-crawl")
     har = _ev_latest(cfg, t, "har-browse")
+    if katana:
+        argv += ["--katana", katana]
     if har:
         argv += ["--har", har]
     return argv
@@ -77,9 +80,10 @@ def candidates(cfg: Config, t: tmod.Target, base_url: str) -> list[dict]:
     cands = []
     for line in out.splitlines():
         parts = line.split("\t")
-        if len(parts) >= 4 and parts[0].isdigit():
+        if len(parts) >= 5 and parts[0].isdigit():
             cands.append({"n": int(parts[0]), "method": parts[1], "template": parts[2],
-                          "ctype": parts[3], "role": parts[4] if len(parts) > 4 else ""})
+                          "kind": parts[3], "name": parts[4],
+                          "role": (parts[5].strip("()") if len(parts) > 5 else "")})
     return cands
 
 

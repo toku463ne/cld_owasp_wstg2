@@ -24,18 +24,21 @@ steps:
   - summary: Break structure and try XXE (Tools button for in-band, manual for OOB/uploads)
     evidence: [xml-injection-tests]
     operation: >-
-      The in-band parts are automated by agreement: Tools > XML injection / XXE. For each
-      XML request from har-browse it injects structure-breaking characters (stray `]]>`, an
-      unmatched tag, a bare entity) and reports SUSPECTED-xml-struct when a new XML parser
-      error appears; and it injects a DOCTYPE with an external entity to a unique,
-      non-existent local path (`file:///nonexistent/wstg-<token>`) and reports
-      SUSPECTED-xxe-inband when that path echoes back in the response - the parser tried to
-      resolve an external entity, so external-entity processing is on (no real file is
-      read). If the app echoes the request body, the result is inconclusive-echo. Results go
-      to xml-injection-tests. NOT automated (do by hand, record in the same evidence):
-      out-of-band XXE (an `http://` entity to a host you control, to prove blind SSRF/XXE)
-      and upload-borne XML (docx, svg, SAML) - these need an OOB listener or a crafted
-      upload. The judge (step 3) decides.
+      The in-band parts are automated by agreement: Tools > XML injection / XXE. It finds the
+      XML entry points from katana-crawl and har-browse - XML request bodies, parameters
+      whose value is inline XML, and parameters that reference an XML resource (the ones step
+      1 lists, e.g. `xmlPreview=languages.xml`) - and for each injects structure-breaking
+      characters (stray `]]>`, an unmatched tag, a bare entity), reporting SUSPECTED-xml-struct
+      when a new XML parser error appears; and injects a DOCTYPE with an external entity to a
+      unique, non-existent local path (`file:///nonexistent/wstg-<token>`), reporting
+      SUSPECTED-xxe-inband when that path echoes back - the parser tried to resolve an external
+      entity, so external-entity processing is on (no real file is read). If the response just
+      echoes the value, the result is inconclusive-echo. Results go to xml-injection-tests.
+      NOT automated (do by hand, record in the same evidence): out-of-band XXE (an `http://`
+      entity to a host you control, to prove blind SSRF/XXE) and upload-borne XML (docx, svg,
+      SAML) - these need an OOB listener or a crafted upload. A parameter that only names a
+      server-side file (not XML content) is also a path-traversal / SSRF surface - see
+      WSTG-ATHZ-01 (traversal) and WSTG-INPV-19 (SSRF). The judge (step 3) decides.
     load_note: The probe sends active XML payloads (a WAF may flag them); agree the test window with the owner before running it.
   - summary: Judge XML injection and XXE
     evidence: [xml-injection-tests]

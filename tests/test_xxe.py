@@ -48,6 +48,13 @@ class _XmlApp(BaseHTTPRequestHandler):
         return "<p>ok</p>"
 
 
+def _katana(tmp_path, base, path):
+    kat = tmp_path / "katana"
+    kat.mkdir(exist_ok=True)
+    (kat / "katana.txt").write_text(f"{base}{path}\n")
+    return str(kat)
+
+
 def _run(tmp_path, base, extra=None):
     har = _har(tmp_path, base) if extra is None else extra
     return xxe.main(["--base", base + "/", "--har", har, "--all", "--agree"])
@@ -102,7 +109,7 @@ def test_inband_xxe_detected(tmp_path, capsys):
         assert _run(tmp_path, base) == 0
         out = capsys.readouterr().out
         assert "SUSPECTED-xxe-inband" in out
-        assert "1 XML request(s) SUSPECTED" in out
+        assert "1 XML entry point(s) SUSPECTED" in out
     finally:
         srv.shutdown()
 
@@ -166,6 +173,105 @@ def test_non_xml_request_ignored(tmp_path, capsys):
     try:
         har = _har(tmp_path, base, body="name=x&id=5", ctype="application/x-www-form-urlencoded")
         assert xxe.main(["--base", base + "/", "--har", har, "--list"]) == 0
-        assert "no XML request found" in capsys.readouterr().out
+        assert "no XML entry point" in capsys.readouterr().out
+    finally:
+        srv.shutdown()
+
+
+# ---- parameter-based XML entry points (generic, from the crawl) --------------------
+
+class _GetApp(BaseHTTPRequestHandler):
+    """Base for GET-parameter apps; subclasses set reply(query_dict) -> response string."""
+    def log_message(self, *a):
+        pass
+
+    def do_GET(self):
+        from urllib.parse import parse_qs, urlsplit
+        q = {k: v[0] for k, v in parse_qs(urlsplit(self.path).query, keep_blank_values=True).items()}
+        body = self.reply(q).encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "text/html")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def reply(self, q):
+        return "<p>ok</p>"
+
+
+def test_param_ref_xxe_detected(tmp_path, capsys):
+    """A param that names an XML file (xmlPreview=languages.xml) whose handler parses inline
+    XML when given it -> external-entity resolution is attempted."""
+    class App(_GetApp):
+        def reply(self, q):
+            import re
+            v = q.get("xmlPreview", "")
+            if v.lstrip().startswith("<?xml"):          # handler parses inline XML given it
+                m = re.search(r'SYSTEM "(file:///nonexistent/wstg-[0-9a-f]+)"', v)
+                if m:
+                    return f"<error>failed to load external entity \"{m.group(1)}\"</error>"
+                if "]]>" in v or "&wstgx;" in v:
+                    return "<error>lxml.etree.XMLSyntaxError: not well-formed</error>"
+            return "<html>preview</html>"
+    srv = _serve(App)
+    base = f"http://127.0.0.1:{srv.server_port}"
+    try:
+        kat = _katana(tmp_path, base, "/web/Manager.aspx?xslFile=a.xsl&xmlPreview=languages.xml")
+        assert xxe.main(["--base", base + "/", "--katana", kat, "--all", "--agree"]) == 0
+        out = capsys.readouterr().out
+        assert "param-ref" in out and "SUSPECTED-xxe-inband" in out
+    finally:
+        srv.shutdown()
+
+
+def test_param_ref_filename_only_is_clean(tmp_path, capsys):
+    """A handler that only accepts a filename and does not reflect it -> clean (no XXE)."""
+    class App(_GetApp):
+        def reply(self, q):
+            return "<html>static preview, no echo</html>"
+    srv = _serve(App)
+    base = f"http://127.0.0.1:{srv.server_port}"
+    try:
+        kat = _katana(tmp_path, base, "/web/Manager.aspx?xmlPreview=languages.xml")
+        assert xxe.main(["--base", base + "/", "--katana", kat, "--all", "--agree"]) == 0
+        out = capsys.readouterr().out
+        assert "param-ref" in out and "=> clean" in out and "SUSPECTED" not in out.split("# verdict")[0]
+    finally:
+        srv.shutdown()
+
+
+def test_param_ref_echo_is_inconclusive(tmp_path, capsys):
+    """A handler that echoes the filename value (e.g. 'file not found: <value>') cannot be
+    distinguished from entity resolution -> inconclusive-echo, not a finding."""
+    class App(_GetApp):
+        def reply(self, q):
+            return f"<error>could not open {q.get('xmlPreview', '')}</error>"
+    srv = _serve(App)
+    base = f"http://127.0.0.1:{srv.server_port}"
+    try:
+        kat = _katana(tmp_path, base, "/web/Manager.aspx?xmlPreview=languages.xml")
+        assert xxe.main(["--base", base + "/", "--katana", kat, "--all", "--agree"]) == 0
+        out = capsys.readouterr().out
+        assert "inconclusive-echo" in out and "SUSPECTED-xxe-inband" not in out
+    finally:
+        srv.shutdown()
+
+
+def test_param_inline_xml_structure_break(tmp_path, capsys):
+    """A param whose value is inline XML, parsed by the handler -> structure break detected."""
+    class App(_GetApp):
+        def reply(self, q):
+            v = q.get("data", "")
+            if "&wstgx;" in v or "]]>" in v:
+                return "<e>org.xml.sax.SAXParseException: not well-formed (invalid token)</e>"
+            return "<ok/>"
+    srv = _serve(App)
+    base = f"http://127.0.0.1:{srv.server_port}"
+    try:
+        # the crawled value is inline XML
+        kat = _katana(tmp_path, base, "/api?data=%3Corder%3E%3Citem%3Ex%3C/item%3E%3C/order%3E")
+        assert xxe.main(["--base", base + "/", "--katana", kat, "--all", "--agree"]) == 0
+        out = capsys.readouterr().out
+        assert "param-xml" in out and "SUSPECTED-xml-struct" in out
     finally:
         srv.shutdown()

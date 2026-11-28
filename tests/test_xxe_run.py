@@ -59,7 +59,22 @@ def test_candidates_reads_har(cfg, web_site):
     cands = xxerun.candidates(cfg, web_site, "https://www.example.com")
     assert len(cands) == 1
     assert cands[0]["method"] == "POST" and "/soap/order" in cands[0]["template"]
-    assert "xml" in cands[0]["ctype"]
+    assert cands[0]["kind"] == "body"
+
+
+def _put_katana(cfg, t):
+    d = tm.evidence_dir(cfg, t) / "katana-crawl" / "v0001"
+    d.mkdir(parents=True)
+    (d / "katana.txt").write_text(
+        "https://www.example.com/web/Manager.aspx?xslFile=a.xsl&xmlPreview=languages.xml\n")
+    (tm.evidence_dir(cfg, t) / "katana-crawl" / "latest").symlink_to("v0001")
+
+
+def test_candidates_from_crawl_param_ref(cfg, web_site):
+    _put_katana(cfg, web_site)
+    cands = xxerun.candidates(cfg, web_site, "https://www.example.com")
+    refs = [c for c in cands if c["kind"] == "param-ref"]
+    assert any(c["name"] == "xmlPreview" for c in refs)
 
 
 def test_command_builds(cfg, web_site):
@@ -81,9 +96,9 @@ def test_web_page_and_guards(admin_client, guest_client, cfg, web_site):
     assert post(guest_client, "/t/www.example.com/tools/xxe/start", request="1", agree="1").status_code == 403
 
 
-def test_web_without_har(admin_client, cfg, web_site):
+def test_web_without_sources(admin_client, cfg, web_site):
     page = admin_client.get("/t/www.example.com/tools/xxe").get_data(as_text=True)
-    assert "No har-browse yet" in page
+    assert "No crawl or capture yet" in page
 
 
 def test_web_start_requires_agreement_then_runs(admin_client, cfg, web_site, sleeper):

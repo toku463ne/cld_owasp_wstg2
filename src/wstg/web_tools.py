@@ -601,14 +601,14 @@ def register(app: Flask, cfg: Config, db: dbmod.Database, cat: catmod.Catalog, s
     def xxe_context(t: tmod.Target) -> dict:
         base_url, problem = xxe_base(t)
         cands, list_error = [], ""
-        has_har = bool(_ev_latest(t, "har-browse"))
-        if base_url and has_har:
+        has_src = bool(_ev_latest(t, "katana-crawl") or _ev_latest(t, "har-browse"))
+        if base_url and has_src:
             try:
                 cands = xxerun.candidates(cfg, t, base_url)
             except xxerun.XxeRunError as e:
                 list_error = str(e)
         return {"tab": "tools", "problem": problem, "base_url": base_url, "cands": cands,
-                "list_error": list_error, "has_har": has_har,
+                "list_error": list_error, "has_src": has_src,
                 "st": xxerun.status(cfg, t), "pause": cfg.pause, "kill_after": xxerun.KILL_AFTER,
                 "confirm_ev": cat.evidence.get(xxerun.EVIDENCE)}
 
@@ -628,7 +628,7 @@ def register(app: Flask, cfg: Config, db: dbmod.Database, cat: catmod.Catalog, s
             if ctx["problem"]:
                 raise xxerun.XxeRunError(ctx["problem"])
             if not ctx["cands"]:
-                raise xxerun.XxeRunError("no XML request found; capture one into har-browse first")
+                raise xxerun.XxeRunError("no XML entry point; collect katana-crawl or capture har-browse first")
             if f.get("agree") != "1":
                 raise xxerun.XxeRunError("tick the box to confirm the owner agreed (it sends active payloads)")
             ncand = len(ctx["cands"])
