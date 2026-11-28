@@ -87,19 +87,32 @@ def status(cfg: Config, t: tmod.Target) -> dict | None:
     st["log"] = "\n".join(lines[-200:])
     st["elapsed"] = int(time.time() - st.get("started_ts", time.time()))
     st["finished"] = bool(not st["running"] and lines)
+    # Whether this finished batch's result was already added to forge-request-tests.
+    # A finished-but-unsaved result is at risk: starting a new batch overwrites the log.
+    st["added"] = (d / "added").is_file()
     return st
 
 
+def mark_added(cfg: Config, t: tmod.Target) -> None:
+    """Record that the current finished batch's result was added to the evidence, so
+    starting the next batch no longer warns about losing it."""
+    (folder(cfg, t) / "added").write_text(dbmod.utcnow())
+
+
 def start(cfg: Config, t: tmod.Target, *, base_url: str, requests: list[int], params: list[str],
-          actor: str, popen=subprocess.Popen) -> dict:
+          actor: str, discard: bool = False, popen=subprocess.Popen) -> dict:
     cur = status(cfg, t)
     if cur and cur["running"]:
         raise ForgeRunError(f"a forge batch of {t.name} is already running")
+    if cur and cur.get("finished") and not cur.get("added") and not discard:
+        raise ForgeRunError("the previous batch's result is not saved yet. Add it to forge-request-tests "
+                            "first, or tick 'discard the previous result' to overwrite it.")
     if not params:
         raise ForgeRunError("give at least one parameter")
     d = folder(cfg, t)
     d.mkdir(mode=0o700, parents=True, exist_ok=True)
     (d / "stop").unlink(missing_ok=True)
+    (d / "added").unlink(missing_ok=True)
     log = d / "forge.log"
     argv = command(cfg, t, base_url, requests, params, d / "stop")
     label = f"{len(requests)} request(s)" if requests else "all requests"

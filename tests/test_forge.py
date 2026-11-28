@@ -288,3 +288,50 @@ def test_forge_start_passes_proxy_env(cfg, web_site):
     frun.start(paced, web_site, base_url="https://www.example.com", requests=[1],
                params=["price=1"], actor="admin", popen=FakePopen)
     assert seen["env"]["http_proxy"] == "http://127.0.0.1:3128"
+
+
+def test_start_refuses_unsaved_previous_result(cfg, web_site, sleeper):
+    import time as _t
+    _put_har(cfg, web_site, n=2)
+    d = frun.folder(cfg, web_site)
+    d.mkdir(parents=True, exist_ok=True)
+    # a finished, un-added previous batch
+    (d / "state.json").write_text(json.dumps({"pid": 0, "label": "1 request(s)", "params": ["price=1"],
+                                              "started": "2026-01-01T00:00:00Z", "started_ts": _t.time()}))
+    (d / "forge.log").write_text("# started\n[1/1] #1 POST /a\n  baseline       : 200 - 10 bytes\n")
+    st = frun.status(cfg, web_site)
+    assert st["finished"] and not st["added"]
+    with pytest.raises(frun.ForgeRunError, match="not saved"):
+        frun.start(cfg, web_site, base_url="https://www.example.com", requests=[2], params=["price=1"], actor="a")
+    # discard overrides
+    frun.start(cfg, web_site, base_url="https://www.example.com", requests=[2], params=["price=1"],
+               actor="a", discard=True)
+    try:
+        assert not frun.status(cfg, web_site)["added"]      # fresh run clears the marker
+    finally:
+        frun.kill(cfg, web_site)
+
+
+def test_mark_added_lets_the_next_batch_start(cfg, web_site, sleeper):
+    import time as _t
+    _put_har(cfg, web_site, n=2)
+    d = frun.folder(cfg, web_site)
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "state.json").write_text(json.dumps({"pid": 0, "label": "1 request(s)", "params": ["price=1"],
+                                              "started_ts": _t.time()}))
+    (d / "forge.log").write_text("# done\n")
+    frun.mark_added(cfg, web_site)
+    assert frun.status(cfg, web_site)["added"]
+    frun.start(cfg, web_site, base_url="https://www.example.com", requests=[2], params=["price=1"], actor="a")
+    frun.kill(cfg, web_site)
+
+
+def test_web_add_marks_added(admin_client, cfg, db, web_site):
+    import time as _t
+    d = frun.folder(cfg, web_site)
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "state.json").write_text(json.dumps({"pid": 0, "label": "1 request(s)", "params": ["price=1"],
+                                              "started_ts": _t.time()}))
+    (d / "forge.log").write_text("# done\n  baseline : 200\n")
+    post(admin_client, "/t/www.example.com/tools/forge/add", caption="b1")
+    assert frun.status(cfg, web_site)["added"]

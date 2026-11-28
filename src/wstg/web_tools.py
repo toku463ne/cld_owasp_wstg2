@@ -315,7 +315,7 @@ def register(app: Flask, cfg: Config, db: dbmod.Database, cat: catmod.Catalog, s
                 port = sp.port or (443 if sp.scheme == "https" else 80)
                 tmod.check_command(t, scope, [f"https://{sp.hostname}:{port}/"], passive=False)
             frun.start(cfg, t, base_url=ctx["base_url"], requests=chosen, params=[f"{n}={v}" for n, v in params],
-                       actor=g.user["username"])
+                       actor=g.user["username"], discard=f.get("discard") == "1")
             with db.tx() as conn:
                 db.audit(conn, g.user["username"], "tool.forge.start", target=t.name,
                          count=len(chosen) or len(ctx["reqs"]))
@@ -350,6 +350,7 @@ def register(app: Flask, cfg: Config, db: dbmod.Database, cat: catmod.Catalog, s
         try:
             caption = request.form.get("caption", "").strip() or f"Forge batch: {st.get('label', '')}"
             v = store.add_text(t, "forge-request-tests", frun.result_text(cfg, t), caption, g.user["username"])
+            frun.mark_added(cfg, t)
             flash(f"Added to forge-request-tests (version {v.version}).")
         except evmod.EvidenceError as e:
             flash(f"Not added: {e}")

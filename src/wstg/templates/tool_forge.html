@@ -31,8 +31,15 @@
 <div class="warnbox">No state-changing request or parameterised GET was found in har-browse. Walk the target through its
   actions (add to cart, update profile, change status) while capturing, then collect har-browse again.</div>
 {% elif can_write %}
+{% if st and st.finished and not st.added %}
+<div class="warnbox"><b>The previous batch's result is not saved yet.</b> Add it to forge-request-tests below before
+  starting a new batch, or the next run overwrites its log. To start anyway and discard it, tick the box below.</div>
+{% endif %}
 <form method="post" class="stack" action="{{ url_for('tool_forge_start', name=target.name) }}">
   <input type="hidden" name="csrf" value="{{ csrf }}">
+  {% if st and st.finished and not st.added %}
+  <label><input type="checkbox" name="discard" value="1"> Discard the previous (unsaved) batch result and start a new one.</label>
+  {% endif %}
   <h4>Requests to forge</h4>
   <p class="muted small">Tick the requests to forge, or leave all unticked to forge every one. Each selected request is
     sent once as captured (baseline) and once per parameter below.</p>
