@@ -17,12 +17,15 @@ steps:
     command: >-
       grep -oiE '/(login|signin|search|directory|people|users?|lookup)[^ "'"'"'<>]*' {ev:katana-crawl}/katana.txt 2>/dev/null | sort -u | head;
       grep -rhoiE '<input[^>]*name=["'"'"']?(user|login|uid|search|q|name)[^ "'"'"'>]*' {ev:auth-pages}/pages 2>/dev/null | sort -u | head
-  - summary: Inject LDAP metacharacters (manual)
+  - summary: Inject LDAP metacharacters (Tools button)
     evidence: [ldap-injection-tests]
     operation: >-
-      In each LDAP-backed input send `*`, `)(uid=*)`, and `*)(|(uid=*` and watch for all
-      entries returned or authentication bypassed, and for an LDAP error code in the
-      response. Record requests and responses in ldap-injection-tests.
+      Automated by agreement: Tools > Injection probe, pack "LDAP injection probe". Into
+      each parameter it appends LDAP metacharacters (`)`, `(`, `*)(`, `)(cn=*`) to force a
+      filter error, and a wildcard pair (`*` vs a non-existent value) for a match/no-match
+      difference, and reports SUSPECTED-error / -boolean into ldap-injection-tests. The
+      authentication-bypass case (a login form that lets `*` in) still needs a manual check.
+      The judge (step 3) decides.
   - summary: Judge LDAP injection
     evidence: [ldap-injection-tests]
     ai_task: >-

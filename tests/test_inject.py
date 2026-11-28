@@ -200,3 +200,76 @@ def test_agree_required(tmp_path, sqli, capsys):
 def test_unknown_pack(capsys):
     assert inject.main(["--pack", "nope", "--base", "http://127.0.0.1/"]) == 2
     assert "unknown pack" in capsys.readouterr().err
+
+
+class _ErrApp(BaseHTTPRequestHandler):
+    """Echoes a given engine error when the value ends with a metacharacter."""
+    trigger = ("'",)
+    error = "error"
+
+    def log_message(self, *a):
+        pass
+
+    def do_GET(self):
+        v = {k: x[0] for k, x in parse_qs(urlsplit(self.path).query, keep_blank_values=True).items()}.get("id", "")
+        body = self.error if any(v.endswith(t) for t in self.trigger) else "<p>ok</p>"
+        b = body.encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "text/html")
+        self.send_header("Content-Length", str(len(b)))
+        self.end_headers()
+        self.wfile.write(b)
+
+
+def test_xpath_error_detected(tmp_path, capsys):
+    class App(_ErrApp):
+        trigger = ("'", "]", ")")
+        error = "<p>org.apache.xpath.XPathException: unexpected token</p>"
+    srv = _serve(App)
+    base = f"http://127.0.0.1:{srv.server_port}"
+    try:
+        kat = _katana(tmp_path, base, "/q?id=5")
+        assert inject.main(["--pack", "xpath", "--base", base + "/", "--katana", kat, "--all", "--agree"]) == 0
+        assert "SUSPECTED-error" in capsys.readouterr().out
+    finally:
+        srv.shutdown()
+
+
+def test_ldap_error_detected(tmp_path, capsys):
+    class App(_ErrApp):
+        trigger = (")", "(", "*)(")
+        error = "<p>javax.naming.directory.InvalidSearchFilterException</p>"
+    srv = _serve(App)
+    base = f"http://127.0.0.1:{srv.server_port}"
+    try:
+        kat = _katana(tmp_path, base, "/q?id=5")
+        assert inject.main(["--pack", "ldap", "--base", base + "/", "--katana", kat, "--all", "--agree"]) == 0
+        assert "SUSPECTED-error" in capsys.readouterr().out
+    finally:
+        srv.shutdown()
+
+
+@pytest.mark.slow
+def test_cmd_time_based(tmp_path, capsys):
+    class App(BaseHTTPRequestHandler):
+        def log_message(self, *a):
+            pass
+
+        def do_GET(self):
+            v = {k: x[0] for k, x in parse_qs(urlsplit(self.path).query, keep_blank_values=True).items()}.get("id", "")
+            if "sleep 5" in v or "timeout /t 5" in v or "ping -c 5" in v:
+                time.sleep(5.2)
+            b = b"<p>done</p>"
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html")
+            self.send_header("Content-Length", str(len(b)))
+            self.end_headers()
+            self.wfile.write(b)
+    srv = _serve(App)
+    base = f"http://127.0.0.1:{srv.server_port}"
+    try:
+        kat = _katana(tmp_path, base, "/run?id=x")
+        assert inject.main(["--pack", "cmd", "--base", base + "/", "--katana", kat, "--all", "--agree"]) == 0
+        assert "SUSPECTED-time" in capsys.readouterr().out
+    finally:
+        srv.shutdown()

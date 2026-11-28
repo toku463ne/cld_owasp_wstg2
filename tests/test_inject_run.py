@@ -161,3 +161,18 @@ def test_start_passes_proxy_env(cfg, web_site):
 def test_links_to_the_inject_tool(admin_client, web_site):
     page = admin_client.get("/t/www.example.com/evidence/sqli-tests").get_data(as_text=True)
     assert "/t/www.example.com/tools/inject" in page and "pack=sqli" in page
+
+
+@pytest.mark.parametrize("eid,pack", [
+    ("xpath-injection-tests", "xpath"), ("ldap-injection-tests", "ldap"),
+    ("command-injection-tests", "cmd")])
+def test_new_pack_evidence_links_to_tool(admin_client, web_site, eid, pack):
+    page = admin_client.get(f"/t/www.example.com/evidence/{eid}").get_data(as_text=True)
+    assert f"/t/www.example.com/tools/inject" in page and f"pack={pack}" in page
+
+
+def test_pack_selector_lists_all(admin_client, cfg, web_site):
+    _put_katana(cfg, web_site)
+    page = admin_client.get("/t/www.example.com/tools/inject").get_data(as_text=True)
+    for wstg in ("INPV-05", "INPV-18", "INPV-09", "INPV-06", "INPV-12"):
+        assert wstg in page

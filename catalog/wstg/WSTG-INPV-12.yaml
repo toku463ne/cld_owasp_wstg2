@@ -19,13 +19,16 @@ steps:
     command: >-
       grep -oiE '[?&](cmd|command|exec|host|ip|ping|target|domain|url|file|name|path|dns|action)=[^&"'"'"'<> ]*'
       {ev:katana-crawl}/katana.txt 2>/dev/null | sort -u | head -40 || echo "no obvious command-building parameter in the crawl"
-  - summary: Inject command separators (manual)
+  - summary: Inject command separators (Tools button)
     evidence: [command-injection-tests]
     operation: >-
-      Into candidate inputs send `; id`, `| id`, `$(id)`, backtick id, and `&& id` (and
-      `& whoami`, `| whoami` for Windows). Where no output returns, use a delay (`; sleep 5`)
-      or an out-of-band callback (`; nslookup <your-host>`). Use only harmless commands.
-      Record requests and evidence of execution in command-injection-tests.
+      Automated by agreement: Tools > Injection probe, pack "OS command injection probe
+      (time-based)". Into each parameter it appends a harmless delay command behind several
+      separators (`; sleep 5`, `| sleep 5`, `$(sleep 5)`, backtick, `& timeout /t 5`,
+      `; ping -c 5 127.0.0.1`) and reports SUSPECTED-time when the response is markedly
+      slower twice, into command-injection-tests. Only the time-based (blind) channel is
+      automated; an in-band `; id` that echoes output, and an out-of-band callback
+      (`; nslookup <your-host>`), still need a manual check. The judge (step 3) decides.
   - summary: Judge OS command injection
     evidence: [command-injection-tests]
     ai_task: >-

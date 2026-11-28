@@ -16,12 +16,14 @@ steps:
     command: >-
       grep -oiE '/(login|signin|search|auth)[^ "'"'"'<>]*' {ev:katana-crawl}/katana.txt 2>/dev/null | sort -u | head;
       grep -rhoiE '<input[^>]*name=["'"'"']?(user|login|pass|q|search)[^ "'"'"'>]*' {ev:auth-pages}/pages 2>/dev/null | sort -u | head
-  - summary: Inject XPath payloads (manual)
+  - summary: Inject XPath payloads (Tools button)
     evidence: [xpath-injection-tests]
     operation: >-
-      In each candidate input send `' or '1'='1` and `x' or name()='` and check for
-      authentication bypass or all nodes returned, and look at true/false and error
-      differences for blind XPath injection. Record in xpath-injection-tests.
+      Automated by agreement: Tools > Injection probe, pack "XPath injection probe". Into
+      each parameter it appends a quote and `']`/`')` to force an XPath error, and a boolean
+      pair (`' or '1'='1` vs `' or '1'='2`) for a true/false difference, and reports
+      SUSPECTED-error / -boolean into xpath-injection-tests. The authentication-bypass case
+      still needs a manual check. The judge (step 3) decides.
   - summary: Judge XPath injection
     evidence: [xpath-injection-tests]
     ai_task: >-

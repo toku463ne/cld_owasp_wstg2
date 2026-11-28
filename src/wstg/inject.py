@@ -83,6 +83,19 @@ PACKS: dict[str, Pack] = {
     "ssti": Pack(
         "ssti", "Server-side template injection probe", "WSTG-INPV-18", ["eval"],
         eval_payloads=_SSTI),
+    "xpath": Pack(
+        "xpath", "XPath injection probe", "WSTG-INPV-09", ["error", "boolean"],
+        error_payloads=["'", "\"", "']", "')", "' and '1'='1"], error_signatures=_XPATH_ERRORS,
+        boolean_pairs=[("' or '1'='1", "' or '1'='2"), (" or 1=1", " or 1=2")]),
+    "ldap": Pack(
+        "ldap", "LDAP injection probe", "WSTG-INPV-06", ["error", "boolean"],
+        error_payloads=[")", "(", "*)(", ")(cn=*", "\\"], error_signatures=_LDAP_ERRORS,
+        # A wildcard matches everything (page like the baseline); a non-existent value does not.
+        boolean_pairs=[("*", "ZZnoSuchValueZZ")]),
+    "cmd": Pack(
+        "cmd", "OS command injection probe (time-based)", "WSTG-INPV-12", ["time"],
+        time_payloads=["; sleep 5", "| sleep 5", "& sleep 5", "$(sleep 5)", "`sleep 5`",
+                       "; ping -c 5 127.0.0.1", "& timeout /t 5"]),
 }
 
 
