@@ -48,6 +48,7 @@ from . import replay as rp
 from . import targets as tmod
 from . import xss_run as xrun
 from . import xxe_run as xxerun
+from . import rawreq_run as rawrun
 from . import users
 from .config import Config
 from .web import admin_required, login_required
@@ -97,6 +98,12 @@ TOOLS = [
                 "NON-existent local path (looking for that path echoed back, i.e. external-entity resolution). No "
                 "real file is read. Out-of-band XXE and docx/svg/SAML uploads stay manual. Reuses the captured "
                 "session; sends active payloads, so run it by agreement."},
+    {"endpoint": "tool_raw", "title": "Raw request probe",
+     "summary": "Send path-normalisation variants of a blocked path and a small malformed-request battery "
+                "(WSTG-INPV-16 step 2): flags a front-end bypass when a variant is not blocked, and parser "
+                "preconditions (duplicate Host/Content-Length, bare-LF). The oversized-header step is opt-in "
+                "(it can destabilise the parser). The judge decides against the owner's front-end config; sends "
+                "raw/malformed requests, so run it by agreement."},
 ]
 
 
@@ -674,6 +681,102 @@ def register(app: Flask, cfg: Config, db: dbmod.Database, cat: catmod.Catalog, s
         except evmod.EvidenceError as e:
             flash(f"Not added: {e}")
         return redirect(url_for("evidence_page", name=t.name, eid=xxerun.EVIDENCE))
+
+    def raw_base(t: tmod.Target):
+        """(base URL, problem). Scope-checked, FQDN only."""
+        if t.type != "fqdn":
+            return "", "raw request probing needs an FQDN target"
+        try:
+            scope = tmod.get_scope(db, t)
+            base_url = scope.base_url or f"https://{t.name}"
+            probs = tmod.scope_problems(scope)
+            if probs:
+                return base_url, "the scope record does not allow it yet: " + "; ".join(probs)
+            tmod.check_command(t, scope, [base_url + "/"], passive=False)
+            return base_url, ""
+        except (tmod.TargetError, tmod.ScopeError) as e:
+            return "", str(e)
+
+    def _raw_paths(form) -> list[str]:
+        out = []
+        for line in (form.get("paths") or "").splitlines():
+            line = line.strip()
+            if line:
+                out.append(line if line.startswith("/") else "/" + line)
+        return out[:40]
+
+    def raw_context(t: tmod.Target, paths=None) -> dict:
+        base_url, problem = raw_base(t)
+        cands, list_error = [], ""
+        if base_url:
+            try:
+                cands = rawrun.candidates(cfg, t, base_url, paths or [])
+            except rawrun.RawRunError as e:
+                list_error = str(e)
+        return {"tab": "tools", "problem": problem, "base_url": base_url, "cands": cands,
+                "list_error": list_error, "has_katana": bool(_ev_latest(t, "katana-crawl")),
+                "st": rawrun.status(cfg, t), "pause": cfg.pause, "kill_after": rawrun.KILL_AFTER,
+                "confirm_ev": cat.evidence.get(rawrun.EVIDENCE)}
+
+    @app.get("/t/<name>/tools/raw")
+    @login_required
+    def tool_raw(name: str):
+        t = load_target(name)
+        return render_template("tool_raw.html", **raw_context(t))
+
+    @app.post("/t/<name>/tools/raw/start")
+    @admin_required
+    def tool_raw_start(name: str):
+        t = load_target(name)
+        f = request.form
+        paths = _raw_paths(f)
+        ctx = raw_context(t, paths)
+        try:
+            if ctx["problem"]:
+                raise rawrun.RawRunError(ctx["problem"])
+            if f.get("agree") != "1":
+                raise rawrun.RawRunError("tick the box to confirm the owner agreed (it sends raw/malformed requests)")
+            rawrun.start(cfg, t, base_url=ctx["base_url"], paths=paths, requests=[],
+                         actor=g.user["username"], oversized=f.get("oversized") == "1",
+                         discard=f.get("discard") == "1")
+            with db.tx() as conn:
+                db.audit(conn, g.user["username"], "tool.raw.start", target=t.name, count=len(paths))
+            flash("Raw request probe started; the page refreshes while it runs.")
+        except (rawrun.RawRunError, ValueError, tmod.ScopeError, tmod.TargetError) as e:
+            flash(f"Not started: {e}")
+        return redirect(url_for("tool_raw", name=t.name))
+
+    @app.post("/t/<name>/tools/raw/stop")
+    @admin_required
+    def tool_raw_stop(name: str):
+        t = load_target(name)
+        try:
+            if request.form.get("how") == "kill":
+                rawrun.kill(cfg, t)
+            else:
+                rawrun.request_stop(cfg, t)
+        except (rawrun.RawRunError, OSError) as e:
+            flash(str(e))
+        return redirect(url_for("tool_raw", name=t.name))
+
+    @app.post("/t/<name>/tools/raw/add")
+    @login_required
+    def tool_raw_add(name: str):
+        t = load_target(name)
+        if not users.can_write(g.user):
+            abort(403)
+        st = rawrun.status(cfg, t)
+        if not st or st.get("running") or not st.get("finished"):
+            flash("No finished raw request probe to add.")
+            return redirect(url_for("tool_raw", name=t.name))
+        try:
+            caption = request.form.get("caption", "").strip() or f"Raw request probe: {st.get('label', '')}"
+            v = store.add_text(t, rawrun.EVIDENCE, rawrun.result_text(cfg, t), caption, g.user["username"])
+            rawrun.mark_added(cfg, t)
+            flash(f"Added to {rawrun.EVIDENCE} (version {v.version}).")
+        except evmod.EvidenceError as e:
+            flash(f"Not added: {e}")
+        return redirect(url_for("evidence_page", name=t.name, eid=rawrun.EVIDENCE))
 
     @app.route("/t/<name>/tools/replay", methods=["GET", "POST"])
     @login_required

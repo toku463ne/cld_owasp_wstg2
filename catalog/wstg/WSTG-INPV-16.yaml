@@ -21,14 +21,24 @@ steps:
       and methods are meant to be blocked, and which are internal-only. List the requests to
       try (internal paths, blocked methods) in raw-request-tests, noting the expected block.
       Save the owner's answer as frontend-config.
-  - summary: Send raw and malformed requests and observe handling (manual)
+  - summary: Send raw and malformed requests and observe handling (Tools button; judge against the config)
     evidence: [raw-request-tests]
     operation: >-
-      With `curl` or `ncat`, send raw requests that probe parsing: unusual methods, duplicate
-      headers, malformed line endings, an invalid Host, and headers whose size is raised
-      gradually. Also try path-normalisation variants of a blocked internal path. Record
-      the responses in raw-request-tests and compare with the expected front-end block.
-    load_note: Oversized or malformed requests consume parser resources and can destabilise the server; raise sizes gradually and watch the response.
+      Automated by agreement: Tools > Raw request probe (`wstg-raw`). For each path the front
+      end should block - the ones you type from step 1's frontend-config, plus paths from
+      katana-crawl - it sends the canonical request and, when that is blocked (401/403/404),
+      a battery of path-normalisation variants (case, trailing dot/slash, dot segments, an
+      encoded separator like `%2f`, a semicolon parameter such as `/app/..;/admin`); a variant
+      that is NOT blocked is reported SUSPECTED-bypass (the front and back end normalised the
+      path apart). It also sends a parser battery to `/` over a raw socket (a duplicate Host,
+      a duplicate Content-Length, bare-LF line endings, an unrelated Host, an unknown method)
+      and reports SUSPECTED-parser when a smuggling/routing precondition is accepted (answered
+      2xx/3xx). The oversized-header step (a header raised gradually to a cap) is opt-in because
+      it can destabilise the parser. Results go to raw-request-tests. Still by hand where the
+      probe cannot reach: request smuggling confirmation with a real body (CL/TE desync), and
+      anything that needs the exact front-end product behaviour. The judge (step 3) confirms
+      each lead against frontend-config - a variant the front end still blocks is a pass.
+    load_note: Sends raw/malformed requests a WAF may flag; the opt-in oversized-header step consumes parser resources and can destabilise the server. Agree the test window with the owner.
   - summary: Judge raw request handling
     evidence: [raw-request-tests]
     ai_task: >-

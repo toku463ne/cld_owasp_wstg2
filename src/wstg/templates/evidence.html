@@ -42,6 +42,11 @@
   <br><b>Availability risk:</b> the crash probe sends <code>%s</code> dereferences and <b>can crash the component</b>
   (and, if the process is shared rather than per-request, take the site down until it restarts). Prefer the read-only
   leak probe first; neither sends <code>%n</code>. Format string is rare outside native C/C++ components.</div>{% endif %}
+{% if ev.id == 'raw-request-tests' and target.type == 'fqdn' %}<div class="okbox"><b>Probe it from the web</b>:
+  <a href="{{ url_for('tool_raw', name=target.name) }}">Tools › Raw request probe</a>
+  sends path-normalisation variants of the blocked paths and a malformed-request battery, by agreement, and adds the
+  result here. Type the owner's blocked internal paths there; the oversized-header step is opt-in (it can destabilise the
+  parser). The judge checks each lead against the front-end config.</div>{% endif %}
 {% if ev.id == 'incubated-tests' and target.type == 'fqdn' %}<div class="okbox"><b>Off-channel half</b>:
   the in-browser HTML fire points are collected automatically in
   <a href="{{ url_for('evidence_page', name=target.name, eid='incubated-probe') }}">incubated-probe</a> (the stored-marker

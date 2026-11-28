@@ -1,0 +1,72 @@
+{% extends "target_base.html" %}
+{% block head_extra %}{% if st and st.running %}<meta http-equiv="refresh" content="5">{% endif %}{% endblock %}
+{% block content %}
+<h3><a href="{{ url_for('tools_tab', name=target.name) }}">Tools</a> › Raw request probe</h3>
+<p class="muted">WSTG-INPV-16 step 2. For each path the front end should block, it sends path-normalisation variants
+  (case, trailing dot/slash, dot segments, an encoded separator, a semicolon parameter) and flags a
+  <b>front-end bypass</b> when the canonical path is blocked (401/403/404) but a variant is not &mdash; the front and
+  back end normalised it apart. It also sends a small <b>parser battery</b> to <code>/</code> (a duplicate Host, a
+  duplicate Content-Length, bare-LF line endings, an unrelated Host, an unknown method) and flags a precondition that is
+  accepted. Candidate paths come from <a href="{{ url_for('evidence_page', name=target.name, eid='katana-crawl') }}">katana-crawl</a>
+  and from the owner's blocked paths you type below. It sends raw/malformed requests (a WAF may flag them), so run it by
+  agreement; the <a href="{{ url_for('wstg_page', name=target.name, test_id='WSTG-INPV-16') }}">WSTG-INPV-16</a> judge
+  decides against the owner's front-end config (a blocked variant is a pass).</p>
+
+{% if problem %}
+<div class="warnbox">Cannot run: {{ problem }}.
+  {% if target.type == 'fqdn' %} <a href="{{ url_for('target_settings', name=target.name) }}">Edit the scope</a>{% endif %}</div>
+
+{% elif st and st.running %}
+<div class="okbox"><b>Raw request probe running</b> · {{ st.label }} · started {{ st.started }} by {{ st.actor }}
+  ({{ st.elapsed // 60 }} min {{ st.elapsed % 60 }} s) · this page refreshes every 5 s
+  {% if st.stop_request %}<br><b>Stop requested</b>: it stops after the current item.{% endif %}</div>
+{% if can_write %}
+<form method="post" class="inline" action="{{ url_for('tool_raw_stop', name=target.name) }}">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  {% if not st.stop_request %}<button name="how" value="stop" data-confirm="Stop? The items already probed are kept.">Stop</button>
+  {% elif st.can_kill %}<button name="how" value="kill" data-confirm="Kill the process?">Kill (not ending after {{ kill_after }} s)</button>{% endif %}
+</form>
+{% endif %}
+
+{% elif can_write %}
+{% if st and st.finished and not st.added %}
+<div class="warnbox"><b>The previous result is not saved yet.</b> Add it to raw-request-tests below before probing
+  again, or the next run overwrites its log. To start anyway and discard it, tick the box below.</div>
+{% endif %}
+{% if list_error %}<div class="warnbox">Candidate listing problem: {{ list_error }}</div>{% endif %}
+<form method="post" class="stack" action="{{ url_for('tool_raw_start', name=target.name) }}">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  {% if st and st.finished and not st.added %}
+  <label><input type="checkbox" name="discard" value="1"> Discard the previous (unsaved) result and start a new one.</label>
+  {% endif %}
+  <h4>Blocked internal paths (from the owner's front-end config)</h4>
+  <p class="muted small">One path per line (for example <code>/admin</code>, <code>/internal/metrics</code>). These are
+    tested for a normalisation bypass together with the paths from the crawl. A path whose canonical request is not
+    blocked is reported and skipped (nothing to bypass).</p>
+  <textarea name="paths" rows="4" cols="50" placeholder="/admin&#10;/internal/status"></textarea>
+  {% if cands %}
+  <p class="muted small">Seeded from the crawl (canonical request sent first; variants only if it is blocked):
+    {% for c in cands if c.kind == 'normalize' %}<code>{{ c.path }}</code>{% if not loop.last %}, {% endif %}{% endfor %}</p>
+  {% endif %}
+  <label><input type="checkbox" name="oversized" value="1"> Also raise a header's size gradually to a cap
+    (<b>opt-in</b>: this can destabilise the parser).</label>
+  <label><input type="checkbox" name="agree" value="1"> The owner agreed to run this (it sends raw/malformed requests; a WAF may flag them).</label>
+  <div><button>Probe (all candidates + parser battery)</button></div>
+</form>
+{% endif %}
+
+{% if st %}
+<h4>{{ 'Output' if st.running else 'Last raw request probe' }}{% if not st.running %} <span class="muted small">· {{ st.label }} · started {{ st.started }} by {{ st.actor }}</span>{% endif %}</h4>
+<pre class="replay-out">{{ st.log }}</pre>
+{% if not st.running and st.finished and can_write and confirm_ev %}
+<form method="post" class="stack" action="{{ url_for('tool_raw_add', name=target.name) }}">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <label>Caption <input name="caption" size="60" placeholder="Raw request probe: {{ st.label }}"></label>
+  <div><button>Add the result to raw-request-tests</button></div>
+</form>
+<p class="muted small"><code>SUSPECTED-bypass</code> = a path variant passed a front-end block (confirm it is really an
+  internal function, against the front-end config); <code>SUSPECTED-parser</code> = a malformed request was accepted (a
+  smuggling/routing precondition). The WSTG-INPV-16 judge (step 3) decides; a variant the front end still blocks is a pass.</p>
+{% endif %}
+{% endif %}
+{% endblock %}
