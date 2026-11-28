@@ -241,3 +241,50 @@ def test_add_finished_batch_to_evidence(admin_client, cfg, db, web_site):
 def test_links_to_the_forge_tool(admin_client, web_site):
     page = admin_client.get("/t/www.example.com/evidence/forge-request-tests").get_data(as_text=True)
     assert "/t/www.example.com/tools/forge" in page
+
+
+def test_forge_header_shows_param_names(tmp_path, serve, capsys):
+    """Same-path requests must be told apart in the evidence by their parameters."""
+    base = serve()
+    har = _har(tmp_path, base, [
+        _post_entry(base, "/app.aspx", [("action", "save"), ("xslFile", "a")]),
+        _post_entry(base, "/app.aspx", [("action", "del"), ("code", "x")]),
+    ])
+    forge.main(["--base", base + "/", "--har", str(har), "--all", "--param", "price=1", "--agree"])
+    out = capsys.readouterr().out
+    assert "#1 POST /app.aspx  params=action,xslFile" in out
+    assert "#2 POST /app.aspx  params=action,code" in out
+
+
+def _cfg_with_proxy():
+    import dataclasses
+    from wstg import config as cfgmod
+    from pathlib import Path
+    base = cfgmod.Config(evidence_root=Path("/tmp/x"), db_path=Path("/tmp/x.db"))
+    return dataclasses.replace(base, http_proxy="http://127.0.0.1:3128")
+
+
+def test_proxy_env_sets_proxy_from_config():
+    import dataclasses
+    from wstg import capture_run
+    import os
+    os.environ["no_proxy"] = "localhost"
+    base = _cfg_with_proxy()
+    env = capture_run.proxy_env(base)
+    assert env["http_proxy"] == "http://127.0.0.1:3128" and env["https_proxy"] == "http://127.0.0.1:3128"
+    assert "no_proxy" not in env and "NO_PROXY" not in env
+
+
+def test_forge_start_passes_proxy_env(cfg, web_site):
+    _put_har(cfg, web_site)
+    import dataclasses
+    paced = dataclasses.replace(cfg, http_proxy="http://127.0.0.1:3128")
+    seen = {}
+
+    class FakePopen:
+        def __init__(self, argv, **kw):
+            seen["env"] = kw.get("env")
+            self.pid = 424242
+    frun.start(paced, web_site, base_url="https://www.example.com", requests=[1],
+               params=["price=1"], actor="admin", popen=FakePopen)
+    assert seen["env"]["http_proxy"] == "http://127.0.0.1:3128"

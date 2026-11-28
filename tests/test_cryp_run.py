@@ -138,3 +138,18 @@ def test_links_to_the_decrypt_tool(admin_client, site):
     # the generic Request replay link is not offered here (the decrypt tool is the path)
     assert "tools/replay?ev=padding-oracle-confirm" not in page
     assert "You do not fetch the request yourself" in page
+
+
+def test_decrypt_start_passes_proxy_env(cfg, site):
+    import dataclasses
+    _put_http_root(cfg, site)
+    paced = dataclasses.replace(cfg, http_proxy="http://127.0.0.1:3128")
+    seen = {}
+
+    class FakePopen:
+        def __init__(self, argv, **kw):
+            seen["env"] = kw.get("env")
+            self.pid = 515151
+    drun.start(paced, site, base_url="https://www.example.com", candidate=1, label="x",
+               actor="admin", popen=FakePopen)
+    assert seen["env"]["http_proxy"] == "http://127.0.0.1:3128" and "no_proxy" not in seen["env"]

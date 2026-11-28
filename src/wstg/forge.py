@@ -279,8 +279,10 @@ def run(args) -> int:
             print(f"\n# stopped: {pos - 1}/{len(chosen)} request(s) done.", flush=True)
             break
         r = reqs[n - 1]
-        print(f"\n[{pos}/{len(chosen)}] #{n} {r.method} {harmod._template(urlsplit(r.url).path) or '/'} "
-              f"(role {r.role or 'anonymous'})", flush=True)
+        # Print the parameter names too: several requests often share a path (Manager.aspx)
+        # and only their parameters tell them apart, so the evidence must record them.
+        print(f"\n[{pos}/{len(chosen)}] #{n} {r.method} {harmod._template(urlsplit(r.url).path) or '/'}"
+              f"  params={','.join(r.names) or '-'}  (role {r.role or 'anonymous'})", flush=True)
         base_ans = _send(r, r.query, r.body_params, r.body_text, r.is_json)
         print(f"  baseline       : {base_ans.short()}", flush=True)
         if base_ans.status is None:

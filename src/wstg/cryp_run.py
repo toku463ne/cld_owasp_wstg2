@@ -23,7 +23,7 @@ from pathlib import Path
 from . import db as dbmod
 from . import evidence as evmod
 from . import targets as tmod
-from .capture_run import _alive
+from .capture_run import _alive, proxy_env
 from .config import Config
 
 FOLDER = "_decrypt"
@@ -120,7 +120,7 @@ def start(cfg: Config, t: tmod.Target, *, base_url: str, candidate: int, label: 
         fh.write(f"# started {dbmod.utcnow()} by {actor}: candidate {candidate} {label}\n")
         fh.flush()
         proc = popen(argv, stdin=subprocess.DEVNULL, stdout=fh, stderr=subprocess.STDOUT,
-                     start_new_session=True, close_fds=True)
+                     env=proxy_env(cfg), start_new_session=True, close_fds=True)
     st = {"pid": proc.pid, "candidate": candidate, "label": label, "actor": actor,
           "base_url": base_url, "started": dbmod.utcnow(), "started_ts": time.time()}
     (d / "state.json").write_text(json.dumps(st))

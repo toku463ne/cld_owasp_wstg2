@@ -82,6 +82,21 @@ def status(cfg: Config, t: tmod.Target) -> dict | None:
     return st
 
 
+def proxy_env(cfg: Config) -> dict[str, str]:
+    """The current environment with http_proxy/https_proxy set from WSTG_HTTP_PROXY (and
+    no_proxy cleared), so a background tool that uses ep.fetch (wstg-forge, wstg-cryp) reaches
+    the target through the proxy, like the collection runner does. Without this a proxied
+    target is unreachable and every request times out."""
+    env = dict(os.environ)
+    for k in ("http_proxy", "https_proxy", "HTTP_PROXY", "HTTPS_PROXY", "no_proxy", "NO_PROXY"):
+        env.pop(k, None)
+    if cfg.http_proxy:
+        for k in ("http_proxy", "https_proxy", "HTTP_PROXY", "HTTPS_PROXY"):
+            env[k] = cfg.http_proxy
+    env["PYTHONUNBUFFERED"] = "1"
+    return env
+
+
 def display_env(cfg: Config) -> dict[str, str]:
     env = dict(os.environ)
     env["DISPLAY"] = cfg.capture_display or os.environ.get("DISPLAY") or ":0"

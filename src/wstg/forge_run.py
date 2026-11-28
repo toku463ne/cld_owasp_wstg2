@@ -23,7 +23,7 @@ from pathlib import Path
 from . import db as dbmod
 from . import evidence as evmod
 from . import targets as tmod
-from .capture_run import _alive
+from .capture_run import _alive, proxy_env
 from .config import Config
 
 FOLDER = "_forge"
@@ -107,7 +107,7 @@ def start(cfg: Config, t: tmod.Target, *, base_url: str, requests: list[int], pa
         fh.write(f"# started {dbmod.utcnow()} by {actor}: {label}, {len(params)} parameter(s)\n")
         fh.flush()
         proc = popen(argv, stdin=subprocess.DEVNULL, stdout=fh, stderr=subprocess.STDOUT,
-                     start_new_session=True, close_fds=True)
+                     env=proxy_env(cfg), start_new_session=True, close_fds=True)
     st = {"pid": proc.pid, "requests": requests, "params": params, "label": label, "actor": actor,
           "base_url": base_url, "started": dbmod.utcnow(), "started_ts": time.time()}
     (d / "state.json").write_text(json.dumps(st))
