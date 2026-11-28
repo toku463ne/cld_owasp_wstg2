@@ -30,7 +30,7 @@
   <a href="{{ url_for('tool_xxe', name=target.name) }}">Tools › XML injection / XXE</a>
   injects structure-breaking characters and a non-existent external-entity DOCTYPE into each captured XML request, by
   agreement, and adds the result here. Out-of-band XXE and docx/svg/SAML uploads stay manual.</div>{% endif %}
-{% set inject_pack ={'sqli-tests': 'sqli', 'ssti-tests': 'ssti', 'xpath-injection-tests': 'xpath', 'ldap-injection-tests': 'ldap', 'command-injection-tests': 'cmd', 'ssi-injection-tests': 'ssi', 'http-smuggling-tests': 'crlf'}.get(ev.id) %}
+{% set inject_pack ={'sqli-tests': 'sqli', 'ssti-tests': 'ssti', 'code-injection-tests': 'code', 'xpath-injection-tests': 'xpath', 'ldap-injection-tests': 'ldap', 'command-injection-tests': 'cmd', 'ssi-injection-tests': 'ssi', 'http-smuggling-tests': 'crlf'}.get(ev.id) %}
 {% if inject_pack and target.type == 'fqdn' %}<div class="okbox"><b>Probe it from the web</b>:
   <a href="{{ url_for('tool_inject', name=target.name, pack=inject_pack) }}">Tools › Injection probe</a>
   sends a standard payload set to each parameter by agreement and adds the result here.</div>{% endif %}

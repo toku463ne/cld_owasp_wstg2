@@ -164,6 +164,7 @@ def test_links_to_the_inject_tool(admin_client, web_site):
 
 
 @pytest.mark.parametrize("eid,pack", [
+    ("ssti-tests", "ssti"), ("code-injection-tests", "code"),
     ("xpath-injection-tests", "xpath"), ("ldap-injection-tests", "ldap"),
     ("command-injection-tests", "cmd"), ("ssi-injection-tests", "ssi"),
     ("http-smuggling-tests", "crlf")])
