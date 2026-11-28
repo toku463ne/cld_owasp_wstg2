@@ -38,6 +38,8 @@ from . import capture_run as crun
 from . import cryp_run as drun
 from . import forge as fmod
 from . import forge_run as frun
+from . import inject as imod
+from . import inject_run as irun
 from . import har as harmod
 from . import catalog as catmod
 from . import db as dbmod
@@ -82,6 +84,12 @@ TOOLS = [
                 "parameters reflection-check flagged, send a standard sentinel payload (a tiny inline script, no "
                 "attack, no data access), and check whether it actually runs - the page's CSP is part of the test. "
                 "Reuses the captured session. It sends a real payload, so a WAF may flag it; run it by agreement."},
+    {"endpoint": "tool_inject", "title": "Injection probe",
+     "summary": "Probe the WSTG-INPV injection points (SQLi, SSTI, ...): for each parameter from the crawl and "
+                "the capture, send a small standard payload set (no bypass fuzzing, no scanner) and classify the "
+                "response by error signature, boolean divergence, evaluated result, or response delay. Gathers the "
+                "evidence; the per-WSTG judge decides. Reuses the captured session; sends active payloads, so run "
+                "it by agreement."},
 ]
 
 
@@ -464,6 +472,109 @@ def register(app: Flask, cfg: Config, db: dbmod.Database, cat: catmod.Catalog, s
         except evmod.EvidenceError as e:
             flash(f"Not added: {e}")
         return redirect(url_for("evidence_page", name=t.name, eid="xss-reflected-tests"))
+
+    # ---- Injection probe (WSTG-INPV active-probe steps) --------------------------
+    def inject_base(t: tmod.Target) -> tuple[str, str]:
+        """(base URL, problem). Scope-checked, FQDN only."""
+        if t.type != "fqdn":
+            return "", "injection probing needs an FQDN target"
+        try:
+            scope = tmod.get_scope(db, t)
+            base_url = scope.base_url or f"https://{t.name}"
+            probs = tmod.scope_problems(scope)
+            if probs:
+                return base_url, "the scope record does not allow it yet: " + "; ".join(probs)
+            tmod.check_command(t, scope, [base_url + "/"], passive=False)
+            return base_url, ""
+        except (tmod.TargetError, tmod.ScopeError) as e:
+            return "", str(e)
+
+    def inject_pack(req) -> str:
+        p = (req.get("pack") or "sqli").strip()
+        return p if p in imod.PACKS else "sqli"
+
+    def inject_context(t: tmod.Target, pack: str) -> dict:
+        base_url, problem = inject_base(t)
+        cands, list_error = [], ""
+        has_src = bool(_ev_latest(t, "katana-crawl") or _ev_latest(t, "har-browse"))
+        if base_url and has_src:
+            try:
+                cands = irun.candidates(cfg, t, base_url, pack)
+            except irun.InjectRunError as e:
+                list_error = str(e)
+        p = imod.PACKS[pack]
+        return {"tab": "tools", "problem": problem, "base_url": base_url, "pack": pack,
+                "packs": imod.PACKS, "pack_title": p.title, "pack_wstg": p.wstg, "checks": p.checks,
+                "cands": cands, "list_error": list_error, "has_src": has_src,
+                "st": irun.status(cfg, t, pack), "pause": cfg.pause, "kill_after": irun.KILL_AFTER,
+                "confirm_ev": cat.evidence.get(irun.PACK_EVIDENCE.get(pack))}
+
+    @app.get("/t/<name>/tools/inject")
+    @login_required
+    def tool_inject(name: str):
+        t = load_target(name)
+        return render_template("tool_inject.html", **inject_context(t, inject_pack(request.args)))
+
+    @app.post("/t/<name>/tools/inject/start")
+    @admin_required
+    def tool_inject_start(name: str):
+        t = load_target(name)
+        pack = inject_pack(request.form)
+        ctx = inject_context(t, pack)
+        f = request.form
+        try:
+            if ctx["problem"]:
+                raise irun.InjectRunError(ctx["problem"])
+            if not ctx["cands"]:
+                raise irun.InjectRunError("no candidate parameter; collect katana-crawl or har-browse first")
+            if f.get("agree") != "1":
+                raise irun.InjectRunError("tick the box to confirm the owner agreed (it sends active payloads)")
+            ncand = len(ctx["cands"])
+            chosen = sorted({int(x) for x in f.getlist("request") if x.isdigit() and 1 <= int(x) <= ncand})
+            irun.start(cfg, t, base_url=ctx["base_url"], pack=pack, requests=chosen,
+                       actor=g.user["username"], discard=f.get("discard") == "1")
+            with db.tx() as conn:
+                db.audit(conn, g.user["username"], "tool.inject.start", target=t.name,
+                         count=len(chosen) or ncand)
+            flash(f"{ctx['pack_title']} started for {len(chosen) or ncand} parameter(s); the page refreshes while it runs.")
+        except (irun.InjectRunError, ValueError) as e:
+            flash(f"Not started: {e}")
+        return redirect(url_for("tool_inject", name=t.name, pack=pack))
+
+    @app.post("/t/<name>/tools/inject/stop")
+    @admin_required
+    def tool_inject_stop(name: str):
+        t = load_target(name)
+        pack = inject_pack(request.form)
+        try:
+            if request.form.get("how") == "kill":
+                irun.kill(cfg, t, pack)
+            else:
+                irun.request_stop(cfg, t, pack)
+        except (irun.InjectRunError, OSError) as e:
+            flash(str(e))
+        return redirect(url_for("tool_inject", name=t.name, pack=pack))
+
+    @app.post("/t/<name>/tools/inject/add")
+    @login_required
+    def tool_inject_add(name: str):
+        t = load_target(name)
+        if not users.can_write(g.user):
+            abort(403)
+        pack = inject_pack(request.form)
+        eid = irun.PACK_EVIDENCE.get(pack)
+        st = irun.status(cfg, t, pack)
+        if not eid or not st or st.get("running") or not st.get("finished"):
+            flash("No finished probe to add.")
+            return redirect(url_for("tool_inject", name=t.name, pack=pack))
+        try:
+            caption = request.form.get("caption", "").strip() or f"{pack} injection probe: {st.get('label', '')}"
+            v = store.add_text(t, eid, irun.result_text(cfg, t, pack), caption, g.user["username"])
+            irun.mark_added(cfg, t, pack)
+            flash(f"Added to {eid} (version {v.version}).")
+        except evmod.EvidenceError as e:
+            flash(f"Not added: {e}")
+        return redirect(url_for("evidence_page", name=t.name, eid=eid))
 
     @app.route("/t/<name>/tools/replay", methods=["GET", "POST"])
     @login_required

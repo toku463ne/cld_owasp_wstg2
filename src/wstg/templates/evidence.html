@@ -26,6 +26,9 @@
   <a href="{{ url_for('tool_xss', name=target.name) }}">Tools › Reflected XSS confirm</a>
   sends a standard sentinel payload to each REFLECTED-UNENCODED parameter in a headless browser, by agreement, and
   adds the result and screenshots here.</div>{% endif %}
+{% if ev.id in ('sqli-tests', 'ssti-tests') and target.type == 'fqdn' %}<div class="okbox"><b>Probe it from the web</b>:
+  <a href="{{ url_for('tool_inject', name=target.name, pack='sqli' if ev.id == 'sqli-tests' else 'ssti') }}">Tools › Injection probe</a>
+  sends a standard payload set to each parameter by agreement and adds the result here.</div>{% endif %}
 {% if capture %}<div class="{{ 'okbox' if capture[0] else 'warnbox' }}"><b>Needs a manual capture first</b> (not part of the Light/Full run):
   <a href="{{ url_for('tool_capture', name=target.name, role=capture_role) }}">Start capture ({{ capture_role }})</a>
   or <code>uv run wstg capture {{ target.name }} --role {{ capture_role }}</code> on the tool's host, stored in

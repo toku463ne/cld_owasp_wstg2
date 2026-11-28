@@ -19,13 +19,17 @@ steps:
     command: >-
       grep -oE '[?&][A-Za-z0-9_.-]+=' {ev:katana-crawl}/katana.txt 2>/dev/null | tr -d '?&=' | sort | uniq -c | sort -rn | head -40
       || echo "no parameters seen in the crawl"
-  - summary: Probe for error, boolean, and time-based injection (manual)
+  - summary: Probe for error, boolean, and time-based injection (Tools button)
     evidence: [sqli-tests]
     operation: >-
-      For each parameter (and tested headers and cookies) send a quote to force an error,
-      a boolean pair (`1 AND 1=1` vs `1 AND 1=2`) for a true/false difference, and a delay
-      (`' OR SLEEP(5)-- `) for blind injection, adjusting for numeric or string context.
-      Record the error, response difference, or timing in sqli-tests.
+      Automated by agreement: Tools > Injection probe, pack "SQL injection probe". For each
+      parameter from the crawl and the capture it appends a small standard payload set to
+      the value - a quote to force an error, a boolean pair (`' OR '1'='1` vs `' AND
+      '1'='2`), and a delay (`SLEEP(5)`/`pg_sleep(5)`/`WAITFOR DELAY`) confirmed twice - and
+      reports SUSPECTED-error / -boolean / -time per parameter into sqli-tests. No bypass
+      fuzzing. It sends active payloads, so a WAF may flag them. Headers and cookies are not
+      covered automatically; probe those by hand if the engagement needs them. The judge
+      (step 4) reads this plus step 3; a probe is a lead, not a verdict.
   - summary: Confirm with sqlmap within scope (manual)
     evidence: [sqli-tests]
     operation: >-

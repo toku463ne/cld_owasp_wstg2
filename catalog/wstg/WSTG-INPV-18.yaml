@@ -19,13 +19,16 @@ steps:
     command: >-
       grep -oE '[?&][A-Za-z0-9_.-]+=' {ev:katana-crawl}/katana.txt 2>/dev/null | tr -d '?&=' | sort | uniq -c | sort -rn | head -40
       || echo "no parameters seen in the crawl"
-  - summary: Inject template expressions (manual)
+  - summary: Inject template expressions (Tools button)
     evidence: [ssti-tests]
     operation: >-
-      Into candidate inputs send `{{7*7}}`, `${7*7}`, `#{7*7}`, and `<%= 7*7 %>` and check
-      whether any evaluates to `49`. If it does, identify the engine and, within the agreed
-      scope, test reaching internal variables or command execution with the engine's
-      payloads. Record in ssti-tests; keep proof minimal.
+      Automated by agreement: Tools > Injection probe, pack "Server-side template injection
+      probe". Into each candidate parameter it sends `{{7*191}}`, `${7*191}`, `#{7*191}`,
+      `<%= 7*191 %>` (an unusual product, so a coincidental `1337` is unlikely) and reports
+      SUSPECTED-eval when the result appears while the literal expression does not, into
+      ssti-tests. If it does, identify the engine and, within the agreed scope, test
+      reaching internal variables or command execution with the engine's payloads by hand;
+      keep proof minimal. The judge (step 3) decides.
   - summary: Judge server-side template injection
     evidence: [ssti-tests]
     ai_task: >-

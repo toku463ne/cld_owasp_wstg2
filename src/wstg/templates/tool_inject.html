@@ -1,0 +1,84 @@
+{% extends "target_base.html" %}
+{% block head_extra %}{% if st and st.running %}<meta http-equiv="refresh" content="5">{% endif %}{% endblock %}
+{% block content %}
+<h3><a href="{{ url_for('tools_tab', name=target.name) }}">Tools</a> › Injection probe</h3>
+<p class="muted">The WSTG-INPV active-probe steps. For each parameter from <a href="{{ url_for('evidence_page', name=target.name, eid='katana-crawl') }}">katana-crawl</a>
+  and the <a href="{{ url_for('evidence_page', name=target.name, eid='har-browse') }}">capture</a>, it appends a small
+  standard payload set to the value (no bypass fuzzing, no scanner) and classifies the response. It gathers the evidence;
+  the per-WSTG judge decides. It sends active payloads, so run it by agreement.</p>
+
+<form method="get" class="inline" action="{{ url_for('tool_inject', name=target.name) }}">
+  <label>Pack
+    <select name="pack" onchange="this.form.submit()">
+      {% for key, p in packs.items() %}<option value="{{ key }}" {{ 'selected' if key == pack }}>{{ p.title }} ({{ p.wstg }})</option>{% endfor %}
+    </select>
+  </label>
+  <noscript><button>Switch</button></noscript>
+</form>
+<p class="muted small">Checks for this pack: <code>{{ checks | join(', ') }}</code>.</p>
+
+{% if problem %}
+<div class="warnbox">Cannot run: {{ problem }}.
+  {% if target.type == 'fqdn' %} <a href="{{ url_for('target_settings', name=target.name) }}">Edit the scope</a>{% endif %}</div>
+{% elif not has_src %}
+<div class="warnbox">No crawl or capture yet. Collect <a href="{{ url_for('evidence_page', name=target.name, eid='katana-crawl') }}">katana-crawl</a>
+  (or har-browse) first, then come back.</div>
+
+{% elif st and st.running %}
+<div class="okbox"><b>{{ pack_title }} running</b> · {{ st.label }} · started {{ st.started }} by {{ st.actor }}
+  ({{ st.elapsed // 60 }} min {{ st.elapsed % 60 }} s) · this page refreshes every 5 s
+  {% if st.stop_request %}<br><b>Stop requested</b>: it stops after the current parameter.{% endif %}</div>
+{% if can_write %}
+<form method="post" class="inline" action="{{ url_for('tool_inject_stop', name=target.name) }}">
+  <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="pack" value="{{ pack }}">
+  {% if not st.stop_request %}<button name="how" value="stop" data-confirm="Stop? The parameters already probed are kept.">Stop</button>
+  {% elif st.can_kill %}<button name="how" value="kill" data-confirm="Kill the process?">Kill (not ending after {{ kill_after }} s)</button>{% endif %}
+</form>
+{% endif %}
+
+{% elif list_error %}
+<div class="warnbox">Cannot list the candidate parameters: {{ list_error }}</div>
+{% elif not cands %}
+<div class="warnbox">No parameter found for this pack. Crawl the target and capture it using its forms and filters, then
+  collect katana-crawl and har-browse again.</div>
+{% elif can_write %}
+{% if st and st.finished and not st.added %}
+<div class="warnbox"><b>The previous {{ pack }} result is not saved yet.</b> Add it to {{ confirm_ev.id if confirm_ev }}
+  below before probing again, or the next run overwrites its log. To start anyway and discard it, tick the box below.</div>
+{% endif %}
+<form method="post" class="stack" action="{{ url_for('tool_inject_start', name=target.name) }}">
+  <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="pack" value="{{ pack }}">
+  {% if st and st.finished and not st.added %}
+  <label><input type="checkbox" name="discard" value="1"> Discard the previous (unsaved) result and start a new one.</label>
+  {% endif %}
+  <h4>Parameters to probe</h4>
+  <p class="muted small">Tick the parameters to probe, or leave all unticked to probe every one. WSTG_PAUSE is
+    {{ 'set to %d s between requests' % pause if pause else 'not set (full speed)' }}.</p>
+  <table>
+    <tr><th></th><th>#</th><th>Method</th><th>Path</th><th>Parameter</th><th>Role</th></tr>
+    {% for c in cands %}
+    <tr><td><input type="checkbox" name="request" value="{{ c.n }}" id="p-{{ c.n }}"></td>
+      <td>{{ c.n }}</td><td><code>{{ c.method }}</code></td>
+      <td class="small"><label for="p-{{ c.n }}">{{ c.template }}</label></td>
+      <td class="small"><code>{{ c.param }}</code></td><td class="small">{{ c.role }}</td></tr>
+    {% endfor %}
+  </table>
+  <label><input type="checkbox" name="agree" value="1"> The owner agreed to run this (it sends active injection payloads; a WAF may flag them).</label>
+  <div><button>Probe (all selected)</button></div>
+</form>
+{% endif %}
+
+{% if st %}
+<h4>{{ 'Output' if st.running else 'Last probe' }}{% if not st.running %} <span class="muted small">· {{ st.label }} · started {{ st.started }} by {{ st.actor }}</span>{% endif %}</h4>
+<pre class="replay-out">{{ st.log }}</pre>
+{% if not st.running and st.finished and can_write and confirm_ev %}
+<form method="post" class="stack" action="{{ url_for('tool_inject_add', name=target.name) }}">
+  <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="pack" value="{{ pack }}">
+  <label>Caption <input name="caption" size="60" placeholder="{{ pack }} probe: {{ st.label }}"></label>
+  <div><button>Add the result to {{ confirm_ev.id }}</button></div>
+</form>
+<p class="muted small">A <code>SUSPECTED-*</code> parameter is a lead for the {{ pack_wstg }} judge, not a verdict: a
+  standard-payload probe is not a scanner, and a WAF or an application error can hide a real issue.</p>
+{% endif %}
+{% endif %}
+{% endblock %}
