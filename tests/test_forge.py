@@ -120,6 +120,7 @@ def test_run_variants_marks_added_vs_overridden(tmp_path, serve):
 
 from datetime import date, timedelta
 from conftest import csrf_of
+from wstg import forge_run as frun
 from wstg import targets as tm
 
 
@@ -134,16 +135,32 @@ def web_site(db, cfg):
     return tm.get(db, "www.example.com")
 
 
-def _put_har(cfg, t):
+def _put_har(cfg, t, n=1):
     d = tm.evidence_dir(cfg, t) / "har-browse" / "v0001" / "items"
     d.mkdir(parents=True)
-    entry = {"request": {"method": "POST", "url": "https://www.example.com/cart/checkout",
-             "headers": [{"name": "Content-Type", "value": "application/x-www-form-urlencoded"}],
-             "postData": {"mimeType": "application/x-www-form-urlencoded",
-                          "params": [{"name": "item", "value": "7"}, {"name": "price", "value": "999"}]}},
-             "response": {"headers": []}}
-    (d / "001-user-20260101.har").write_text(json.dumps({"log": {"entries": [entry]}}))
+    entries = []
+    for i in range(n):
+        entries.append({"request": {"method": "POST", "url": f"https://www.example.com/cart/checkout{i}",
+                 "headers": [{"name": "Content-Type", "value": "application/x-www-form-urlencoded"}],
+                 "postData": {"mimeType": "application/x-www-form-urlencoded",
+                              "params": [{"name": "item", "value": "7"}, {"name": "price", "value": "999"}]}},
+                 "response": {"headers": []}})
+    (d / "001-user-20260101.har").write_text(json.dumps({"log": {"entries": entries}}))
     (tm.evidence_dir(cfg, t) / "har-browse" / "latest").symlink_to("v0001")
+
+
+REAL = frun.command
+
+
+@pytest.fixture
+def sleeper(monkeypatch):
+    seen = []
+
+    def command(cfg, t, base_url, requests, params, stop_file):
+        seen.append(REAL(cfg, t, base_url, requests, params, stop_file))
+        return ["sleep", "30"]
+    monkeypatch.setattr(frun, "command", command)
+    return seen
 
 
 def post(client, path, **data):
@@ -151,17 +168,52 @@ def post(client, path, **data):
     return client.post(path, data=data)
 
 
+def test_command_builds_requests_and_params(cfg, web_site):
+    _put_har(cfg, web_site, n=3)
+    argv = frun.command(cfg, web_site, "https://www.example.com", [1, 3],
+                        ["price=1", "role=admin"], frun.folder(cfg, web_site) / "stop")
+    assert "--agree" in argv and "--stop-file" in argv
+    assert argv.count("--request") == 2 and "--all" not in argv
+    assert argv[argv.index("--param") + 1] == "price=1"
+    # no requests chosen -> --all
+    argv2 = frun.command(cfg, web_site, "https://www.example.com", [], ["price=1"], frun.folder(cfg, web_site) / "stop")
+    assert "--all" in argv2 and "--request" not in argv2
+
+
 def test_web_forge_page_lists_and_guards(admin_client, guest_client, cfg, web_site):
     _put_har(cfg, web_site)
     assert "Parameter forging" in admin_client.get("/t/www.example.com/tools").get_data(as_text=True)
     page = admin_client.get("/t/www.example.com/tools/forge").get_data(as_text=True)
-    assert "POST" in page and "/cart/checkout" in page and "price=1" in page
+    assert "cart/checkout" in page and "price=1" in page and "Send baseline and forged" in page
     assert "Send baseline and forged" not in guest_client.get("/t/www.example.com/tools/forge").get_data(as_text=True)
-    assert post(guest_client, "/t/www.example.com/tools/forge", action="send", request="1",
-                params="price=1", agree="1").status_code == 403
+    assert post(guest_client, "/t/www.example.com/tools/forge/start", request="1", agree="1").status_code == 403
+
+
+def test_web_forge_start_stop(admin_client, cfg, web_site, sleeper):
+    _put_har(cfg, web_site, n=3)
     # agreement required
-    r = post(admin_client, "/t/www.example.com/tools/forge", action="send", request="1", params="price=1")
-    assert r.status_code == 400 and "tick the box" in r.get_data(as_text=True)
+    post(admin_client, "/t/www.example.com/tools/forge/start", request="1")
+    assert frun.status(cfg, web_site) is None and not sleeper
+    r = post(admin_client, "/t/www.example.com/tools/forge/start", request=["1", "3"], agree="1")
+    assert r.status_code == 302
+    try:
+        assert sleeper[0].count("--request") == 2
+        page = admin_client.get("/t/www.example.com/tools/forge").get_data(as_text=True)
+        assert "Forge batch running" in page and ">Stop</button>" in page and 'http-equiv="refresh"' in page
+        post(admin_client, "/t/www.example.com/tools/forge/stop", how="stop")
+        assert frun.status(cfg, web_site)["stop_request"]
+    finally:
+        frun.kill(cfg, web_site)
+
+
+def test_web_forge_all_when_none_selected(admin_client, cfg, web_site, sleeper):
+    _put_har(cfg, web_site, n=2)
+    r = post(admin_client, "/t/www.example.com/tools/forge/start", agree="1", params="price=1")
+    assert r.status_code == 302
+    try:
+        assert "--all" in sleeper[0]
+    finally:
+        frun.kill(cfg, web_site)
 
 
 def test_web_forge_without_har(admin_client, cfg, web_site):
@@ -169,22 +221,23 @@ def test_web_forge_without_har(admin_client, cfg, web_site):
     assert "No logged-in capture yet" in page
 
 
+def test_add_finished_batch_to_evidence(admin_client, cfg, db, web_site):
+    import time as _t
+    d = frun.folder(cfg, web_site)
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "state.json").write_text(json.dumps({"pid": 0, "label": "2 request(s)", "params": ["price=1"],
+                                              "started": "2026-01-01T00:00:00Z", "started_ts": _t.time()}))
+    (d / "forge.log").write_text(
+        "# started\n[1/2] #1 POST /cart\n  baseline       : 200 - 10 bytes\n  overrode price=1: 200, same length\n")
+    st = frun.status(cfg, web_site)
+    assert st["finished"] and not st["running"]
+    r = post(admin_client, "/t/www.example.com/tools/forge/add", caption="batch 1")
+    assert r.status_code == 302
+    from wstg import evidence as evmod
+    v = evmod.Store(cfg, db).load("www.example.com", "forge-request-tests")
+    assert v and "forge batch" in (v.path / v.items[0].file).read_text()
+
+
 def test_links_to_the_forge_tool(admin_client, web_site):
     page = admin_client.get("/t/www.example.com/evidence/forge-request-tests").get_data(as_text=True)
     assert "/t/www.example.com/tools/forge" in page
-
-def test_forge_text_and_save_to_evidence(admin_client, cfg, db, web_site):
-    from wstg import web_tools, evidence as evmod
-    from wstg.entrypoints import Answer
-    r = forge.Req("POST", "https://www.example.com/cart/checkout", role="user")
-    baseline = Answer(200, 31, "text/html", "", "home page")
-    results = [forge.Result("price", "1", False, Answer(200, 31, "text/html", "", "home page"), False),
-               forge.Result("role", "admin", True, Answer(200, 28, "text/html", "", "welcome admin"), True)]
-    text = web_tools.forge_text(r, baseline, results, "admin")
-    assert "wstg forge: POST" in text and "overrode price=1" in text and "added role=admin: 200" in text
-    assert "VALUE ECHOED" in text and "same length" in text
-    token = web_tools.put_pending(cfg, web_site, "forge-request-tests", text, "forge 1")
-    r2 = post(admin_client, "/t/www.example.com/tools/forge", action="save", pending=token, caption="forge 1")
-    assert "Added to" in r2.get_data(as_text=True)
-    v = evmod.Store(cfg, db).load("www.example.com", "forge-request-tests")
-    assert v and "VALUE ECHOED" in (v.path / v.items[0].file).read_text()

@@ -243,7 +243,7 @@ def run(args) -> int:
 
     if args.list:
         print(f"# {len(reqs)} candidate request(s) from the capture (no request sent). "
-              "Forge one with --request N --param name=value.")
+              "Forge with --request N (repeatable) or --all, plus --param name=value.")
         for i, r in enumerate(reqs, 1):
             where = harmod._template(urlsplit(r.url).path) or "/"
             params = ",".join(r.names) or "-"
@@ -254,8 +254,13 @@ def run(args) -> int:
             print("\n(no suitable request in har-browse: collect a logged-in capture first)")
         return 0
 
-    if not 1 <= args.request <= len(reqs):
-        print(f"--request must be 1..{len(reqs)} (run --list)", file=sys.stderr)
+    chosen = list(range(1, len(reqs) + 1)) if args.all else sorted(set(args.request))
+    if not chosen:
+        print("give --request N (repeatable) or --all", file=sys.stderr)
+        return 2
+    bad = [n for n in chosen if not 1 <= n <= len(reqs)]
+    if bad:
+        print(f"--request {bad[0]} is out of range 1..{len(reqs)} (run --list)", file=sys.stderr)
         return 2
     params = _parse_params(args.param)
     if not params:
@@ -265,28 +270,42 @@ def run(args) -> int:
         print("forging a request may change the target; pass --agree to confirm the owner agreed", file=sys.stderr)
         return 2
 
-    r = reqs[args.request - 1]
-    print(f"# forge {r.method} {harmod._template(urlsplit(r.url).path) or '/'} (role {r.role or 'anonymous'}); "
-          "baseline then one forged request per parameter; Python HTTP client, only this host.")
-    base_ans = _send(r, r.query, r.body_params, r.body_text, r.is_json)
-    print(f"  baseline       : {base_ans.short()}")
-    if base_ans.status is None:
-        print("\nthe baseline got no answer; check the scope and the capture.", file=sys.stderr)
+    stop = Path(args.stop_file) if args.stop_file else None
+    answered = 0
+    print(f"# forge {len(chosen)} request(s), baseline then one forged request per parameter; "
+          "Python HTTP client, only this host" + (f"; ~{args.pause}s between requests" if args.pause else "") + ".")
+    for pos, n in enumerate(chosen, 1):
+        if stop and stop.is_file():
+            print(f"\n# stopped: {pos - 1}/{len(chosen)} request(s) done.", flush=True)
+            break
+        r = reqs[n - 1]
+        print(f"\n[{pos}/{len(chosen)}] #{n} {r.method} {harmod._template(urlsplit(r.url).path) or '/'} "
+              f"(role {r.role or 'anonymous'})", flush=True)
+        base_ans = _send(r, r.query, r.body_params, r.body_text, r.is_json)
+        print(f"  baseline       : {base_ans.short()}", flush=True)
+        if base_ans.status is None:
+            print("  (no answer; skipping its variants)", flush=True)
+            continue
+        answered += 1
+        for name, value in params:
+            if stop and stop.is_file():
+                break
+            if args.pause:
+                time.sleep(args.pause)
+            existing = name in r.names
+            ans = forge_one(r, name, value)
+            echoed = bool(value) and value in (ans.body or "") and value not in (base_ans.body or "")
+            verb = "overrode" if existing else "added"
+            if ans.status is None:
+                note = "no answer"
+            else:
+                dlen = ans.size - base_ans.size
+                note = (f"{ans.status}" + (f", {'+' if dlen >= 0 else ''}{dlen} bytes vs baseline" if dlen else ", same length")
+                        + (", value echoed in the response" if echoed else ""))
+            print(f"  {verb} {name}={value!r}: {note}", flush=True)
+    if not answered:
+        print("\nno baseline got an answer; check the scope and the capture.", file=sys.stderr)
         return 4
-    for name, value in params:
-        if args.pause:
-            time.sleep(args.pause)
-        existing = name in r.names
-        ans = forge_one(r, name, value)
-        echoed = bool(value) and value in (ans.body or "") and value not in (base_ans.body or "")
-        verb = "overrode" if existing else "added"
-        if ans.status is None:
-            note = "no answer"
-        else:
-            dlen = ans.size - base_ans.size
-            note = (f"{ans.status}" + (f", {'+' if dlen >= 0 else ''}{dlen} bytes vs baseline" if dlen else ", same length")
-                    + (", value echoed in the response" if echoed else ""))
-        print(f"  {verb} {name}={value!r}: {note}")
     print("\n# Read these with the judge (step 3): a changed result or an echoed value may mean the "
           "server trusted the client value. Record it in forge-request-tests.")
     return 0
@@ -298,11 +317,14 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--har", help="har-browse evidence version folder")
     ap.add_argument("--katana", help="katana-crawl evidence version folder (for hidden field names)")
     ap.add_argument("--list", action="store_true", help="list candidate requests and parameters, send nothing")
-    ap.add_argument("--request", type=int, default=0, help="1-based request to forge (see --list)")
+    ap.add_argument("--request", type=int, action="append", default=[], metavar="N",
+                    help="1-based request to forge (repeatable; see --list)")
+    ap.add_argument("--all", action="store_true", help="forge every candidate request (collect all at once)")
     ap.add_argument("--param", action="append", default=[], metavar="NAME=VALUE",
                     help="parameter to add or override (repeatable)")
     ap.add_argument("--repeat", type=int, default=1, help="(reserved; each request is sent once)")
     ap.add_argument("--pause", type=float, default=0, help="seconds between requests")
+    ap.add_argument("--stop-file", help="stop gracefully as soon as this file exists")
     ap.add_argument("--agree", action="store_true", help="confirm the owner agreed (forging may change the target)")
     return run(ap.parse_args(argv))
 
