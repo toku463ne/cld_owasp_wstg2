@@ -42,14 +42,12 @@
   <br><b>Availability risk:</b> the crash probe sends <code>%s</code> dereferences and <b>can crash the component</b>
   (and, if the process is shared rather than per-request, take the site down until it restarts). Prefer the read-only
   leak probe first; neither sends <code>%n</code>. Format string is rare outside native C/C++ components.</div>{% endif %}
-{% if ev.id == 'incubated-tests' and target.type == 'fqdn' %}<div class="okbox"><b>Checked from the capture</b>:
-  the HTML fire-point part is automated &mdash; <a href="{{ url_for('wstg_page', name=target.name, test_id='WSTG-INPV-14') }}">WSTG-INPV-14 step 2</a>
-  runs the stored-marker tracking (<code>wstg-har stored</code>) on the capture and flags a marker stored on one path
-  and shown raw on another path or to another role. During
-  <a href="{{ url_for('tool_capture', name=target.name, role='user') }}">Tools › Browser capture</a> type a marker such
-  as <code>wstg01&lt;"'&gt;</code> into stored fields and open the later-processing paths (report, admin, export, print/pdf).
-  Record here only the <b>off-channel</b> chain (a batch/cron job, a generated PDF/CSV, an email, a webhook, or an
-  external system) that a capture cannot observe.</div>{% endif %}
+{% if ev.id == 'incubated-tests' and target.type == 'fqdn' %}<div class="okbox"><b>Off-channel half</b>:
+  the in-browser HTML fire points are collected automatically in
+  <a href="{{ url_for('evidence_page', name=target.name, eid='incubated-probe') }}">incubated-probe</a> (the stored-marker
+  trace on the capture). Record <b>here</b> only the fire points a capture cannot observe &mdash; a batch/cron job, a
+  generated PDF/CSV, an email, a webhook, or an external system &mdash; by triggering that later process and watching
+  whether the stored value is executed or misused.</div>{% endif %}
 {% if capture %}<div class="{{ 'okbox' if capture[0] else 'warnbox' }}"><b>Needs a manual capture first</b> (not part of the Light/Full run):
   <a href="{{ url_for('tool_capture', name=target.name, role=capture_role) }}">Start capture ({{ capture_role }})</a>
   or <code>uv run wstg capture {{ target.name }} --role {{ capture_role }}</code> on the tool's host, stored in

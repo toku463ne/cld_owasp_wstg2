@@ -7,6 +7,19 @@
   work there or over VNC). Log in and walk the target by hand, do not close the window, then press <i>Stop and save</i> here.
   The same as <code>uv run wstg capture {{ target.name }} --role ROLE</code> in a terminal.</p>
 
+<div class="okbox"><b>While you walk</b> (do it now so you don't have to recapture):
+  <ul class="small" style="margin:.3em 0">
+    <li>Into each field that is <b>stored and shown later</b> (profile name, comment, post, message, address) type a
+      distinct marker like <code>wstg01&lt;"'&gt;</code> (<code>wstg</code>, a few letters or digits, then
+      <code>&lt; " '</code>), save it, then open every page that displays it &mdash; including any
+      <b>admin, report, export, print or PDF-preview</b> path. This feeds the stored-XSS
+      (<a href="{{ url_for('wstg_page', name=target.name, test_id='WSTG-INPV-02') }}">WSTG-INPV-02</a>) and incubated
+      (<a href="{{ url_for('wstg_page', name=target.name, test_id='WSTG-INPV-14') }}">WSTG-INPV-14</a>) checks.</li>
+    <li>If an admin or another user can see your input, capture that role too (role <code>admin</code>) and open the
+      same pages there.</li>
+    <li>Walk each account flow once (login, password change/reset, registration) so the session checks have data.</li>
+  </ul></div>
+
 {% if st and st.running %}
 <div class="okbox"><b>Capture running</b> · role <code>{{ st.role or 'session' }}</code> · started {{ st.started }} by {{ st.actor }}
   ({{ st.elapsed // 60 }} min {{ st.elapsed % 60 }} s) · display {{ st.display }} · this page refreshes every 5 s

@@ -41,6 +41,9 @@ tools:
   - name: wstg-reflect
     install: none
     note: this project's console script (uv sync installs it); output-encoding check of reflected parameters (WSTG-INPV-01)
+  - name: wstg-har
+    install: none
+    note: this project's console script (uv sync installs it); value-free HAR analysis views (cookies, csrf, stored, ...) replacing manual Burp-history checks
   - name: wstg-cryp
     install: none
     note: this project's console script (uv sync installs it); CBC padding-oracle probe (WSTG-CRYP-02)

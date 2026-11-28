@@ -201,16 +201,43 @@ evidence:
       %x%x%x, %n) and whether memory contents leaked or the component crashed. Mainly for
       apps with C/C++ native parts; rare in pure web apps.
 
+  - id: incubated-probe
+    title: Stored-marker trace on later paths
+    target_type: fqdn
+    kind: auto
+    level: full
+    passive: true
+    after_capture: login
+    inputs: [har-browse]
+    description: >-
+      The automatable half of the incubated check (WSTG-INPV-14), read from the capture;
+      it sends nothing to the target (a local analysis: contacts no host). wstg-har stored reads the har-browse HARs and prints,
+      for each marker the tester typed into a stored field during the capture (wstg + a few
+      characters, then < " ' >), every captured response that shows it and whether those
+      characters came back raw for their context. A marker stored on one path and shown
+      STORED-UNENCODED on another path, or to another role (an admin screen, a report or
+      export page), is an incubated HTML fire point. Values are never printed. The
+      off-channel half (a batch/cron job, a generated PDF/CSV, an email, a webhook, or an
+      external system) cannot be read from a capture and stays in incubated-tests.
+    argv: [wstg-har, stored, "{ev:har-browse}"]
+    est: 5
+    timeout: 120
+    load_note: >-
+      Reads the capture only (no request is sent). Needs a har-browse capture in which a
+      marker was typed into stored fields and the later-processing pages were opened.
+
   - id: incubated-tests
     title: Incubated vulnerability tests
     target_type: fqdn
     kind: manual
     mutating: true
     description: >-
-      The scenario where input that is harmless at storage fires later through another
-      path (a stored value executed by a batch, report, admin screen, or external
-      integration): what was stored, which later process triggered it, and the effect,
-      with the fire point (admin or external raises severity).
+      The off-channel half of the incubated check (WSTG-INPV-14), recorded by hand: a value
+      harmless at storage that fires later through a path a capture cannot observe - a
+      batch/cron job, a generated PDF/CSV, an email, a webhook, or an external integration.
+      What was stored, which later process triggered it, and the effect, with the fire point
+      (admin or external raises severity). The in-browser HTML fire points are collected
+      automatically in incubated-probe.
 
   - id: http-smuggling-tests
     title: HTTP splitting and smuggling tests

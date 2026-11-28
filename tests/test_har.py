@@ -584,3 +584,21 @@ def test_flows_view_reports_no_flow(tmp_path, capsys):
     hf = _write(tmp_path, "001-user.har", _har([_flow_entry("GET", "/")]))
     rc, out = _run(capsys, "flows", hf)
     assert "no login, verification, password, registration, or logout step" in out
+
+
+def test_stored_accepts_a_capture_directory(tmp_path, capsys):
+    """wstg-har expands a directory argument to the HARs under items/, so a collected auto
+    evidence (incubated-probe) can pass the har-browse version folder with no shell glob."""
+    items = tmp_path / "cap" / "items"
+    items.mkdir(parents=True)
+    entry = {
+        "request": {"method": "POST", "url": "https://www.example.com/comment",
+                    "cookies": [], "headers": [],
+                    "postData": {"params": [{"name": "body", "value": "wstg01<\"'>"}]}},
+        "response": {"status": 200, "headers": [{"name": "Content-Type", "value": "text/html"}],
+                     "content": {"text": "<p>you said wstg01<\"'></p>"}},
+    }
+    (items / "001-user-x.har").write_text(json.dumps({"log": {"version": "1.2", "entries": [entry]}}))
+    rc = har.main(["stored", str(tmp_path / "cap")])      # directory, not a file
+    out = capsys.readouterr().out
+    assert rc == 0 and "wstg01" in out and "STORED-UNENCODED" in out

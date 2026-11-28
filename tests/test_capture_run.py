@@ -108,6 +108,8 @@ def post(client, path, **data):
 def test_web_capture_page(admin_client, guest_client, cfg, site, sleeper):
     page = admin_client.get("/t/www.example.com/tools/capture?role=timeout").get_data(as_text=True)
     assert "Start capture" in page and 'value="timeout" id="role-timeout" checked' in page
+    # the walk checklist (so testers do not have to recapture) names the stored marker
+    assert "While you walk" in page and "wstg01" in page
     assert "Browser capture" in admin_client.get("/t/www.example.com/tools").get_data(as_text=True)
     assert "Start capture" not in guest_client.get("/t/www.example.com/tools/capture").get_data(as_text=True)
     assert post(guest_client, "/t/www.example.com/tools/capture/start", role="user").status_code == 403

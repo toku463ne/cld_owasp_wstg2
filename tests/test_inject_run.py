@@ -184,11 +184,15 @@ def test_fmt_crash_tool_page_shows_risk(admin_client, web_site):
     assert "Availability risk" in page and "can crash" in page.lower()
 
 
-def test_incubated_evidence_links_to_capture_and_wstg(admin_client, web_site):
+def test_incubated_tests_points_to_the_auto_probe(admin_client, web_site):
     page = admin_client.get("/t/www.example.com/evidence/incubated-tests").get_data(as_text=True)
-    assert "Checked from the capture" in page
-    assert "/t/www.example.com/wstg/WSTG-INPV-14" in page
-    assert "/t/www.example.com/tools/capture" in page
+    assert "Off-channel half" in page
+    assert "/t/www.example.com/evidence/incubated-probe" in page
+
+
+def test_incubated_probe_is_auto_and_collectable(admin_client, web_site):
+    page = admin_client.get("/t/www.example.com/evidence/incubated-probe").get_data(as_text=True)
+    assert "wstg-har" in page and "Needs a manual capture first" in page
 
 
 def test_pack_selector_lists_all(admin_client, cfg, web_site):

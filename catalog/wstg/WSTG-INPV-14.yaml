@@ -20,33 +20,39 @@ steps:
     command: >-
       grep -oiE '/(upload|import|report|export|batch|admin|notify|webhook|queue|job|print|pdf)[^ "'"'"'<>]*'
       {ev:katana-crawl}/katana.txt 2>/dev/null | sort -u | head -40 || echo "no obvious later-processing path in the crawl"
-  - summary: Check stored markers on the later paths (from the capture; off-channel fire points manual)
+  - summary: Collect the stored-marker trace on later paths (automatic, from the capture)
     auto_run: true
-    evidence: [har-browse, incubated-tests]
-    command: wstg-har stored {ev:har-browse}/items/*
+    evidence: [incubated-probe, har-browse]
+    command: >-
+      cat {ev:incubated-probe}/stdout.txt 2>/dev/null
+      || echo "Not collected yet. Capture with markers (see below), then press Collect."
     operation: >-
-      The HTML fire-point part reuses the stored-marker tracking of WSTG-INPV-02 from the
-      capture (the tool stores nothing on the target). During the capture
-      (`uv run wstg capture {fqdn} --role user`), with a test account, type a distinct
-      marker such as `wstg01<"'>` into each field that is kept and later trusted, save it,
-      then open the LATER-PROCESSING paths step 1 listed (report, export, admin screen,
-      print/pdf preview) so the fire point is captured; if a different role or user renders
-      the value, capture that role too (`--role admin`) and open the same pages there. The
-      output lists, per marker, every captured response that shows it and whether `< " '`
-      came back raw for its context (STORED-UNENCODED) or encoded - a value stored on one
-      path and rendered raw on another path or to another role is the incubated case.
-      OFF-CHANNEL fire points stay manual (record the chain in incubated-tests): a batch or
-      cron job, a generated PDF/CSV, an email, a webhook, or an external system - these need
-      the later process to be triggered and often an out-of-band observation. The judge
-      (step 3) decides.
+      The in-browser HTML fire points are collected automatically into incubated-probe: it
+      reads the capture and reports, per marker, where it is shown and whether it is encoded
+      (the tool sends nothing to the target). Prepare the capture using the "While you walk"
+      checklist on Tools > Browser capture: with a test account, type a distinct marker such
+      as `wstg01<"'>` into each field that is kept and later trusted, save it, then open the
+      LATER-PROCESSING paths step 1 listed (report, export, admin screen, print/pdf preview)
+      so the fire point is captured; if a different role renders the value, capture that role
+      too (`--role admin`) and open the same pages there. A marker stored on one path and
+      shown STORED-UNENCODED on another path or to another role is the incubated HTML case.
+      Then press Collect. The off-channel half is step 3.
+  - summary: Record off-channel fire points (manual)
+    evidence: [incubated-tests]
+    operation: >-
+      Record in incubated-tests the fire points a capture cannot observe: a stored value
+      that fires later through a batch or cron job, a generated PDF/CSV, an email, a webhook,
+      or an external system. Trigger that later process and observe whether the stored value
+      is executed or misused (often an out-of-band observation). Leave it empty when there is
+      no such later path. Combine a storage weakness with a downstream trusted use.
   - summary: Judge incubated vulnerability
-    evidence: [har-browse, incubated-tests]
+    evidence: [incubated-probe, incubated-tests]
     ai_task: >-
-      From step 2 decide whether a stored value fires on a later path. Use the stored-marker
-      tracking from the capture (a marker stored on one path and shown STORED-UNENCODED on
-      another path or to another role is an incubated HTML fire point) together with any
-      off-channel chain recorded in incubated-tests. Verdict: fail when a value harmless at
-      storage was executed or misused by a batch, report, admin screen, or external system;
-      pass when input is validated and encoded at storage and use; "-" when no marker was
-      stored and shown on a later path and incubated-tests is missing. Note the fire point
+      Decide whether a stored value fires on a later path. Use the stored-marker trace
+      (incubated-probe: a marker stored on one path and shown STORED-UNENCODED on another
+      path or to another role is an incubated HTML fire point) together with any off-channel
+      chain recorded in incubated-tests. Verdict: fail when a value harmless at storage was
+      executed or misused by a batch, report, admin screen, or external system; pass when
+      input is validated and encoded at storage and use; "-" when incubated-probe collected
+      no marker shown on a later path and incubated-tests is missing. Note the fire point
       (admin/external raises severity), and list later paths that were not captured.

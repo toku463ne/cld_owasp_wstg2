@@ -1506,6 +1506,21 @@ _VIEWS = {"cookies": view_cookies, "urls": view_urls, "cleartext": view_cleartex
           "xss-headers": view_xss_headers, "stored": view_stored, "source": view_source}
 
 
+def _expand(paths) -> list[Path]:
+    """Keep file arguments as given, but expand a directory to the HAR files it holds
+    (its own, or under items/), so a collected auto evidence can pass the har-browse
+    version folder as one argv item (no shell glob). The `source` view also wants the
+    DOM snapshot files, which it reads from the same folder on its own."""
+    out: list[Path] = []
+    for p in paths:
+        if p.is_dir():
+            hars = sorted(p.glob("items/*.har")) or sorted(p.glob("*.har"))
+            out.extend(hars or [p])
+        else:
+            out.append(p)
+    return out
+
+
 def main(argv: list[str] | None = None) -> int:
     args = list(sys.argv[1:] if argv is None else argv)
     if len(args) < 2 or args[0] not in _VIEWS:
@@ -1517,7 +1532,7 @@ def main(argv: list[str] | None = None) -> int:
             print("usage: --host needs a host name and at least one FILE.har", file=sys.stderr)
             return 2
         host, rest = rest[1], rest[2:]
-    files = [Path(a) for a in rest]
+    files = _expand(Path(a) for a in rest)
     if view in ("entry-points", "expose", "csrf", "flows", "xss-headers", "stored", "source"):
         _VIEWS[view](files, host)
     else:
