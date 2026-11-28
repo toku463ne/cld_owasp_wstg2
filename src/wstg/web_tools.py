@@ -213,7 +213,8 @@ def register(app: Flask, cfg: Config, db: dbmod.Database, cat: catmod.Catalog, s
             label = next((c["label"] for c in ctx["cands"] if c["n"] == n), "")
             if not label:
                 raise drun.DecryptRunError("pick a candidate from the list")
-            drun.start(cfg, t, base_url=ctx["base_url"], candidate=n, label=label, actor=g.user["username"])
+            drun.start(cfg, t, base_url=ctx["base_url"], candidate=n, label=label,
+                       actor=g.user["username"], discard=request.form.get("discard") == "1")
             with db.tx() as conn:
                 db.audit(conn, g.user["username"], "tool.decrypt.start", target=t.name, candidate=n)
             flash(f"Decrypt started for candidate {n}. It may take a long time; the page refreshes while it runs.")
@@ -248,6 +249,7 @@ def register(app: Flask, cfg: Config, db: dbmod.Database, cat: catmod.Catalog, s
         try:
             caption = request.form.get("caption", "").strip() or f"Padding-oracle decrypt: candidate {st.get('candidate')}"
             v = store.add_text(t, ev.id, drun.result_text(cfg, t), caption, g.user["username"])
+            drun.mark_added(cfg, t)
             flash(f"Added to {ev.id} (version {v.version}).")
         except evmod.EvidenceError as e:
             flash(f"Not added: {e}")

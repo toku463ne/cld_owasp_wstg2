@@ -153,3 +153,51 @@ def test_decrypt_start_passes_proxy_env(cfg, site):
     drun.start(paced, site, base_url="https://www.example.com", candidate=1, label="x",
                actor="admin", popen=FakePopen)
     assert seen["env"]["http_proxy"] == "http://127.0.0.1:3128" and "no_proxy" not in seen["env"]
+
+
+def test_decrypt_start_refuses_unsaved_result(cfg, site):
+    import time as _t
+    _put_http_root(cfg, site)
+    d = drun.folder(cfg, site)
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "state.json").write_text(json.dumps({"pid": 0, "candidate": 1, "label": "cookie enc",
+                                              "started_ts": _t.time()}))
+    (d / "decrypt.log").write_text("# started\n  plaintext: hex=aa\n")
+    st = drun.status(cfg, site)
+    assert st["finished"] and not st["added"]
+
+    class FakePopen:
+        def __init__(self, argv, **kw):
+            self.pid = 777
+
+    with pytest.raises(drun.DecryptRunError, match="not saved"):
+        drun.start(cfg, site, base_url="https://www.example.com", candidate=1, label="x", actor="a", popen=FakePopen)
+    drun.start(cfg, site, base_url="https://www.example.com", candidate=1, label="x", actor="a",
+               discard=True, popen=FakePopen)
+    assert not drun.status(cfg, site)["added"]        # fresh run clears the marker
+
+
+def test_decrypt_mark_added_lets_next_start(cfg, site):
+    import time as _t
+    _put_http_root(cfg, site)
+    d = drun.folder(cfg, site)
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "state.json").write_text(json.dumps({"pid": 0, "candidate": 1, "label": "x", "started_ts": _t.time()}))
+    (d / "decrypt.log").write_text("# done\n")
+    drun.mark_added(cfg, site)
+    assert drun.status(cfg, site)["added"]
+
+    class FakePopen:
+        def __init__(self, argv, **kw):
+            self.pid = 778
+    drun.start(cfg, site, base_url="https://www.example.com", candidate=1, label="x", actor="a", popen=FakePopen)
+
+
+def test_web_decrypt_add_marks_added(admin_client, cfg, site):
+    import time as _t
+    d = drun.folder(cfg, site)
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "state.json").write_text(json.dumps({"pid": 0, "candidate": 1, "label": "cookie enc", "started_ts": _t.time()}))
+    (d / "decrypt.log").write_text("# done\n  plaintext: hex=aa\n")
+    post(admin_client, "/t/www.example.com/tools/decrypt/add")
+    assert drun.status(cfg, site)["added"]

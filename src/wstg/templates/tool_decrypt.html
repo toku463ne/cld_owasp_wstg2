@@ -26,9 +26,16 @@
 {% endif %}
 
 {% elif not problem and can_write %}
+{% if st and st.finished and not st.added %}
+<div class="warnbox"><b>The previous decrypt result is not saved yet.</b> Add it to padding-oracle-confirm below before
+  decrypting another, or the next run overwrites its log. To decrypt anyway and discard it, tick the box below.</div>
+{% endif %}
 <form method="post" class="stack" action="{{ url_for('tool_decrypt_start', name=target.name) }}">
   <input type="hidden" name="csrf" value="{{ csrf }}">
   {% if list_error %}<div class="warnbox">Cannot list candidates: {{ list_error }}</div>{% endif %}
+  {% if st and st.finished and not st.added %}
+  <label><input type="checkbox" name="discard" value="1"> Discard the previous (unsaved) decrypt result and start a new one.</label>
+  {% endif %}
   {% if cands %}
   <table>
     <tr><th></th><th>#</th><th>Candidate value (name, codec, decoded length)</th></tr>

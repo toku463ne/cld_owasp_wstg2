@@ -101,19 +101,32 @@ def status(cfg: Config, t: tmod.Target) -> dict | None:
     # It finished when the process is gone and the log has a final line (recovered block,
     # stop, or error): the page then offers to add the result to the evidence.
     st["finished"] = bool(not st["running"] and lines)
+    # Whether this finished result was already added to padding-oracle-confirm. A finished-
+    # but-unsaved result is at risk: starting a new decrypt overwrites the log.
+    st["added"] = (d / "added").is_file()
     return st
 
 
+def mark_added(cfg: Config, t: tmod.Target) -> None:
+    """Record that the current finished decrypt's result was added to the evidence, so
+    starting the next decrypt no longer warns about losing it."""
+    (folder(cfg, t) / "added").write_text(dbmod.utcnow())
+
+
 def start(cfg: Config, t: tmod.Target, *, base_url: str, candidate: int, label: str,
-          actor: str, popen=subprocess.Popen) -> dict:
+          actor: str, discard: bool = False, popen=subprocess.Popen) -> dict:
     cur = status(cfg, t)
     if cur and cur["running"]:
         raise DecryptRunError(f"a decrypt of {t.name} is already running (candidate {cur.get('candidate')})")
+    if cur and cur.get("finished") and not cur.get("added") and not discard:
+        raise DecryptRunError("the previous decrypt result is not saved yet. Add it to padding-oracle-confirm "
+                              "first, or tick 'discard the previous result' to overwrite it.")
     if candidate < 1:
         raise DecryptRunError("pick a candidate to decrypt")
     d = folder(cfg, t)
     d.mkdir(mode=0o700, parents=True, exist_ok=True)
     (d / "stop").unlink(missing_ok=True)
+    (d / "added").unlink(missing_ok=True)
     log = d / "decrypt.log"
     argv = command(cfg, t, base_url, candidate, d / "stop")
     with open(log, "w") as fh:
