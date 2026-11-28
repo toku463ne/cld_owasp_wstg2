@@ -43,8 +43,8 @@
   <h4>Requests to forge</h4>
   <p class="muted small">Tick the requests to forge, or leave all unticked to forge every one. Each selected request is
     sent once as captured (baseline) and once per parameter below.</p>
-  <p><button type="button" onclick="this.closest('form').querySelectorAll('input[name=request]').forEach(c=>c.checked=true)">Check all</button>
-    <button type="button" onclick="this.closest('form').querySelectorAll('input[name=request]').forEach(c=>c.checked=false)">Uncheck all</button></p>
+  <p><button type="button" data-toggle="request" data-state="on">Check all</button>
+    <button type="button" data-toggle="request" data-state="off">Uncheck all</button></p>
   <table>
     <tr><th></th><th>#</th><th>Method</th><th>Path</th><th>Parameters</th><th>Role</th></tr>
     {% for r in reqs %}

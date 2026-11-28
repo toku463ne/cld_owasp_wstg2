@@ -33,6 +33,16 @@ document.addEventListener("DOMContentLoaded", function () {
   document.querySelectorAll("button[data-confirm]").forEach(function (btn) {
     btn.addEventListener("click", function (ev) { if (!confirm(btn.getAttribute("data-confirm"))) ev.preventDefault(); });
   });
+  // Check all / Uncheck all: tick every checkbox of the named group in the button's form.
+  document.querySelectorAll("button[data-toggle]").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      var on = btn.getAttribute("data-state") !== "off";
+      var form = btn.closest("form");
+      if (!form) return;
+      form.querySelectorAll("input[type=checkbox][name='" + btn.getAttribute("data-toggle") + "']")
+        .forEach(function (c) { c.checked = on; });
+    });
+  });
   document.querySelectorAll("button[data-copy]").forEach(function (btn) {
     btn.addEventListener("click", function () {
       var src = document.querySelector(btn.getAttribute("data-copy"));

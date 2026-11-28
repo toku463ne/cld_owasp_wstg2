@@ -9,7 +9,7 @@
 
 <form method="get" class="inline" action="{{ url_for('tool_inject', name=target.name) }}">
   <label>Pack
-    <select name="pack" onchange="this.form.submit()">
+    <select name="pack" data-autosubmit>
       {% for key, p in packs.items() %}<option value="{{ key }}" {{ 'selected' if key == pack }}>{{ p.title }} ({{ p.wstg }})</option>{% endfor %}
     </select>
   </label>
@@ -54,8 +54,8 @@
   <h4>Parameters to probe</h4>
   <p class="muted small">Tick the parameters to probe, or leave all unticked to probe every one. WSTG_PAUSE is
     {{ 'set to %d s between requests' % pause if pause else 'not set (full speed)' }}.</p>
-  <p><button type="button" onclick="this.closest('form').querySelectorAll('input[name=request]').forEach(c=>c.checked=true)">Check all</button>
-    <button type="button" onclick="this.closest('form').querySelectorAll('input[name=request]').forEach(c=>c.checked=false)">Uncheck all</button></p>
+  <p><button type="button" data-toggle="request" data-state="on">Check all</button>
+    <button type="button" data-toggle="request" data-state="off">Uncheck all</button></p>
   <table>
     <tr><th></th><th>#</th><th>Method</th><th>Path</th><th>Parameter</th><th>Role</th></tr>
     {% for c in cands %}
