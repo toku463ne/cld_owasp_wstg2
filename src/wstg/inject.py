@@ -66,6 +66,8 @@ class Pack:
     boolean_pairs: list = field(default_factory=list)       # [(true, false)]
     eval_payloads: list = field(default_factory=list)       # [(payload, marker)]
     time_payloads: list[str] = field(default_factory=list)
+    ssi_directive: str = ""                                 # an SSI directive to try
+    crlf: bool = False                                      # try a CRLF header-injection probe
 
 
 # An eval marker chosen to be unusual (7*191) so a coincidental match is unlikely.
@@ -96,6 +98,11 @@ PACKS: dict[str, Pack] = {
         "cmd", "OS command injection probe (time-based)", "WSTG-INPV-12", ["time"],
         time_payloads=["; sleep 5", "| sleep 5", "& sleep 5", "$(sleep 5)", "`sleep 5`",
                        "; ping -c 5 127.0.0.1", "& timeout /t 5"]),
+    "ssi": Pack(
+        "ssi", "Server-side includes probe", "WSTG-INPV-08", ["ssi"],
+        ssi_directive='<!--#echo var="DATE_GMT"-->'),
+    "crlf": Pack(
+        "crlf", "HTTP response splitting probe (CRLF)", "WSTG-INPV-15", ["crlf"], crlf=True),
 }
 
 
@@ -230,6 +237,26 @@ def probe(r: Req, name: str, pack: Pack, pause: float = 0, should_stop=lambda: F
                 return Finding(r, name, "SUSPECTED-boolean",
                                f"TRUE {ptrue!r} ~ baseline, FALSE {pfalse!r} changed "
                                f"(len {lt} vs {lf}, status {at.status}/{af.status})", sent)
+
+    if "ssi" in pack.checks and pack.ssi_directive:
+        token = "WSTGSSI" + secrets.token_hex(3)
+        a = inject_one(r, name, f"{pack.ssi_directive}{token}")
+        sent += 1
+        body = a.body or ""
+        # The marker reflects (so the value reached the output) but the directive did not
+        # come back verbatim: it was interpreted (or stripped) server-side.
+        if token in body and token not in (base.body or "") and pack.ssi_directive not in body \
+                and "<!--#echo" not in body:
+            return Finding(r, name, "SUSPECTED-ssi",
+                           f"{pack.ssi_directive!r} was consumed server-side while the marker reflected", sent)
+
+    if "crlf" in pack.checks and pack.crlf:
+        token = "wstg" + secrets.token_hex(3)
+        a = inject_one(r, name, f"\r\nX-Wstg-Inject: {token}")
+        sent += 1
+        if a.status is not None and any(token in (n or "") or token in (v or "") for n, v in a.headers):
+            return Finding(r, name, "SUSPECTED-crlf",
+                           f"CRLF payload injected a response header carrying {token}", sent)
 
     if "time" in pack.checks:
         t0 = min(_timed(r, name, "")[1] for _ in range(2))

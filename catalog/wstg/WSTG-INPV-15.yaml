@@ -28,14 +28,15 @@ steps:
       and flags HEADER-REFLECTED when it comes back in the Location header - the
       precondition for response splitting and open redirect. Those parameters are the ones
       to try CRLF against in step 2. Collect reflection-check first.
-  - summary: Try CRLF response splitting and CL/TE smuggling (manual)
+  - summary: Try CRLF response splitting (Tools button) and CL/TE smuggling (manual)
     evidence: [http-smuggling-tests]
     operation: >-
-      Into a parameter reflected into a header (for example a redirect target) inject CRLF
-      (`%0d%0a`) and check for an added header or a split response. Separately, send
-      requests with conflicting Content-Length and Transfer-Encoding and compare the
-      front-end and back-end responses for a smuggling discrepancy. Record requests and
-      both responses in http-smuggling-tests.
+      Response splitting is automated by agreement: Tools > Injection probe, pack "HTTP
+      response splitting probe (CRLF)". Into each parameter it appends a CRLF and a test
+      header and reports SUSPECTED-crlf when that header appears in the response, into
+      http-smuggling-tests. Request smuggling is not automated: separately send requests
+      with conflicting Content-Length and Transfer-Encoding and compare the front-end and
+      back-end responses for a discrepancy, by hand. The judge (step 3) decides.
     load_note: Request smuggling can affect other users of the same front-end; agree the test window with the owner before sending these probes.
   - summary: Judge HTTP splitting and smuggling
     evidence: [http-smuggling-tests]

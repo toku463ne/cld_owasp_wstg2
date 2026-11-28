@@ -26,7 +26,7 @@
   <a href="{{ url_for('tool_xss', name=target.name) }}">Tools › Reflected XSS confirm</a>
   sends a standard sentinel payload to each REFLECTED-UNENCODED parameter in a headless browser, by agreement, and
   adds the result and screenshots here.</div>{% endif %}
-{% set inject_pack = {'sqli-tests': 'sqli', 'ssti-tests': 'ssti', 'xpath-injection-tests': 'xpath', 'ldap-injection-tests': 'ldap', 'command-injection-tests': 'cmd'}.get(ev.id) %}
+{% set inject_pack = {'sqli-tests': 'sqli', 'ssti-tests': 'ssti', 'xpath-injection-tests': 'xpath', 'ldap-injection-tests': 'ldap', 'command-injection-tests': 'cmd', 'ssi-injection-tests': 'ssi', 'http-smuggling-tests': 'crlf'}.get(ev.id) %}
 {% if inject_pack and target.type == 'fqdn' %}<div class="okbox"><b>Probe it from the web</b>:
   <a href="{{ url_for('tool_inject', name=target.name, pack=inject_pack) }}">Tools › Injection probe</a>
   sends a standard payload set to each parameter by agreement and adds the result here.</div>{% endif %}

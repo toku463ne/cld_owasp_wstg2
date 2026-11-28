@@ -17,12 +17,15 @@ steps:
     command: >-
       grep -oiE '/[^ "'"'"'<>]*\.s?html?' {ev:katana-crawl}/katana.txt 2>/dev/null | grep -iE '\.shtml' | sort -u | head
       || echo "no .shtml page in the crawl (SSI may still be enabled elsewhere; confirm)"
-  - summary: Inject SSI directives (manual)
+  - summary: Inject SSI directives (Tools button)
     evidence: [ssi-injection-tests]
     operation: >-
-      Into inputs reflected onto an SSI-enabled page send `<!--#include file="..."-->` and
-      `<!--#exec cmd="id"-->` and check whether the server interprets them (the file or the
-      command output appears). Record in ssi-injection-tests.
+      Automated by agreement: Tools > Injection probe, pack "Server-side includes probe".
+      Into each reflected parameter it appends a harmless directive (`<!--#echo
+      var="DATE_GMT"-->`) plus a marker and reports SUSPECTED-ssi when the marker reflects
+      but the directive is consumed server-side (interpreted, not shown verbatim), into
+      ssi-injection-tests. It uses only #echo, never #include or #exec; confirm a real
+      include or command execution by hand within scope. The judge (step 3) decides.
   - summary: Judge SSI injection
     evidence: [ssi-injection-tests]
     ai_task: >-

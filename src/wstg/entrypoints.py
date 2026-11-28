@@ -218,6 +218,7 @@ class Answer:
     location: str = ""
     body: str = ""
     error: str = ""
+    headers: list = field(default_factory=list)   # [(name, value)] of the response headers
 
     def short(self) -> str:
         if self.status is None:
@@ -249,7 +250,7 @@ def fetch(url: str, cookie: str = "", extra_headers: dict | None = None,
         h = resp.headers
         out = Answer(getattr(resp, "status", None) or resp.code, len(body),
                      (h.get("Content-Type") or "").split(";")[0].strip(), h.get("Location") or "",
-                     body.decode("utf-8", "replace"))
+                     body.decode("utf-8", "replace"), headers=list(h.items()))
         resp.close()
         return out
     except (OSError, ValueError, http.client.HTTPException) as e:

@@ -273,3 +273,72 @@ def test_cmd_time_based(tmp_path, capsys):
         assert "SUSPECTED-time" in capsys.readouterr().out
     finally:
         srv.shutdown()
+
+
+def test_ssi_directive_consumed(tmp_path, capsys):
+    class App(BaseHTTPRequestHandler):
+        def log_message(self, *a):
+            pass
+
+        def do_GET(self):
+            v = {k: x[0] for k, x in parse_qs(urlsplit(self.path).query, keep_blank_values=True).items()}.get("name", "")
+            shown = v.replace('<!--#echo var="DATE_GMT"-->', "Sat, 28 Nov 2026 GMT")   # interpret
+            b = f"<p>Hi {shown}</p>".encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html")
+            self.send_header("Content-Length", str(len(b)))
+            self.end_headers()
+            self.wfile.write(b)
+    srv = _serve(App)
+    base = f"http://127.0.0.1:{srv.server_port}"
+    try:
+        kat = _katana(tmp_path, base, "/p?name=x")
+        assert inject.main(["--pack", "ssi", "--base", base + "/", "--katana", kat, "--all", "--agree"]) == 0
+        assert "SUSPECTED-ssi" in capsys.readouterr().out
+    finally:
+        srv.shutdown()
+
+
+def test_crlf_header_injection(tmp_path, capsys):
+    class App(BaseHTTPRequestHandler):
+        def log_message(self, *a):
+            pass
+
+        def do_GET(self):
+            v = {k: x[0] for k, x in parse_qs(urlsplit(self.path).query, keep_blank_values=True).items()}.get("id", "")
+            # Vulnerable: reflect the value into a response header without stripping CRLF.
+            body = "<p>ok</p>"
+            raw = (f"HTTP/1.1 200 OK\r\nX-Echo: {v}\r\nContent-Type: text/html\r\n"
+                   f"Content-Length: {len(body)}\r\nConnection: close\r\n\r\n{body}")
+            self.wfile.write(raw.encode())
+    srv = _serve(App)
+    base = f"http://127.0.0.1:{srv.server_port}"
+    try:
+        kat = _katana(tmp_path, base, "/r?id=5")
+        assert inject.main(["--pack", "crlf", "--base", base + "/", "--katana", kat, "--all", "--agree"]) == 0
+        out = capsys.readouterr().out
+        assert "SUSPECTED-crlf" in out
+    finally:
+        srv.shutdown()
+
+
+def test_crlf_safe_app_is_clean(tmp_path, capsys):
+    class App(BaseHTTPRequestHandler):
+        def log_message(self, *a):
+            pass
+
+        def do_GET(self):
+            b = b"<p>ok</p>"
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html")
+            self.send_header("Content-Length", str(len(b)))
+            self.end_headers()
+            self.wfile.write(b)
+    srv = _serve(App)
+    base = f"http://127.0.0.1:{srv.server_port}"
+    try:
+        kat = _katana(tmp_path, base, "/r?id=5")
+        assert inject.main(["--pack", "crlf", "--base", base + "/", "--katana", kat, "--all", "--agree"]) == 0
+        assert "SUSPECTED" not in capsys.readouterr().out.split("# verdict")[0]
+    finally:
+        srv.shutdown()
