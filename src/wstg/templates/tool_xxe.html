@@ -1,0 +1,81 @@
+{% extends "target_base.html" %}
+{% block head_extra %}{% if st and st.running %}<meta http-equiv="refresh" content="5">{% endif %}{% endblock %}
+{% block content %}
+<h3><a href="{{ url_for('tools_tab', name=target.name) }}">Tools</a> › XML injection / XXE</h3>
+<p class="muted">WSTG-INPV-07 step 2. Takes the XML requests from <a href="{{ url_for('evidence_page', name=target.name, eid='har-browse') }}">har-browse</a>
+  (Content-Type <code>application/xml</code>, <code>text/xml</code>, <code>soap+xml</code>) and, for each, sends two
+  standard payloads reusing the captured session: a <b>structure break</b> (stray <code>]]&gt;</code>, an unmatched tag
+  and a bare entity &mdash; looks for a new XML parser error), and an <b>in-band XXE</b> probe (a DOCTYPE with an external
+  entity to a unique, <b>non-existent</b> local path &mdash; looks for that path echoed back, i.e. the parser tried to
+  resolve it). No real file is read. Out-of-band XXE (an <code>http://</code> entity) and uploaded docx/svg/SAML stay
+  <b>manual</b>. It sends active payloads, so a WAF may flag it &mdash; run it by agreement.</p>
+
+{% if problem %}
+<div class="warnbox">Cannot run: {{ problem }}.
+  {% if target.type == 'fqdn' %} <a href="{{ url_for('target_settings', name=target.name) }}">Edit the scope</a>{% endif %}</div>
+{% elif not has_har %}
+<div class="warnbox">No har-browse yet. Record a <a href="{{ url_for('evidence_page', name=target.name, eid='har-browse') }}">har-browse</a>
+  capture that exercises the XML/SOAP endpoints first, then come back.</div>
+
+{% elif st and st.running %}
+<div class="okbox"><b>XXE probe running</b> · {{ st.label }} · started {{ st.started }} by {{ st.actor }}
+  ({{ st.elapsed // 60 }} min {{ st.elapsed % 60 }} s) · this page refreshes every 5 s
+  {% if st.stop_request %}<br><b>Stop requested</b>: it stops after the current request.{% endif %}</div>
+{% if can_write %}
+<form method="post" class="inline" action="{{ url_for('tool_xxe_stop', name=target.name) }}">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  {% if not st.stop_request %}<button name="how" value="stop" data-confirm="Stop? The requests already probed are kept.">Stop</button>
+  {% elif st.can_kill %}<button name="how" value="kill" data-confirm="Kill the process?">Kill (not ending after {{ kill_after }} s)</button>{% endif %}
+</form>
+{% endif %}
+
+{% elif list_error %}
+<div class="warnbox">Cannot list the XML requests: {{ list_error }}</div>
+{% elif not cands %}
+<div class="warnbox">No XML request in the capture. Record a har-browse that posts XML/SOAP (API body, SAML, or an
+  upload), or test the XML inputs by hand. Nothing to probe automatically.</div>
+{% elif can_write %}
+{% if st and st.finished and not st.added %}
+<div class="warnbox"><b>The previous result is not saved yet.</b> Add it to xml-injection-tests below before probing
+  again, or the next run overwrites its log. To start anyway and discard it, tick the box below.</div>
+{% endif %}
+<form method="post" class="stack" action="{{ url_for('tool_xxe_start', name=target.name) }}">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  {% if st and st.finished and not st.added %}
+  <label><input type="checkbox" name="discard" value="1"> Discard the previous (unsaved) result and start a new one.</label>
+  {% endif %}
+  <h4>XML requests to probe</h4>
+  <p class="muted small">Tick the requests to probe, or leave all unticked to probe every one. A few requests each.
+    WSTG_PAUSE is {{ 'set to %d s between requests' % pause if pause else 'not set (full speed)' }}.</p>
+  <p><button type="button" data-toggle="request" data-state="on">Check all</button>
+    <button type="button" data-toggle="request" data-state="off">Uncheck all</button></p>
+  <table>
+    <tr><th></th><th>#</th><th>Method</th><th>Path</th><th>Content-Type</th><th>Role</th></tr>
+    {% for c in cands %}
+    <tr><td><input type="checkbox" name="request" value="{{ c.n }}" id="r-{{ c.n }}"></td>
+      <td>{{ c.n }}</td><td><label for="r-{{ c.n }}">{{ c.method }}</label></td>
+      <td class="small"><code>{{ c.template }}</code></td>
+      <td class="small">{{ c.ctype }}</td><td class="small">{{ c.role or 'anonymous' }}</td></tr>
+    {% endfor %}
+  </table>
+  <label><input type="checkbox" name="agree" value="1"> The owner agreed to run this (it sends active XML payloads; a WAF may flag them).</label>
+  <div><button>Probe (all selected)</button></div>
+</form>
+{% endif %}
+
+{% if st %}
+<h4>{{ 'Output' if st.running else 'Last XXE probe' }}{% if not st.running %} <span class="muted small">· {{ st.label }} · started {{ st.started }} by {{ st.actor }}</span>{% endif %}</h4>
+<pre class="replay-out">{{ st.log }}</pre>
+{% if not st.running and st.finished and can_write and confirm_ev %}
+<form method="post" class="stack" action="{{ url_for('tool_xxe_add', name=target.name) }}">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <label>Caption <input name="caption" size="60" placeholder="XML injection / XXE probe: {{ st.label }}"></label>
+  <div><button>Add the result to xml-injection-tests</button></div>
+</form>
+<p class="muted small"><code>SUSPECTED-xxe-inband</code> = external-entity resolution was attempted (in-band XXE likely);
+  <code>SUSPECTED-xml-struct</code> = the XML structure could be broken (tags not neutralised);
+  <code>inconclusive-echo</code> = the app echoes the request body, so the in-band signal is unreliable &mdash; confirm
+  out-of-band by hand. The WSTG-INPV-07 judge (step 3) decides, and OOB / upload XXE are still tested manually.</p>
+{% endif %}
+{% endif %}
+{% endblock %}

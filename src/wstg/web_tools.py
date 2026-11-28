@@ -47,6 +47,7 @@ from . import evidence as evmod
 from . import replay as rp
 from . import targets as tmod
 from . import xss_run as xrun
+from . import xxe_run as xxerun
 from . import users
 from .config import Config
 from .web import admin_required, login_required
@@ -90,6 +91,12 @@ TOOLS = [
                 "response by error signature, boolean divergence, evaluated result, or response delay. Gathers the "
                 "evidence; the per-WSTG judge decides. Reuses the captured session; sends active payloads, so run "
                 "it by agreement."},
+    {"endpoint": "tool_xxe", "title": "XML injection / XXE",
+     "summary": "Probe the XML requests from the capture (WSTG-INPV-07 step 2): for each, inject structure-breaking "
+                "characters (looking for an XML parser error) and a DOCTYPE with an external entity to a unique "
+                "NON-existent local path (looking for that path echoed back, i.e. external-entity resolution). No "
+                "real file is read. Out-of-band XXE and docx/svg/SAML uploads stay manual. Reuses the captured "
+                "session; sends active payloads, so run it by agreement."},
 ]
 
 
@@ -575,6 +582,97 @@ def register(app: Flask, cfg: Config, db: dbmod.Database, cat: catmod.Catalog, s
         except evmod.EvidenceError as e:
             flash(f"Not added: {e}")
         return redirect(url_for("evidence_page", name=t.name, eid=eid))
+
+    def xxe_base(t: tmod.Target):
+        """(base URL, problem). Scope-checked, FQDN only."""
+        if t.type != "fqdn":
+            return "", "XML injection / XXE probing needs an FQDN target"
+        try:
+            scope = tmod.get_scope(db, t)
+            base_url = scope.base_url or f"https://{t.name}"
+            probs = tmod.scope_problems(scope)
+            if probs:
+                return base_url, "the scope record does not allow it yet: " + "; ".join(probs)
+            tmod.check_command(t, scope, [base_url + "/"], passive=False)
+            return base_url, ""
+        except (tmod.TargetError, tmod.ScopeError) as e:
+            return "", str(e)
+
+    def xxe_context(t: tmod.Target) -> dict:
+        base_url, problem = xxe_base(t)
+        cands, list_error = [], ""
+        has_har = bool(_ev_latest(t, "har-browse"))
+        if base_url and has_har:
+            try:
+                cands = xxerun.candidates(cfg, t, base_url)
+            except xxerun.XxeRunError as e:
+                list_error = str(e)
+        return {"tab": "tools", "problem": problem, "base_url": base_url, "cands": cands,
+                "list_error": list_error, "has_har": has_har,
+                "st": xxerun.status(cfg, t), "pause": cfg.pause, "kill_after": xxerun.KILL_AFTER,
+                "confirm_ev": cat.evidence.get(xxerun.EVIDENCE)}
+
+    @app.get("/t/<name>/tools/xxe")
+    @login_required
+    def tool_xxe(name: str):
+        t = load_target(name)
+        return render_template("tool_xxe.html", **xxe_context(t))
+
+    @app.post("/t/<name>/tools/xxe/start")
+    @admin_required
+    def tool_xxe_start(name: str):
+        t = load_target(name)
+        ctx = xxe_context(t)
+        f = request.form
+        try:
+            if ctx["problem"]:
+                raise xxerun.XxeRunError(ctx["problem"])
+            if not ctx["cands"]:
+                raise xxerun.XxeRunError("no XML request found; capture one into har-browse first")
+            if f.get("agree") != "1":
+                raise xxerun.XxeRunError("tick the box to confirm the owner agreed (it sends active payloads)")
+            ncand = len(ctx["cands"])
+            chosen = sorted({int(x) for x in f.getlist("request") if x.isdigit() and 1 <= int(x) <= ncand})
+            xxerun.start(cfg, t, base_url=ctx["base_url"], requests=chosen,
+                         actor=g.user["username"], discard=f.get("discard") == "1")
+            with db.tx() as conn:
+                db.audit(conn, g.user["username"], "tool.xxe.start", target=t.name, count=len(chosen) or ncand)
+            flash(f"XXE probe started for {len(chosen) or ncand} XML request(s); the page refreshes while it runs.")
+        except (xxerun.XxeRunError, ValueError, tmod.ScopeError, tmod.TargetError) as e:
+            flash(f"Not started: {e}")
+        return redirect(url_for("tool_xxe", name=t.name))
+
+    @app.post("/t/<name>/tools/xxe/stop")
+    @admin_required
+    def tool_xxe_stop(name: str):
+        t = load_target(name)
+        try:
+            if request.form.get("how") == "kill":
+                xxerun.kill(cfg, t)
+            else:
+                xxerun.request_stop(cfg, t)
+        except (xxerun.XxeRunError, OSError) as e:
+            flash(str(e))
+        return redirect(url_for("tool_xxe", name=t.name))
+
+    @app.post("/t/<name>/tools/xxe/add")
+    @login_required
+    def tool_xxe_add(name: str):
+        t = load_target(name)
+        if not users.can_write(g.user):
+            abort(403)
+        st = xxerun.status(cfg, t)
+        if not st or st.get("running") or not st.get("finished"):
+            flash("No finished XXE probe to add.")
+            return redirect(url_for("tool_xxe", name=t.name))
+        try:
+            caption = request.form.get("caption", "").strip() or f"XML injection / XXE probe: {st.get('label', '')}"
+            v = store.add_text(t, xxerun.EVIDENCE, xxerun.result_text(cfg, t), caption, g.user["username"])
+            xxerun.mark_added(cfg, t)
+            flash(f"Added to {xxerun.EVIDENCE} (version {v.version}).")
+        except evmod.EvidenceError as e:
+            flash(f"Not added: {e}")
+        return redirect(url_for("evidence_page", name=t.name, eid=xxerun.EVIDENCE))
 
     @app.route("/t/<name>/tools/replay", methods=["GET", "POST"])
     @login_required
