@@ -7,17 +7,29 @@
   work there or over VNC). Log in and walk the target by hand, do not close the window, then press <i>Stop and save</i> here.
   The same as <code>uv run wstg capture {{ target.name }} --role ROLE</code> in a terminal.</p>
 
-<div class="okbox"><b>While you walk</b> (do it now so you don't have to recapture):
+<div class="okbox"><b>While you walk</b> (do it now so you don't have to recapture &mdash; many tests read this one capture):
   <ul class="small" style="margin:.3em 0">
+    <li><b>Log in</b> with a test account and <b>stay logged in</b> &mdash; do <u>not</u> log out in this walk (logout and
+      idle-timeout use their own captures, roles <code>logout</code> / <code>timeout</code>). Gives the session-cookie,
+      session-reissue and padding-oracle checks their data.</li>
+    <li><b>Open the sensitive, logged-in pages</b> (account, profile, settings, anything with personal data), and let each
+      page <b>finish loading</b> (JavaScript runs; the capture snapshots the DOM). Feeds the cache-header, clickjacking
+      (framing), token-in-URL / plain-HTTP, client-storage and page-source (comments/secrets) checks.</li>
+    <li><b>Do the state-changing actions</b>: submit forms, create / update / delete, change a setting or password. Feeds
+      the CSRF and malformed-input error checks, and the entry-point inventory.</li>
+    <li><b>Use every search box, filter and form</b> (while logged in too), so their parameters are captured for the
+      reflected-XSS and parameter-pollution checks.</li>
     <li>Into each field that is <b>stored and shown later</b> (profile name, comment, post, message, address) type a
       distinct marker like <code>wstg01&lt;"'&gt;</code> (<code>wstg</code>, a few letters or digits, then
       <code>&lt; " '</code>), save it, then open every page that displays it &mdash; including any
-      <b>admin, report, export, print or PDF-preview</b> path. This feeds the stored-XSS
+      <b>admin, report, export, print or PDF-preview</b> path. If an admin or another user can see your input, capture
+      that role too (role <code>admin</code>) and open the same pages there. Feeds the stored-XSS
       (<a href="{{ url_for('wstg_page', name=target.name, test_id='WSTG-INPV-02') }}">WSTG-INPV-02</a>) and incubated
       (<a href="{{ url_for('wstg_page', name=target.name, test_id='WSTG-INPV-14') }}">WSTG-INPV-14</a>) checks.</li>
-    <li>If an admin or another user can see your input, capture that role too (role <code>admin</code>) and open the
-      same pages there.</li>
-    <li>Walk each account flow once (login, password change/reset, registration) so the session checks have data.</li>
+    <li><b>Walk each account flow once</b>: login, registration, password change, password reset (do not complete logout
+      here). Feeds the account-flow timeline.</li>
+    <li>Follow a link to an <b>external site</b> once, and trigger one <b>error page</b> (a bad id or a broken form), so the
+      Referer-leak and error-exposure checks have a sample.</li>
   </ul></div>
 
 {% if st and st.running %}
