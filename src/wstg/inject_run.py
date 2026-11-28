@@ -33,7 +33,8 @@ KILL_AFTER = 60
 PACK_EVIDENCE = {"sqli": "sqli-tests", "ssti": "ssti-tests", "xpath": "xpath-injection-tests",
                  "ldap": "ldap-injection-tests", "cmd": "command-injection-tests",
                  "ssi": "ssi-injection-tests", "crlf": "http-smuggling-tests",
-                 "code": "code-injection-tests"}
+                 "code": "code-injection-tests",
+                 "fmt-leak": "format-string-tests", "fmt-crash": "format-string-tests"}
 
 
 class InjectRunError(Exception):

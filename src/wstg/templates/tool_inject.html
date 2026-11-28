@@ -16,6 +16,7 @@
   <noscript><button>Switch</button></noscript>
 </form>
 <p class="muted small">Checks for this pack: <code>{{ checks | join(', ') }}</code>.</p>
+{% if pack_warn %}<div class="warnbox"><b>Availability risk</b> — {{ pack_warn }}</div>{% endif %}
 
 {% if problem %}
 <div class="warnbox">Cannot run: {{ problem }}.

@@ -512,6 +512,7 @@ def register(app: Flask, cfg: Config, db: dbmod.Database, cat: catmod.Catalog, s
         p = imod.PACKS[pack]
         return {"tab": "tools", "problem": problem, "base_url": base_url, "pack": pack,
                 "packs": imod.PACKS, "pack_title": p.title, "pack_wstg": p.wstg, "checks": p.checks,
+                "pack_warn": p.warn,
                 "cands": cands, "list_error": list_error, "has_src": has_src,
                 "st": irun.status(cfg, t, pack), "pause": cfg.pause, "kill_after": irun.KILL_AFTER,
                 "confirm_ev": cat.evidence.get(irun.PACK_EVIDENCE.get(pack))}

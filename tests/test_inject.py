@@ -425,3 +425,112 @@ def test_code_reflection_is_not_a_hit(tmp_path, capsys):
         assert "SUSPECTED" not in capsys.readouterr().out.split("# verdict")[0]
     finally:
         srv.shutdown()
+
+
+# ---- format-string packs (WSTG-INPV-13): read-only leak and crash, split ---------------
+
+import re as _re
+
+
+def test_fmt_leak_detected(tmp_path, capsys):
+    """A component that formats the input: %x/%p specifiers emit stack hex after the marker."""
+    class App(BaseHTTPRequestHandler):
+        def log_message(self, *a):
+            pass
+
+        def do_GET(self):
+            q = {k: v[0] for k, v in parse_qs(urlsplit(self.path).query, keep_blank_values=True).items()}
+            v = q.get("q", "")
+            # vulnerable printf: each pointer/hex specifier reads a stack value
+            out = _re.sub(r"%l?[xp]", lambda m: "0x%06x" % 0xABCDEF, v)
+            b = f"<p>{out}</p>".encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html")
+            self.send_header("Content-Length", str(len(b)))
+            self.end_headers()
+            self.wfile.write(b)
+    srv = _serve(App)
+    base = f"http://127.0.0.1:{srv.server_port}"
+    try:
+        kat = _katana(tmp_path, base, "/log?q=hi")
+        assert inject.main(["--pack", "fmt-leak", "--base", base + "/", "--katana", kat, "--all", "--agree"]) == 0
+        assert "SUSPECTED-fmt-leak" in capsys.readouterr().out
+    finally:
+        srv.shutdown()
+
+
+def test_fmt_leak_literal_is_clean(tmp_path, capsys):
+    """A safe app reflects the specifiers verbatim (no formatting) -> clean, not a hit."""
+    class App(BaseHTTPRequestHandler):
+        def log_message(self, *a):
+            pass
+
+        def do_GET(self):
+            q = {k: v[0] for k, v in parse_qs(urlsplit(self.path).query, keep_blank_values=True).items()}
+            b = f"<p>you said {q.get('q', '')}</p>".encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html")
+            self.send_header("Content-Length", str(len(b)))
+            self.end_headers()
+            self.wfile.write(b)
+    srv = _serve(App)
+    base = f"http://127.0.0.1:{srv.server_port}"
+    try:
+        kat = _katana(tmp_path, base, "/log?q=hi")
+        assert inject.main(["--pack", "fmt-leak", "--base", base + "/", "--katana", kat, "--all", "--agree"]) == 0
+        assert "SUSPECTED" not in capsys.readouterr().out.split("# verdict")[0]
+    finally:
+        srv.shutdown()
+
+
+def test_fmt_crash_detected(tmp_path, capsys):
+    """A component that fails (5xx) on %s dereferences -> crash hit."""
+    class App(BaseHTTPRequestHandler):
+        def log_message(self, *a):
+            pass
+
+        def do_GET(self):
+            q = {k: v[0] for k, v in parse_qs(urlsplit(self.path).query, keep_blank_values=True).items()}
+            v = q.get("q", "")
+            if "%s%s" in v:
+                self.send_response(500)
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+                return
+            b = b"<p>ok</p>"
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html")
+            self.send_header("Content-Length", str(len(b)))
+            self.end_headers()
+            self.wfile.write(b)
+    srv = _serve(App)
+    base = f"http://127.0.0.1:{srv.server_port}"
+    try:
+        kat = _katana(tmp_path, base, "/log?q=hi")
+        assert inject.main(["--pack", "fmt-crash", "--base", base + "/", "--katana", kat, "--all", "--agree"]) == 0
+        assert "SUSPECTED-fmt-crash" in capsys.readouterr().out
+    finally:
+        srv.shutdown()
+
+
+def test_fmt_crash_safe_app_is_clean(tmp_path, capsys):
+    """An app that handles %s as text (always 200) -> clean."""
+    class App(BaseHTTPRequestHandler):
+        def log_message(self, *a):
+            pass
+
+        def do_GET(self):
+            b = b"<p>ok</p>"
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html")
+            self.send_header("Content-Length", str(len(b)))
+            self.end_headers()
+            self.wfile.write(b)
+    srv = _serve(App)
+    base = f"http://127.0.0.1:{srv.server_port}"
+    try:
+        kat = _katana(tmp_path, base, "/log?q=hi")
+        assert inject.main(["--pack", "fmt-crash", "--base", base + "/", "--katana", kat, "--all", "--agree"]) == 0
+        assert "SUSPECTED" not in capsys.readouterr().out.split("# verdict")[0]
+    finally:
+        srv.shutdown()

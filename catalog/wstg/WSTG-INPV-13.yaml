@@ -17,12 +17,22 @@ steps:
       From the technology fingerprint (whatweb/wappalyzer) note any native C/C++ component
       or CGI that formats user input (logging, error messages, printf-style output).
       Record the candidates in format-string-tests.
-  - summary: Inject format specifiers (manual)
+  - summary: Inject format specifiers (Tools buttons; identifying native components stays manual)
     evidence: [format-string-tests]
     operation: >-
-      Into candidate inputs send `%s%s%s%s`, `%x%x%x`, and `%n` and observe whether stack
-      values leak into the response or the component crashes. Record the input and response
-      in format-string-tests.
+      Automated by agreement as two separate probes under Tools > Injection probe, each
+      reusing the katana-crawl and har-browse parameters: "Format-string leak probe
+      (read-only, %x/%p)" appends pointer/hex specifiers after a unique marker and reports
+      SUSPECTED-fmt-leak when the marker is followed by dereferenced stack values (not the
+      literal specifier text) - it only reads memory. "Format-string crash probe" appends
+      %s dereferences and reports SUSPECTED-fmt-crash when the baseline answered but the
+      specifier makes it fail (lost connection or a new 5xx, confirmed once). Neither sends
+      %n (that writes memory). AVAILABILITY RISK: the crash probe can crash the component,
+      and if that process is shared (not a per-request CGI) the whole site can go down until
+      it restarts - run it only in an agreed window, and prefer the leak probe first. Format
+      string is rare outside native C/C++ components, so a pure web stack is almost always
+      clean. Results go to format-string-tests; the judge (step 3) decides.
+    load_note: The leak probe reads stack memory; the crash probe can crash the component (shared-process sites can go down). Active payloads a WAF may flag. Agree the test window with the owner.
   - summary: Judge format string injection
     evidence: [format-string-tests]
     ai_task: >-

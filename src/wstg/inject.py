@@ -68,6 +68,9 @@ class Pack:
     time_payloads: list[str] = field(default_factory=list)
     ssi_directive: str = ""                                 # an SSI directive to try
     crlf: bool = False                                      # try a CRLF header-injection probe
+    fmt_leak: bool = False                                  # read-only format-string leak (%x/%p)
+    fmt_crash: bool = False                                 # format-string crash (%s deref; may crash)
+    warn: str = ""                                          # a prominent warning shown before running
 
 
 # An eval marker chosen to be unusual (7*191) so a coincidental match is unlikely.
@@ -125,6 +128,20 @@ PACKS: dict[str, Pack] = {
         ssi_directive='<!--#echo var="DATE_GMT"-->'),
     "crlf": Pack(
         "crlf", "HTTP response splitting probe (CRLF)", "WSTG-INPV-15", ["crlf"], crlf=True),
+    # Format string (WSTG-INPV-13) is split into two packs so the read-only leak probe and
+    # the crash probe are separate buttons: the leak probe only reads (%x/%p), the crash
+    # probe can take the component (and a shared-process site) down. Neither sends %n, which
+    # writes memory. Relevant mainly where a native C/C++ component formats user input.
+    "fmt-leak": Pack(
+        "fmt-leak", "Format-string leak probe (read-only, %x/%p)", "WSTG-INPV-13", ["leak"],
+        fmt_leak=True),
+    "fmt-crash": Pack(
+        "fmt-crash", "Format-string crash probe (may crash the component)", "WSTG-INPV-13",
+        ["crash"], fmt_crash=True,
+        warn="The crash probe sends %s dereferences to detect a native format-string flaw by "
+             "making the component fail. If the flaw exists, it CAN crash the process - and if "
+             "that process is shared (not a per-request CGI), the whole site can go down until "
+             "it restarts. Run it only in an agreed window; prefer the read-only leak probe first."),
 }
 
 
@@ -279,6 +296,44 @@ def probe(r: Req, name: str, pack: Pack, pause: float = 0, should_stop=lambda: F
         if a.status is not None and any(token in (n or "") or token in (v or "") for n, v in a.headers):
             return Finding(r, name, "SUSPECTED-crlf",
                            f"CRLF payload injected a response header carrying {token}", sent)
+
+    if "leak" in pack.checks and pack.fmt_leak:
+        # Read-only: a unique marker followed by pointer/hex specifiers. If the component
+        # formats the input, the marker is followed by dereferenced stack values; if it
+        # treats them as literal text, the specifier characters come back verbatim and the
+        # pattern (which has no '%') does not match - so a reflected value is not a hit.
+        token = "WSTGFMT" + secrets.token_hex(3)
+        for spec in ("%p", "%lx", "%x"):
+            if should_stop():
+                break
+            wait()
+            a = inject_one(r, name, token + ("." + spec) * 10)
+            sent += 1
+            m = re.search(re.escape(token) + r"(?:\.(?:0x[0-9a-fA-F]+|[0-9a-fA-F]{2,16}|\(nil\)|\(null\))){3,}",
+                          a.body or "")
+            if m:
+                return Finding(r, name, "SUSPECTED-fmt-leak",
+                               f"{spec} leaked stack data after the marker: {m.group()[:80]!r}", sent)
+
+    if "crash" in pack.checks and pack.fmt_crash:
+        # Deref specifiers (%s) make a vulnerable native formatter read through an invalid
+        # pointer and fail. Baseline must have answered normally; a crash is a lost
+        # connection or a 5xx the baseline did not have, confirmed once (a one-off 5xx is
+        # not conclusive). No %n (that writes memory).
+        if base.status is not None and base.status < 500:
+            for p in ("%s" * 10, "%s" * 24):
+                if should_stop():
+                    break
+                wait()
+                a = inject_one(r, name, p)
+                sent += 1
+                if a.status is None or a.status >= 500:
+                    wait()
+                    a2 = inject_one(r, name, p)
+                    sent += 1
+                    if a2.status is None or a2.status >= 500:
+                        return Finding(r, name, "SUSPECTED-fmt-crash",
+                                       f"{p!r} -> status {a.status}/{a2.status} vs baseline {base.status}", sent)
 
     if "time" in pack.checks:
         t0 = min(_timed(r, name, "")[1] for _ in range(2))

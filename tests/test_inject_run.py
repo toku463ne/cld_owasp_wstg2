@@ -173,6 +173,17 @@ def test_new_pack_evidence_links_to_tool(admin_client, web_site, eid, pack):
     assert f"/t/www.example.com/tools/inject" in page and f"pack={pack}" in page
 
 
+def test_format_string_evidence_links_both_packs_with_risk(admin_client, web_site):
+    page = admin_client.get("/t/www.example.com/evidence/format-string-tests").get_data(as_text=True)
+    assert "pack=fmt-leak" in page and "pack=fmt-crash" in page
+    assert "Availability risk" in page
+
+
+def test_fmt_crash_tool_page_shows_risk(admin_client, web_site):
+    page = admin_client.get("/t/www.example.com/tools/inject?pack=fmt-crash").get_data(as_text=True)
+    assert "Availability risk" in page and "can crash" in page.lower()
+
+
 def test_pack_selector_lists_all(admin_client, cfg, web_site):
     _put_katana(cfg, web_site)
     page = admin_client.get("/t/www.example.com/tools/inject").get_data(as_text=True)
