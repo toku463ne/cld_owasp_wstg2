@@ -18,13 +18,22 @@ steps:
     command: >-
       grep -oiE '[?&](eval|code|exec|func|callback|template|tpl|page|file|include|path|lang|module)=[^&"'"'"'<> ]*'
       {ev:katana-crawl}/katana.txt 2>/dev/null | sort -u | head -40 || echo "no obvious evaluation/include parameter in the crawl"
-  - summary: Inject language-specific code (manual)
+  - summary: Inject language-specific code (Tools button for in-band eval/time, manual for the rest)
     evidence: [code-injection-tests]
     operation: >-
-      Into candidate inputs send language payloads such as `;phpinfo();`, `system('id')`,
-      or `__import__('os').popen('id').read()`, and for file inclusion a local or (if
-      allowed) remote path. Confirm execution with a harmless command, timing, or an
-      out-of-band DNS/HTTP callback. Keep proof minimal and record in code-injection-tests.
+      The in-band code-evaluation part is automated by agreement: Tools > Injection probe,
+      pack "Code injection probe (eval / time)". For each parameter found in katana-crawl and
+      har-browse it sends standard payloads that break out of a string/statement and either
+      compute an arithmetic marker that prints back (`;print(7*191);//`, `'+str(7*191)+'` -
+      SUSPECTED-eval when `1337` returns and the payload text does not, so a reflection is
+      not a hit) or call a language-level sleep (`;sleep(5);//`, `__import__('time').sleep(5)`
+      - SUSPECTED-time, confirmed twice). No command output is read and nothing is written.
+      Results go to code-injection-tests. NOT automated (do by hand, record in the same
+      evidence): deserialization gadgets and out-of-band confirmation (a DNS/HTTP callback) -
+      these need language-specific chains or a listener. File inclusion (LFI/RFI, PHP
+      wrappers, log/session poisoning) is already probed by WSTG-ATHZ-01 step 2 (Tools >
+      File traversal); cite that evidence here. The judge (step 3) decides.
+    load_note: The probe sends active code-evaluation payloads (a WAF may flag them); agree the test window with the owner before running it.
   - summary: Judge code injection
     evidence: [code-injection-tests]
     ai_task: >-

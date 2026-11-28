@@ -342,3 +342,86 @@ def test_crlf_safe_app_is_clean(tmp_path, capsys):
         assert "SUSPECTED" not in capsys.readouterr().out.split("# verdict")[0]
     finally:
         srv.shutdown()
+
+
+# ---- code injection pack (WSTG-INPV-11): in-band eval marker + language sleep ----------
+
+def test_code_eval_marker_detected(tmp_path, capsys):
+    """A handler that evaluates the parameter as code: a breakout payload prints 7*191."""
+    class App(BaseHTTPRequestHandler):
+        def log_message(self, *a):
+            pass
+
+        def do_GET(self):
+            q = {k: v[0] for k, v in parse_qs(urlsplit(self.path).query, keep_blank_values=True).items()}
+            v = q.get("q", "")
+            # Vulnerable: anything printed by the injected code reaches the output; a bare
+            # reflected value does not compute.
+            shown = "1337" if ("print(7*191)" in v or "str(7*191)" in v) else v
+            b = f"<p>{shown}</p>".encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html")
+            self.send_header("Content-Length", str(len(b)))
+            self.end_headers()
+            self.wfile.write(b)
+    srv = _serve(App)
+    base = f"http://127.0.0.1:{srv.server_port}"
+    try:
+        kat = _katana(tmp_path, base, "/calc?q=2")
+        assert inject.main(["--pack", "code", "--base", base + "/", "--katana", kat, "--all", "--agree"]) == 0
+        out = capsys.readouterr().out
+        assert "SUSPECTED-eval" in out and "1337" in out
+    finally:
+        srv.shutdown()
+
+
+def test_code_time_based_detected(tmp_path, capsys):
+    """A handler that runs a language-level sleep from the parameter -> time hit."""
+    class App(BaseHTTPRequestHandler):
+        def log_message(self, *a):
+            pass
+
+        def do_GET(self):
+            q = {k: v[0] for k, v in parse_qs(urlsplit(self.path).query, keep_blank_values=True).items()}
+            v = q.get("q", "")
+            if "sleep(5)" in v:
+                time.sleep(5.2)
+            b = b"<p>ok</p>"
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html")
+            self.send_header("Content-Length", str(len(b)))
+            self.end_headers()
+            self.wfile.write(b)
+    srv = _serve(App)
+    base = f"http://127.0.0.1:{srv.server_port}"
+    try:
+        kat = _katana(tmp_path, base, "/calc?q=2")
+        assert inject.main(["--pack", "code", "--base", base + "/", "--katana", kat, "--all", "--agree"]) == 0
+        assert "SUSPECTED-time" in capsys.readouterr().out
+    finally:
+        srv.shutdown()
+
+
+def test_code_reflection_is_not_a_hit(tmp_path, capsys):
+    """A handler that merely reflects the value (no evaluation) stays clean: the payload text
+    comes back, but 1337 never does."""
+    class App(BaseHTTPRequestHandler):
+        def log_message(self, *a):
+            pass
+
+        def do_GET(self):
+            q = {k: v[0] for k, v in parse_qs(urlsplit(self.path).query, keep_blank_values=True).items()}
+            b = f"<p>you said {q.get('q', '')}</p>".encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html")
+            self.send_header("Content-Length", str(len(b)))
+            self.end_headers()
+            self.wfile.write(b)
+    srv = _serve(App)
+    base = f"http://127.0.0.1:{srv.server_port}"
+    try:
+        kat = _katana(tmp_path, base, "/echo?q=2")
+        assert inject.main(["--pack", "code", "--base", base + "/", "--katana", kat, "--all", "--agree"]) == 0
+        assert "SUSPECTED" not in capsys.readouterr().out.split("# verdict")[0]
+    finally:
+        srv.shutdown()

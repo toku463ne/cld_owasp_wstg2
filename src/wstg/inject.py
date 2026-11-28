@@ -74,6 +74,25 @@ class Pack:
 _SSTI = [("${7*191}", "1337"), ("${{7*191}}", "1337"), ("{{7*191}}", "1337"),
          ("#{7*191}", "1337"), ("<%= 7*191 %>", "1337"), ("{7*191}", "1337")]
 
+# Code injection (input evaluated as server-side code). Unlike SSTI the value is not in a
+# template, so the payloads break out of a string/statement first, then compute 7*191 and
+# print it; the eval classifier fires only when 1337 comes back and the payload text does
+# not, so a coincidental or reflected match is not a hit. Same marker, different contexts.
+_CODE_EVAL = [
+    (";print(7*191);//", "1337"),          # PHP: end the statement, print, comment the rest
+    ("';print(7*191);//", "1337"),         # PHP: break out of a single-quoted string
+    ('";print(7*191);//', "1337"),         # PHP: break out of a double-quoted string
+    ("';print(7*191)#", "1337"),           # Python: break out of a string, print, comment
+    ("'+str(7*191)+'", "1337"),            # Python / JS: string concatenation
+    ('"+str(7*191)+"', "1337"),
+]
+# Language-level sleep (not an OS command: that is the cmd pack). Confirmed twice by the
+# time classifier; benign and leaks no output.
+_CODE_TIME = [
+    ";sleep(5);//", "';sleep(5);//", '";sleep(5);//',           # PHP
+    "__import__('time').sleep(5)", "';__import__('time').sleep(5)#",   # Python
+]
+
 PACKS: dict[str, Pack] = {
     "sqli": Pack(
         "sqli", "SQL injection probe", "WSTG-INPV-05", ["error", "boolean", "time"],
@@ -85,6 +104,9 @@ PACKS: dict[str, Pack] = {
     "ssti": Pack(
         "ssti", "Server-side template injection probe", "WSTG-INPV-18", ["eval"],
         eval_payloads=_SSTI),
+    "code": Pack(
+        "code", "Code injection probe (eval / time)", "WSTG-INPV-11", ["eval", "time"],
+        eval_payloads=_CODE_EVAL, time_payloads=_CODE_TIME),
     "xpath": Pack(
         "xpath", "XPath injection probe", "WSTG-INPV-09", ["error", "boolean"],
         error_payloads=["'", "\"", "']", "')", "' and '1'='1"], error_signatures=_XPATH_ERRORS,

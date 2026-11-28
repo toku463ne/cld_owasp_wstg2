@@ -32,7 +32,8 @@ KILL_AFTER = 60
 # Which manual evidence each pack's result is added to.
 PACK_EVIDENCE = {"sqli": "sqli-tests", "ssti": "ssti-tests", "xpath": "xpath-injection-tests",
                  "ldap": "ldap-injection-tests", "cmd": "command-injection-tests",
-                 "ssi": "ssi-injection-tests", "crlf": "http-smuggling-tests"}
+                 "ssi": "ssi-injection-tests", "crlf": "http-smuggling-tests",
+                 "code": "code-injection-tests"}
 
 
 class InjectRunError(Exception):
