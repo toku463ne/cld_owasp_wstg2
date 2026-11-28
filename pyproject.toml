@@ -27,6 +27,7 @@ wstg-ffuf = "wstg.ffufcheck:main"
 wstg-ffuf-run = "wstg.ffufrun:main"
 wstg-replay = "wstg.replay:main"
 wstg-forge = "wstg.forge:main"
+wstg-inject = "wstg.inject:main"
 
 [build-system]
 requires = ["uv_build>=0.11.8,<0.12.0"]
@@ -39,3 +40,4 @@ dev = [
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = ["slow: tests that deliberately wait several seconds (time-based probes)"]
