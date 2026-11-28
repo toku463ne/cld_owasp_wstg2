@@ -44,6 +44,7 @@ from . import db as dbmod
 from . import evidence as evmod
 from . import replay as rp
 from . import targets as tmod
+from . import xss_run as xrun
 from . import users
 from .config import Config
 from .web import admin_required, login_required
@@ -76,6 +77,11 @@ TOOLS = [
                 "capture, add or override parameters the UI never offers (price, role, status, userId, discount), "
                 "and compare the response with the baseline. Reuses the request's captured session; changes the "
                 "target, so run it by agreement. The judge (step 3) decides whether the server trusted the value."},
+    {"endpoint": "tool_xss", "title": "Reflected XSS confirm",
+     "summary": "Confirm a REFLECTED-UNENCODED parameter in a headless browser (WSTG-INPV-01 step 4): take the "
+                "parameters reflection-check flagged, send a standard sentinel payload (a tiny inline script, no "
+                "attack, no data access), and check whether it actually runs - the page's CSP is part of the test. "
+                "Reuses the captured session. It sends a real payload, so a WAF may flag it; run it by agreement."},
 ]
 
 
@@ -357,6 +363,107 @@ def register(app: Flask, cfg: Config, db: dbmod.Database, cat: catmod.Catalog, s
         except evmod.EvidenceError as e:
             flash(f"Not added: {e}")
         return redirect(url_for("evidence_page", name=t.name, eid="forge-request-tests"))
+
+    # ---- Reflected XSS confirm (WSTG-INPV-01 step 4) ------------------------------
+    def xss_base(t: tmod.Target) -> tuple[str, str]:
+        """(base URL, problem). Scope-checked, FQDN only."""
+        if t.type != "fqdn":
+            return "", "reflected XSS confirmation needs an FQDN target"
+        try:
+            scope = tmod.get_scope(db, t)
+            base_url = scope.base_url or f"https://{t.name}"
+            probs = tmod.scope_problems(scope)
+            if probs:
+                return base_url, "the scope record does not allow it yet: " + "; ".join(probs)
+            tmod.check_command(t, scope, [base_url + "/"], passive=False)
+            return base_url, ""
+        except (tmod.TargetError, tmod.ScopeError) as e:
+            return "", str(e)
+
+    def xss_context(t: tmod.Target) -> dict:
+        base_url, problem = xss_base(t)
+        cands, list_error = [], ""
+        if base_url and _ev_latest(t, "reflection-check"):
+            try:
+                cands = xrun.candidates(cfg, t, base_url)
+            except xrun.XssRunError as e:
+                list_error = str(e)
+        return {"tab": "tools", "problem": problem, "base_url": base_url, "cands": cands,
+                "list_error": list_error, "has_reflect": bool(_ev_latest(t, "reflection-check")),
+                "st": xrun.status(cfg, t), "pause": cfg.pause, "kill_after": xrun.KILL_AFTER,
+                "confirm_ev": cat.evidence.get("xss-reflected-tests")}
+
+    @app.get("/t/<name>/tools/xss")
+    @login_required
+    def tool_xss(name: str):
+        t = load_target(name)
+        return render_template("tool_xss.html", **xss_context(t))
+
+    @app.post("/t/<name>/tools/xss/start")
+    @admin_required
+    def tool_xss_start(name: str):
+        t = load_target(name)
+        ctx = xss_context(t)
+        f = request.form
+        try:
+            if ctx["problem"]:
+                raise xrun.XssRunError(ctx["problem"])
+            if not ctx["cands"]:
+                raise xrun.XssRunError("no REFLECTED-UNENCODED parameter; collect reflection-check first")
+            if f.get("agree") != "1":
+                raise xrun.XssRunError("tick the box to confirm the owner agreed (it sends a real XSS payload)")
+            ncand = len(ctx["cands"])
+            chosen = sorted({int(x) for x in f.getlist("candidate") if x.isdigit() and 1 <= int(x) <= ncand})
+            # Scope-check each chosen candidate's host/port (the url reflection-check sent).
+            scope = tmod.get_scope(db, t)
+            for it in (ctx["cands"] if not chosen else [ctx["cands"][n - 1] for n in chosen]):
+                sp = urlsplit(it["url"])
+                port = sp.port or (443 if sp.scheme == "https" else 80)
+                tmod.check_command(t, scope, [f"https://{sp.hostname}:{port}/"], passive=False)
+            xrun.start(cfg, t, base_url=ctx["base_url"], candidates=chosen, actor=g.user["username"],
+                       discard=f.get("discard") == "1")
+            with db.tx() as conn:
+                db.audit(conn, g.user["username"], "tool.xss.start", target=t.name, count=len(chosen) or ncand)
+            flash(f"XSS confirm started for {len(chosen) or ncand} parameter(s); the page refreshes while it runs.")
+        except (xrun.XssRunError, ValueError, tmod.ScopeError, tmod.TargetError) as e:
+            flash(f"Not started: {e}")
+        return redirect(url_for("tool_xss", name=t.name))
+
+    @app.post("/t/<name>/tools/xss/stop")
+    @admin_required
+    def tool_xss_stop(name: str):
+        t = load_target(name)
+        try:
+            if request.form.get("how") == "kill":
+                xrun.kill(cfg, t)
+            else:
+                xrun.request_stop(cfg, t)
+        except (xrun.XssRunError, OSError) as e:
+            flash(str(e))
+        return redirect(url_for("tool_xss", name=t.name))
+
+    @app.post("/t/<name>/tools/xss/add")
+    @login_required
+    def tool_xss_add(name: str):
+        t = load_target(name)
+        if not users.can_write(g.user):
+            abort(403)
+        st = xrun.status(cfg, t)
+        if not st or st.get("running") or not st.get("finished"):
+            flash("No finished XSS confirm to add.")
+            return redirect(url_for("tool_xss", name=t.name))
+        try:
+            caption = request.form.get("caption", "").strip() or f"Reflected XSS confirm: {st.get('label', '')}"
+            v = store.add_text(t, "xss-reflected-tests", xrun.result_text(cfg, t), caption, g.user["username"])
+            shots = xrun.screenshots(cfg, t)
+            if shots:
+                store.add_images(t, "xss-reflected-tests", shots, g.user["username"])
+            xrun.mark_added(cfg, t)
+            flash(f"Added to xss-reflected-tests (version {v.version})"
+                  + (f" plus {len(shots)} screenshot(s)." if shots else "."))
+        except evmod.EvidenceError as e:
+            flash(f"Not added: {e}")
+        return redirect(url_for("evidence_page", name=t.name, eid="xss-reflected-tests"))
 
     @app.route("/t/<name>/tools/replay", methods=["GET", "POST"])
     @login_required

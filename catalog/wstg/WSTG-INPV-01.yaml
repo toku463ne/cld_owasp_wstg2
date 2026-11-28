@@ -38,17 +38,21 @@ steps:
     auto_run: true
     evidence: [har-browse]
     command: wstg-har xss-headers {ev:har-browse}/items/*
-  - summary: Confirm a REFLECTED-UNENCODED parameter in the browser (manual, optional)
+  - summary: Confirm a REFLECTED-UNENCODED parameter in the browser (Tools button, optional)
     evidence: [xss-reflected-tests]
     operation: >-
-      Optional, only for a parameter step 2 marks REFLECTED-UNENCODED and only if the
-      engagement asks for a demonstration. Step 2 already holds the evidence: under each
-      REFLECTED-UNENCODED line, the exact url sent (the page's other parameters keep their
-      recorded values, so it opens the real screen) and the response around the marker.
-      To show it: open that url in the browser where you are logged in as the role step 2
-      names, press Ctrl+U, search for the wstg word, and save a screenshot of the source
-      line (the page itself usually looks normal, since the marker is harmless) in
-      xss-reflected-tests. Otherwise leave this empty.
+      Optional, only for a parameter step 2 marks REFLECTED-UNENCODED, and only by
+      agreement: it sends a real (benign) payload, so a WAF may flag it. Automated:
+      Tools > Reflected XSS confirm takes the flagged parameters and, for each, sends a
+      standard sentinel payload (a tiny inline script that sets a window flag; no attack,
+      no data access) in a headless browser reusing the captured session, and reports
+      whether it actually ran (CONFIRMED-EXECUTED) or was reflected but did not run
+      (encoder, filter, WAF, or the page's CSP). Confirm the first one, look at the
+      result and the screenshot, then confirm the others; add the result to
+      xss-reflected-tests. Step 2 already shows the output encoding is missing, so this
+      is only for a demonstration that it executes end to end. Manual alternative: open
+      the url step 2 prints, press Ctrl+U, search for the wstg word, and screenshot the
+      source line. Leave this empty when the basic check is enough.
   - summary: Judge reflected XSS (basic defence)
     evidence: [reflection-check, har-browse, xss-reflected-tests]
     ai_task: >-

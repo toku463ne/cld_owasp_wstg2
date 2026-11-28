@@ -34,6 +34,7 @@ answer.
 from __future__ import annotations
 
 import argparse
+import os
 import re
 import secrets
 import sys
@@ -400,15 +401,207 @@ def run_hpp(args) -> int:
     return 0
 
 
+# ---- browser confirmation (WSTG-INPV-01 step 4) -----------------------------------
+#
+# reflection-check (step 3) proves with a harmless marker that the dangerous characters
+# come back raw. The browser confirmation sends a standard sentinel payload (a tiny inline
+# script that sets a window flag, no attack, no data access) in the same parameter and
+# loads it in a headless browser reusing the logged-in session: if the flag is set the
+# reflection actually executes (not merely reflected), confirming reflected XSS; if not,
+# an encoder, a filter, a WAF, or the page's CSP stopped it. This sends a real payload, so
+# it may trip a WAF - run it by agreement.
+
+SENTINEL_VAR = "__WSTG_XSS"
+_UNENC_RE = re.compile(r"^- (?P<label>.+?): REFLECTED-UNENCODED \(HTTP \d+ [^;]+; (?P<detail>.*)\)\s*$")
+# where() labels, longest first so a specific one wins over "html" as a substring.
+_WHERE_TO_CTX = [
+    ('script (in a "-string)', ("script", '"')), ("script (in a '-string)", ("script", "'")),
+    ("script (in a `-string)", ("script", "`")), ("script (code)", ("script", "")),
+    ('attribute ("-quoted)', ("attribute", '"')), ("attribute ('-quoted)", ("attribute", "'")),
+    ("attribute (unquoted)", ("attribute", "u")), ("attribute (tag)", ("attribute", "")),
+    ("html", ("html", "")),
+]
+
+
+def _context_of(detail: str) -> tuple[str, str, str]:
+    """(where label, context, delimiter) from a reflection-check detail string. The first
+    where() label it contains wins (detail may list several, separated by '; ')."""
+    for label, (context, delim) in _WHERE_TO_CTX:
+        if label in detail:
+            return label, context, delim
+    return "html", "html", ""
+
+
+def sentinel_payload(context: str, delim: str, token: str) -> str:
+    """A minimal payload that runs `window.<SENTINEL_VAR>='token'` in the given context.
+    Inline <script> is used (not an image), so the page's CSP is part of what is tested."""
+    js = f"window.{SENTINEL_VAR}={token!r}"
+    if context == "attribute":
+        out = {'"': '">', "'": "'>", "u": ">"}.get(delim, '">')
+        return f"{out}<script>{js}</script>"
+    if context == "script":
+        return (f"{delim};{js};//" if delim in ('"', "'", "`") else f";{js};//")
+    return f"<script>{js}</script>"
+
+
+def parse_unencoded(text: str) -> list[dict]:
+    """REFLECTED-UNENCODED items from a reflection-check stdout: [{param, url, where,
+    context, delim}]. The url is the one reflection-check sent (marker value in `param`)."""
+    lines = text.splitlines()
+    out = []
+    for i, ln in enumerate(lines):
+        m = _UNENC_RE.match(ln)
+        if not m:
+            continue
+        label = m.group("label")
+        param = label.split("?", 1)[1].strip() if "?" in label else label.strip()
+        where_label, context, delim = _context_of(m.group("detail"))
+        url = ""
+        for nxt in lines[i + 1:i + 4]:
+            s = nxt.strip()
+            if s.startswith("url:"):
+                url = s[4:].strip()
+                break
+        if url:
+            out.append({"param": param, "url": url, "where": where_label, "context": context, "delim": delim})
+    return out
+
+
+def confirm_url(item: dict, token: str) -> str:
+    """The item's url with its parameter's value replaced by the sentinel payload."""
+    sp = urlsplit(item["url"])
+    payload = sentinel_payload(item["context"], item["delim"], token)
+    pairs = [(n, payload if n == item["param"] else v) for n, v in parse_qsl(sp.query, keep_blank_values=True)]
+    return f"{sp.scheme}://{sp.netloc}{sp.path}?{urlencode(pairs, quote_via=quote)}"
+
+
+def _render(url: str, state: dict | None, out_png: Path | None, proxy: str, timeout_ms: int = 15000):
+    """Load `url` in headless Chromium (reusing `state` for the session), return
+    (sentinel value or "", status, [console errors], error). Injected in tests."""
+    try:
+        from playwright.sync_api import sync_playwright
+    except ImportError as e:
+        return "", None, [], f"Playwright not installed ({e})"
+    errors: list[str] = []
+    try:
+        with sync_playwright() as pw:
+            browser = pw.chromium.launch(headless=True, proxy={"server": proxy} if proxy else None)
+            context = browser.new_context(storage_state=state, ignore_https_errors=True)
+            page = context.new_page()
+            page.on("console", lambda m: errors.append(m.text) if m.type in ("error", "warning") else None)
+            page.on("dialog", lambda d: d.dismiss())
+            status = None
+            try:
+                resp = page.goto(url, wait_until="load", timeout=timeout_ms)
+                status = resp.status if resp else None
+                page.wait_for_timeout(1200)
+                value = page.evaluate(f"window.{SENTINEL_VAR} || ''")
+                if out_png:
+                    page.screenshot(path=str(out_png))
+            finally:
+                context.close()
+                browser.close()
+            return value, status, errors, ""
+    except Exception as e:   # noqa: BLE001 - surface any render/launch failure as text
+        return "", None, errors, str(e).splitlines()[0]
+
+
+def run_confirm(args, render=_render) -> int:
+    reflect_dir = Path(args.reflect) if args.reflect else None
+    so = (reflect_dir / "stdout.txt") if reflect_dir else None
+    items = parse_unencoded(so.read_text(errors="replace")) if so and so.is_file() else []
+    state, role = None, ""
+    if args.har:
+        states = ep.read_har(ep.Inventory(args.base.rstrip("/") + "/"), Path(args.har))
+        for r, st in states:
+            if not harmod._ANON_ROLE_RE.match(r):
+                state, role = st, r
+                break
+
+    if args.list:
+        print(f"# {len(items)} REFLECTED-UNENCODED parameter(s) from reflection-check (no request sent). "
+              "Confirm with --candidate N or --all.")
+        for i, it in enumerate(items, 1):
+            print(f"{i}\t{it['param']}\t{it['where']}\t{it['url']}")
+        if not items:
+            print("(none: collect reflection-check first, or no parameter was REFLECTED-UNENCODED)")
+        return 0
+
+    chosen = list(range(1, len(items) + 1)) if args.all else sorted(set(args.request))
+    if not chosen:
+        print("give --candidate N (repeatable) or --all", file=sys.stderr)
+        return 2
+    if any(not 1 <= n <= len(items) for n in chosen):
+        print(f"--candidate out of range 1..{len(items)} (run --list)", file=sys.stderr)
+        return 2
+    if not args.agree:
+        print("this sends a real XSS payload (a WAF may flag it); pass --agree to confirm the owner agreed",
+              file=sys.stderr)
+        return 2
+    out = Path(args.out) if args.out else None
+    if out:
+        out.mkdir(parents=True, exist_ok=True)
+    proxy = args.proxy or os.environ.get("http_proxy", "")
+    stop = Path(args.stop_file) if args.stop_file else None
+    print(f"# confirm {len(chosen)} REFLECTED-UNENCODED parameter(s) in a headless browser"
+          + (f" as {role}" if role else " (anonymous)") + "; standard sentinel payload, no attack.")
+    confirmed = 0
+    for pos, n in enumerate(chosen, 1):
+        if stop and stop.is_file():
+            print(f"\n# stopped: {pos - 1}/{len(chosen)} done.", flush=True)
+            break
+        it = items[n - 1]
+        token = "WSTGXSS" + secrets.token_hex(4)
+        url = confirm_url(it, token)
+        png = (out / f"xss-{it['param']}-{pos}.png") if out else None
+        if pos > 1 and args.pause:
+            time.sleep(args.pause)
+        value, status, errors, err = render(url, state, png, proxy)
+        executed = value == token
+        print(f"\n[{pos}/{len(chosen)}] #{n} {it['param']} ({it['where']})", flush=True)
+        print(f"    payload url: {url}", flush=True)
+        if err:
+            print(f"    render error: {err}", flush=True)
+        elif executed:
+            confirmed += 1
+            print(f"    => CONFIRMED-EXECUTED (HTTP {status}); the sentinel ran in the browser"
+                  + (f", screenshot {png.name}" if png else ""), flush=True)
+        else:
+            csp = next((e for e in errors if "content security policy" in e.lower() or "csp" in e.lower()), "")
+            print(f"    => NOT EXECUTED (HTTP {status}); reflected but did not run"
+                  + (f" - blocked: {csp}" if csp else " (encoded, filtered, WAF, or CSP)"), flush=True)
+    print(f"\n# verdict: {confirmed}/{len(chosen)} executed. Record the confirmed ones in xss-reflected-tests.")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="wstg-reflect", description=__doc__.split("\n\n")[0])
-    ap.add_argument("--base", required=True, help="base URL of the target (the only host contacted)")
+    sub = ap.add_subparsers(dest="cmd")
+    cf = sub.add_parser("confirm", help="confirm a REFLECTED-UNENCODED parameter in a headless browser (step 4)")
+    cf.add_argument("--base", required=True, help="base URL of the target")
+    cf.add_argument("--reflect", help="reflection-check evidence version folder (the REFLECTED-UNENCODED list)")
+    cf.add_argument("--har", help="har-browse evidence version folder (for the logged-in session)")
+    cf.add_argument("--out", help="folder for the screenshots")
+    cf.add_argument("--list", action="store_true", help="list the REFLECTED-UNENCODED parameters, send nothing")
+    cf.add_argument("--candidate", dest="request", type=int, action="append", default=[], metavar="N",
+                    help="1-based parameter to confirm (repeatable; see --list)")
+    cf.add_argument("--all", action="store_true", help="confirm every REFLECTED-UNENCODED parameter")
+    cf.add_argument("--proxy", default="", help="proxy for the browser (default: $http_proxy)")
+    cf.add_argument("--pause", type=float, default=0, help="seconds between renders")
+    cf.add_argument("--stop-file", help="stop gracefully as soon as this file exists")
+    cf.add_argument("--agree", action="store_true", help="confirm the owner agreed (sends a real XSS payload)")
+
+    ap.add_argument("--base", nargs="?", help="base URL of the target (the only host contacted)")
     ap.add_argument("--katana", help="katana-crawl evidence version folder (optional)")
     ap.add_argument("--har", help="har-browse evidence version folder (optional)")
     ap.add_argument("--hpp", action="store_true", help="HTTP parameter pollution check (WSTG-INPV-04)")
     ap.add_argument("--max", type=int, default=DEFAULT_MAX, help="parameters to check")
     ap.add_argument("--pause", type=int, default=0)
     args = ap.parse_args(argv)
+    if args.cmd == "confirm":
+        return run_confirm(args)
+    if not args.base:
+        ap.error("--base is required")
     return run_hpp(args) if args.hpp else run(args)
 
 

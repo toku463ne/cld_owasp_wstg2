@@ -53,11 +53,15 @@ evidence:
     target_type: fqdn
     kind: manual
     description: >-
-      Optional: for a parameter that reflection-check marks REFLECTED-UNENCODED, a
-      screenshot of the page source (Ctrl+U) at the marker after opening the url that
-      reflection-check prints under it, logged in as the role it names. Leave it empty
-      when the basic check is enough for the engagement: reflection-check already holds
-      the url and the response line.
+      Optional (WSTG-INPV-01 step 4): for a parameter reflection-check marks
+      REFLECTED-UNENCODED, the result of confirming it in a browser. Tools > Reflected XSS
+      confirm sends a standard sentinel payload (a tiny inline script, no attack) in a
+      headless browser reusing the captured session and adds, per parameter, whether it
+      ran (CONFIRMED-EXECUTED) or only reflected (encoder, filter, WAF, or CSP), with a
+      screenshot. It sends a real payload, so run it by agreement. Leave it empty when the
+      basic check is enough: reflection-check already shows the output encoding is missing.
+      Manual alternative: a screenshot of the page source (Ctrl+U) at the marker after
+      opening the url reflection-check prints, logged in as the role it names.
 
   - id: xss-stored-tests
     title: Stored XSS tests

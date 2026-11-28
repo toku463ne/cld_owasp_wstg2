@@ -1,0 +1,75 @@
+{% extends "target_base.html" %}
+{% block head_extra %}{% if st and st.running %}<meta http-equiv="refresh" content="5">{% endif %}{% endblock %}
+{% block content %}
+<h3><a href="{{ url_for('tools_tab', name=target.name) }}">Tools</a> › Reflected XSS confirm</h3>
+<p class="muted">WSTG-INPV-01 step 4. Takes the parameters <a href="{{ url_for('evidence_page', name=target.name, eid='reflection-check') }}">reflection-check</a>
+  flagged <code>REFLECTED-UNENCODED</code> and, for each, sends a standard sentinel payload (a tiny inline script that
+  sets a window flag &mdash; no attack, no data access) in a headless browser reusing the captured session. If the flag
+  is set, the reflection <b>actually runs</b> (the page's CSP is part of the test); if not, an encoder, a filter, a WAF,
+  or the CSP stopped it. It sends a real payload, so a WAF may flag it &mdash; run it by agreement.</p>
+
+{% if problem %}
+<div class="warnbox">Cannot run: {{ problem }}.
+  {% if target.type == 'fqdn' %} <a href="{{ url_for('target_settings', name=target.name) }}">Edit the scope</a>{% endif %}</div>
+{% elif not has_reflect %}
+<div class="warnbox">No reflection-check yet. Collect <a href="{{ url_for('evidence_page', name=target.name, eid='reflection-check') }}">reflection-check</a>
+  first (automatic evidence), then come back.</div>
+
+{% elif st and st.running %}
+<div class="okbox"><b>XSS confirm running</b> · {{ st.label }} · started {{ st.started }} by {{ st.actor }}
+  ({{ st.elapsed // 60 }} min {{ st.elapsed % 60 }} s) · this page refreshes every 5 s
+  {% if st.stop_request %}<br><b>Stop requested</b>: it stops after the current parameter.{% endif %}</div>
+{% if can_write %}
+<form method="post" class="inline" action="{{ url_for('tool_xss_stop', name=target.name) }}">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  {% if not st.stop_request %}<button name="how" value="stop" data-confirm="Stop? The parameters already confirmed are kept.">Stop</button>
+  {% elif st.can_kill %}<button name="how" value="kill" data-confirm="Kill the process?">Kill (not ending after {{ kill_after }} s)</button>{% endif %}
+</form>
+{% endif %}
+
+{% elif list_error %}
+<div class="warnbox">Cannot list the flagged parameters: {{ list_error }}</div>
+{% elif not cands %}
+<div class="warnbox">reflection-check found no <code>REFLECTED-UNENCODED</code> parameter. The basic output encoding
+  holds, or no GET parameter was reflected. Nothing to confirm.</div>
+{% elif can_write %}
+{% if st and st.finished and not st.added %}
+<div class="warnbox"><b>The previous result is not saved yet.</b> Add it to xss-reflected-tests below before confirming
+  again, or the next run overwrites its log and screenshots. To start anyway and discard it, tick the box below.</div>
+{% endif %}
+<form method="post" class="stack" action="{{ url_for('tool_xss_start', name=target.name) }}">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  {% if st and st.finished and not st.added %}
+  <label><input type="checkbox" name="discard" value="1"> Discard the previous (unsaved) result and start a new one.</label>
+  {% endif %}
+  <h4>Parameters to confirm</h4>
+  <p class="muted small">Tick the parameters to confirm, or leave all unticked to confirm every one. One headless render
+    each. WSTG_PAUSE is {{ 'set to %d s between renders' % pause if pause else 'not set (full speed)' }}.</p>
+  <table>
+    <tr><th></th><th>#</th><th>Parameter</th><th>Context</th><th>URL</th></tr>
+    {% for c in cands %}
+    <tr><td><input type="checkbox" name="candidate" value="{{ c.n }}" id="c-{{ c.n }}"></td>
+      <td>{{ c.n }}</td><td><label for="c-{{ c.n }}"><code>{{ c.param }}</code></label></td>
+      <td class="small">{{ c.where }}</td><td class="small">{{ c.url }}</td></tr>
+    {% endfor %}
+  </table>
+  <label><input type="checkbox" name="agree" value="1"> The owner agreed to run this (it sends a real XSS payload; a WAF may flag it).</label>
+  <div><button>Confirm in the browser (all selected)</button></div>
+</form>
+{% endif %}
+
+{% if st %}
+<h4>{{ 'Output' if st.running else 'Last XSS confirm' }}{% if not st.running %} <span class="muted small">· {{ st.label }} · started {{ st.started }} by {{ st.actor }}</span>{% endif %}</h4>
+<pre class="replay-out">{{ st.log }}</pre>
+{% if st.shots %}<p class="muted small">Screenshots: {{ st.shots | join(', ') }} (added with the result).</p>{% endif %}
+{% if not st.running and st.finished and can_write and confirm_ev %}
+<form method="post" class="stack" action="{{ url_for('tool_xss_add', name=target.name) }}">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <label>Caption <input name="caption" size="60" placeholder="Reflected XSS confirm: {{ st.label }}"></label>
+  <div><button>Add the result (and screenshots) to xss-reflected-tests</button></div>
+</form>
+<p class="muted small">A <code>CONFIRMED-EXECUTED</code> parameter is reflected XSS; <code>NOT EXECUTED</code> means the
+  payload was reflected but did not run (encoded, filtered, blocked by a WAF, or stopped by the CSP).</p>
+{% endif %}
+{% endif %}
+{% endblock %}
