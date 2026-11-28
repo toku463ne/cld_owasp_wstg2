@@ -1,0 +1,68 @@
+{% extends "target_base.html" %}
+{% block content %}
+<h3><a href="{{ url_for('tools_tab', name=target.name) }}">Tools</a> › Parameter forging</h3>
+<p class="muted">WSTG-BUSL-02 step 2. Takes a real request from the capture (<a href="{{ url_for('evidence_page', name=target.name, eid='har-browse') }}">har-browse</a>),
+  adds or overrides parameters the UI never offers (price, role, status, userId, discount), and compares the response
+  with the baseline. It reuses the request's captured session and contacts only this host. <b>It changes the target</b>,
+  so run it by agreement. The verdict is the judge's (step 3): a changed result or an echoed value may mean the server
+  trusted a client value it should own.</p>
+
+{% if problem %}
+<div class="warnbox">Cannot run: {{ problem }}.
+  {% if target.type == 'fqdn' %} <a href="{{ url_for('target_settings', name=target.name) }}">Edit the scope</a>{% endif %}</div>
+{% elif not has_har %}
+<div class="warnbox">No logged-in capture yet. Collect <a href="{{ url_for('evidence_page', name=target.name, eid='har-browse') }}">har-browse</a>
+  first (Tools › Browser capture), then come back.</div>
+{% elif not reqs %}
+<div class="warnbox">No state-changing request or parameterised GET was found in har-browse. Walk the target through its
+  actions (add to cart, update profile, change status) while capturing, then collect har-browse again.</div>
+{% elif can_write %}
+{% if error %}<div class="warnbox">{{ error }}</div>{% endif %}
+<form method="post" class="stack">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <h4>Request to forge</h4>
+  <table>
+    <tr><th></th><th>#</th><th>Method</th><th>Path</th><th>Parameters</th><th>Role</th></tr>
+    {% for r in reqs %}
+    <tr><td><input type="radio" name="request" value="{{ loop.index }}" id="r-{{ loop.index }}"
+      {{ 'checked' if chosen == loop.index or (not chosen and loop.first) }}></td>
+      <td>{{ loop.index }}</td><td><label for="r-{{ loop.index }}"><code>{{ r.method }}</code></label></td>
+      <td class="small">{{ r.template }}</td>
+      <td class="small">{{ r.names | join(', ') or '-' }}</td><td class="small">{{ r.role or 'anonymous' }}</td></tr>
+    {% endfor %}
+  </table>
+  <h4>Parameters to add or override</h4>
+  <p class="muted small">One <code>name=value</code> per line. An existing parameter is overridden; a new one is added
+    (to the body for a request that has one, otherwise to the query). Candidate names from the crawl and the built-in
+    list: <code>{{ hints | join(' ') }}</code>.</p>
+  <textarea name="params" rows="7" cols="40">{{ params_text }}</textarea>
+  <label><input type="checkbox" name="agree" value="1"> The owner agreed to run this (it sends forged requests that may change the target).</label>
+  <div><button name="action" value="send">Send baseline and forged</button></div>
+</form>
+{% endif %}
+
+{% if saved %}<div class="okbox">Added to <a href="{{ url_for('evidence_page', name=target.name, eid='forge-request-tests') }}">forge-request-tests</a> (version {{ saved }}).</div>{% endif %}
+
+{% if results is not none %}
+<h4>Result</h4>
+<table>
+  <tr><th>Request</th><th>Status</th><th>Length</th><th>Note</th></tr>
+  <tr><td>baseline</td><td>{{ baseline.status or '-' }}</td><td>{{ baseline.size }}</td><td class="muted">{{ baseline.error }}</td></tr>
+  {% for x in results %}
+  <tr><td class="small">{{ 'added' if x.added else 'overrode' }} <code>{{ x.name }}={{ x.value }}</code></td>
+    <td>{{ x.answer.status or '-' }}</td><td>{{ x.answer.size }}</td>
+    <td class="small">{% if x.answer.status is none %}no answer ({{ x.answer.error }}){% else %}{{ x.answer.size - baseline.size }} vs baseline{% if x.echoed %} · <b>value echoed</b>{% endif %}{% endif %}</td></tr>
+  {% endfor %}
+</table>
+{% if pending and confirm_ev and can_write %}
+<form method="post" class="stack">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <input type="hidden" name="pending" value="{{ pending }}">
+  <label>Caption <input name="caption" size="60" value="{{ caption }}"></label>
+  <div><button name="action" value="save">Add the result to forge-request-tests</button></div>
+</form>
+{% endif %}
+<p class="muted small">Read these with the judge (step 3): the server should ignore unexpected parameters and use its own
+  price, role, and status. A changed length or an echoed value is a lead, not a verdict.</p>
+{% endif %}
+{% endblock %}

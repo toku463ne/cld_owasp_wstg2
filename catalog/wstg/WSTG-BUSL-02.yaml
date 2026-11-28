@@ -19,13 +19,19 @@ steps:
     command: >-
       grep -rhoiE '<input[^>]*type=["'"'"']?hidden[^>]*name=["'"'"']?[A-Za-z0-9_.-]+' {ev:katana-crawl}/responses 2>/dev/null | sort -u | head;
       grep -rhoiE '"(price|role|status|discount|isAdmin|owner|user_?id|amount)"\s*:' {ev:site-assets}/site 2>/dev/null | sort -u | head
-  - summary: Add or change undisclosed parameters in a crafted request (manual)
+  - summary: Add or change undisclosed parameters in a crafted request (Tools › Parameter forging, by agreement)
     evidence: [forge-request-tests]
     operation: >-
-      In a crafted request, add or change parameters the UI does not expose (price, status,
-      userId, discount, role), including guessed ones not sent by the normal flow, and see
-      whether the server uses the client value instead of its own. Record each in
-      forge-request-tests.
+      Open Tools › Parameter forging: it takes a real request from har-browse, lets you add
+      or override parameters the UI does not expose (price, status, userId, discount, role,
+      plus hidden names from the crawl), and by agreement sends the baseline and each forged
+      variant, reusing the captured session, then shows the status/length difference and
+      whether the value is echoed, and adds the result to forge-request-tests. This changes
+      the target, so run it by agreement. The same by hand:
+      `wstg-forge --base {base_url}/ --har <har-browse> --katana <katana-crawl> --list` then
+      `--request N --param price=1 --param role=admin --agree`. Try guessed parameters not
+      sent by the normal flow too. Whether the server trusted the client value is decided in
+      the next step.
   - summary: Judge request forging
     evidence: [forge-request-tests]
     ai_task: >-

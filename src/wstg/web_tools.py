@@ -29,12 +29,15 @@ import secrets
 import shlex
 import time
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from flask import Flask, abort, flash, g, redirect, render_template, request, session, url_for
 
 from . import capture as capmod
 from . import capture_run as crun
 from . import cryp_run as drun
+from . import forge as fmod
+from . import har as harmod
 from . import catalog as catmod
 from . import db as dbmod
 from . import evidence as evmod
@@ -67,6 +70,11 @@ TOOLS = [
                 "value the step-3 probe flagged, without the key. The in-house padbuster equivalent "
                 "(Python HTTP client, only the target host, keeps the session). Run the step-3 probe "
                 "first, pick a SUSPECTED-ORACLE candidate, and run it by agreement - thousands of requests."},
+    {"endpoint": "tool_forge", "title": "Parameter forging",
+     "summary": "Forge a request with undisclosed parameters (WSTG-BUSL-02 step 2): take a real request from the "
+                "capture, add or override parameters the UI never offers (price, role, status, userId, discount), "
+                "and compare the response with the baseline. Reuses the request's captured session; changes the "
+                "target, so run it by agreement. The judge (step 3) decides whether the server trusted the value."},
 ]
 
 
@@ -244,6 +252,87 @@ def register(app: Flask, cfg: Config, db: dbmod.Database, cat: catmod.Catalog, s
             flash(f"Not added: {e}")
         return redirect(url_for("evidence_page", name=t.name, eid=ev.id))
 
+    def _ev_latest(t: tmod.Target, eid: str):
+        link = tmod.evidence_dir(cfg, t) / eid / "latest"
+        return str(link.resolve()) if link.is_dir() else None
+
+    def forge_base(t: tmod.Target) -> tuple[str, str]:
+        """(base URL, problem). Scope-checked, FQDN only."""
+        if t.type != "fqdn":
+            return "", "parameter forging needs an FQDN target"
+        try:
+            scope = tmod.get_scope(db, t)
+            base_url = scope.base_url or f"https://{t.name}"
+            probs = tmod.scope_problems(scope)
+            if probs:
+                return base_url, "the scope record does not allow it yet: " + "; ".join(probs)
+            tmod.check_command(t, scope, [base_url + "/"], passive=False)
+            return base_url, ""
+        except (tmod.TargetError, tmod.ScopeError) as e:
+            return "", str(e)
+
+    DEFAULT_FORGE_PARAMS = "price=1\ndiscount=100\nrole=admin\nisAdmin=true\nstatus=approved\nuserId=1\nquantity=1"
+
+    @app.route("/t/<name>/tools/forge", methods=["GET", "POST"])
+    @login_required
+    def tool_forge(name: str):
+        t = load_target(name)
+        base_url, problem = forge_base(t)
+        har = _ev_latest(t, "har-browse")
+        reqs = fmod.gather_requests(base_url, Path(har) if har else None) if base_url else []
+        hints = fmod.candidate_params(Path(_ev_latest(t, "katana-crawl")) if _ev_latest(t, "katana-crawl") else None)
+        f = request.form
+        ctx = {"tab": "tools", "problem": problem, "base_url": base_url, "reqs": reqs, "hints": hints,
+               "form": f, "results": None, "baseline": None, "chosen": None, "error": "", "saved": None,
+               "pending": "", "caption": "", "params_text": f.get("params") or DEFAULT_FORGE_PARAMS,
+               "confirm_ev": cat.evidence.get("forge-request-tests"), "has_har": bool(har)}
+        if request.method == "GET" or problem:
+            return render_template("tool_forge.html", **ctx)
+
+        if f.get("action") == "save":
+            if not users.can_write(g.user):
+                abort(403)
+            try:
+                item, path = read_pending(cfg, t, f.get("pending", ""), "forge-request-tests")
+                v = store.add_text(t, "forge-request-tests", item["text"],
+                                   f.get("caption", "").strip() or item["caption"], g.user["username"])
+                path.unlink(missing_ok=True)
+                ctx["saved"] = v.version
+            except (evmod.EvidenceError, ValueError) as e:
+                ctx["error"] = f"not added: {e}"
+            return render_template("tool_forge.html", **ctx)
+
+        # action == send
+        if not users.can_write(g.user):
+            abort(403)
+        try:
+            n = int(f.get("request") or 0)
+            if not 1 <= n <= len(reqs):
+                raise ValueError("pick a request from the list")
+            r = reqs[n - 1]
+            ctx["chosen"] = n
+            params = fmod._parse_params(_lines(ctx["params_text"]))
+            if not params:
+                raise ValueError("give at least one parameter as name=value")
+            if f.get("agree") != "1":
+                raise ValueError("tick the box to confirm the owner agreed to this (it changes the target)")
+            host = (urlsplit(r.url).hostname or "")
+            port = urlsplit(r.url).port or (443 if urlsplit(r.url).scheme == "https" else 80)
+            tmod.check_command(t, tmod.get_scope(db, t), [f"https://{host}:{port}/"], passive=False)
+        except (ValueError, tmod.ScopeError, tmod.TargetError) as e:
+            ctx["error"] = str(e)
+            return render_template("tool_forge.html", **ctx), 400
+        baseline, results = fmod.run_variants(r, params, repeat=1, pause=cfg.pause)
+        ctx["baseline"], ctx["results"] = baseline, results
+        with db.tx() as conn:
+            db.audit(conn, g.user["username"], "tool.forge", target=t.name, method=r.method, url=r.url,
+                     status=baseline.status)
+        text = forge_text(r, baseline, results, g.user["username"])
+        echoed = any(x.echoed for x in results)
+        ctx["caption"] = f"Forge {r.method} {harmod._template(urlsplit(r.url).path) or '/'}" + (" (value echoed)" if echoed else "")
+        ctx["pending"] = put_pending(cfg, t, "forge-request-tests", text, ctx["caption"])
+        return render_template("tool_forge.html", **ctx)
+
     @app.route("/t/<name>/tools/replay", methods=["GET", "POST"])
     @login_required
     def tool_replay(name: str):
@@ -372,6 +461,26 @@ def evidence_text(req: rp.Request, resp: rp.Response | None, error: str, actor: 
     if len(body) > room:
         return text + body[:max(room, 0)].decode("utf-8", "replace") + f"\n... {len(body) - max(room, 0)} more bytes not kept\n"
     return text + body.decode("utf-8", "replace") + "\n"
+
+
+def forge_text(r, baseline, results: list, actor: str) -> str:
+    """The baseline and each forged variant as one text item for forge-request-tests."""
+    lines = [f"# wstg forge: {r.method} {r.url}", f"# sent {dbmod.utcnow()} by {actor}; role {r.role or 'anonymous'}",
+             "", f"baseline: {baseline.short()}", ""]
+    for x in results:
+        verb = "added" if x.added else "overrode"
+        if x.answer.status is None:
+            note = f"no answer ({x.answer.error})"
+        else:
+            dlen = x.answer.size - baseline.size
+            note = (f"{x.answer.status} {x.answer.ctype or '-'} {x.answer.size} bytes"
+                    + (f" ({'+' if dlen >= 0 else ''}{dlen} vs baseline)" if dlen else " (same length)")
+                    + (" — VALUE ECHOED" if x.echoed else ""))
+        lines.append(f"{verb} {x.name}={x.value}: {note}")
+    lines += ["", "# Judge (WSTG-BUSL-02 step 3): did the server trust a value it should own?"]
+    text = "\n".join(lines) + "\n"
+    room = evmod.MAX_TEXT_BYTES - 200
+    return text if len(text.encode()) <= room else text[:room] + "\n... truncated\n"
 
 
 def _hostport(req: rp.Request) -> str:
